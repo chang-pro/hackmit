@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BloomKnights — Webcam Capture</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }
+  h1 { font-size: 1.2rem; letter-spacing: 0.04em; }
+  a { color: #58a6ff; }
+  video { width: 100%; max-width: 640px; border: 1px solid #30363d; border-radius: 10px; background: #000; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; max-width: 640px; margin-top: 1rem; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem; }
+  .card h2 { font-size: 0.75rem; text-transform: uppercase; color: #8b949e; margin: 0 0 0.5rem; }
+  .big { font-size: 1.8rem; font-weight: 700; }
+  .status { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; background: #1f6feb33; border: 1px solid #1f6feb; }
+  .status.rec { background: #f8514933; border-color: #f85149; }
+  button { font: inherit; background: #238636; color: #fff; border: 0; border-radius: 8px; padding: 0.5rem 1.2rem; cursor: pointer; margin-top: 1rem; }
+  button.stop { background: #da3633; }
+  .note { color: #8b949e; font-size: 0.8rem; max-width: 640px; }
+  #detail { color: #8b949e; font-size: 0.8rem; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+  <h1>BloomKnights webcam capture <span class="status" id="status">idle</span></h1>
+  <p class="note">
+    Samples the camera at about 1 fps and POSTs base64 JPEG frames to
+    <code>/api/frames</code>. Frames are held only in server memory — nothing
+    is written to disk. Capture status is always visible below (README §16).
+    Debug view: <a href="/">/</a>
+  </p>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas" hidden></canvas>
+  <div>
+    <button id="toggle">Start capture</button>
+  </div>
+  <div class="grid">
+    <div class="card"><h2>Sent</h2><div class="big" id="sent">0</div></div>
+    <div class="card"><h2>Accepted</h2><div class="big" id="accepted">0</div></div>
+    <div class="card"><h2>Skipped</h2><div class="big" id="skipped">0</div></div>
+    <div class="card"><h2>Errors</h2><div class="big" id="errors">0</div></div>
+  </div>
+  <div id="detail">—</div>
+<script>
+const SAMPLE_INTERVAL_MS = 1000; // ~1 fps (README §7.2 target: 1-2 fps)
+const JPEG_QUALITY = 0.7;
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const statusEl = document.getElementById("status");
+const toggleBtn = document.getElementById("toggle");
+const detail = document.getElementById("detail");
+const counts = { sent: 0, accepted: 0, skipped: 0, errors: 0 };
+
+let stream = null;
+let timer = null;
+
+function bump(key) {
+  counts[key] += 1;
+  document.getElementById(key).textContent = counts[key];
+}
+
+async function sendFrame() {
+  if (!video.videoWidth) return; // camera not ready yet
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+  const image_base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+
+  bump("sent");
+  try {
+    const r = await fetch("/api/frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "webcam",
+        captured_at: new Date().toISOString(),
+        image_base64,
+        width: canvas.width,
+        height: canvas.height,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) {
+      bump("errors");
+      detail.textContent = `error: ${d.error || r.status}`;
+    } else if (d.selection.accepted) {
+      bump("accepted");
+      detail.textContent = `last accepted: ${d.frame.frame_id} (${d.frame.width}×${d.frame.height})`;
+    } else {
+      bump("skipped");
+      detail.textContent = `last skipped: ${d.frame.frame_id} — ${d.selection.reason}`;
+    }
+  } catch (err) {
+    bump("errors");
+    detail.textContent = `network error: ${err.message}`;
+  }
+}
+
+async function start() {
+  stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  video.srcObject = stream;
+  timer = setInterval(sendFrame, SAMPLE_INTERVAL_MS);
+  statusEl.textContent = "capturing";
+  statusEl.classList.add("rec");
+  toggleBtn.textContent = "Stop capture";
+  toggleBtn.classList.add("stop");
+}
+
+function stop() {
+  clearInterval(timer);
+  timer = null;
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  video.srcObject = null;
+  statusEl.textContent = "idle";
+  statusEl.classList.remove("rec");
+  toggleBtn.textContent = "Start capture";
+  toggleBtn.classList.remove("stop");
+}
+
+toggleBtn.addEventListener("click", async () => {
+  try {
+    if (timer) stop();
+    else await start();
+  } catch (err) {
+    detail.textContent = `camera error: ${err.message}`;
+  }
+});
+</script>
+</body>
+</html>
