@@ -9,6 +9,7 @@ Our service owns everything after camera capture:
 ```text
 phone/app camera -> direct WebRTC peer connection -> desktop capture viewer
                   \-> HTTPS tunnel carries SDP/ICE signaling only
+desktop capture viewer -> bundled YOLO11n -> continuous local player/ball overlay
 phone/app analysis JPEGs (only after user action) -> five-frame window -> Gemma 4 event extraction
 -> automatic event-switch check -> GPT OSS/GLM prediction analysis -> presentation-ready JSON
 ```
@@ -57,7 +58,7 @@ https://random-name.tunnelmole.net
 
 Open `https://random-name.tunnelmole.net/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider. Unlike the previous LocalTunnel path, the public URL opens directly—there is no IP/password interstitial for the camera user.
 
-LocalTunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
+Tunnelmole URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
 ## Plumbing-only test without a model key
 
@@ -179,9 +180,11 @@ It renders a local animated synthetic broadcast through a canvas `MediaStream` a
 
 For a shareable UI-review link, open `/capture?demo=1` instead.
 
-### Player overlay
+### Continuous player overlay
 
-Each quota-gated, five-frame vision request also asks for up to twelve visible-subject boxes from its newest frame. The backend returns `visual_detections` with a label, kind, confidence, and `bbox` coordinates normalized from 0–1000. The capture page maps those coordinates over the cover-cropped WebRTC video and draws the overlay locally; it does not create another model request or send video through the signaling tunnel. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.
+The capture page runs bundled YOLO11n directly in the desktop browser against the received WebRTC video. It samples at up to 5 FPS, recognizes COCO `person` and `sports ball` classes, applies local NMS, and maps normalized boxes over the cover-cropped video. The first live stream downloads the bundled 10.4 MB ONNX model to the viewer; after that, tracking creates no Cerebras call, backend frame upload, or tunnel media traffic. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.
+
+Gemma remains deliberately user-gated behind **Analyze** for the job YOLO cannot do: reading scoreboards, identifying the event, and assembling prediction context from sparse five-frame windows.
 
 ## Cerebras models
 

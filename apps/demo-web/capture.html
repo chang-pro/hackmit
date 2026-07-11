@@ -172,9 +172,9 @@
 
       <section class="analysis-tile control-tile">
         <div>
-          <div class="tile-eyebrow">Vision analysis</div>
-          <div class="tile-title">Camera connected</div>
-          <p class="tile-note">Enable only when you want to spend model requests.</p>
+          <div class="tile-eyebrow">Live vision</div>
+          <div class="tile-title" id="trackerState">YOLO11n standby</div>
+          <p class="tile-note" id="trackerNote">Player tracking runs on this device; Analyze is only for event and market context.</p>
         </div>
         <button class="analyze" id="analyze" hidden>Analyze</button>
       </section>
@@ -281,6 +281,9 @@ function setRemoteFeedUI(active) {
     analyzeButton.hidden = false;
     updateAnalyzeButton();
     renderResearchPlan();
+    if (demoStream) setTrackerState("Local demo tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
+    else setTrackerState("YOLO11n loading…", "Continuous player and ball tracking runs on this device.");
+    window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: true, demo: Boolean(demoStream) } }));
     return;
   }
   document.body.classList.remove("running", "remote-feed");
@@ -289,7 +292,14 @@ function setRemoteFeedUI(active) {
   clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
+  setTrackerState("YOLO11n standby", "Player tracking starts automatically with a live camera stream.");
+  window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: false, demo: false } }));
   setStatusPill("idle", "waiting for phone");
+}
+
+function setTrackerState(title, note) {
+  $("trackerState").textContent = title;
+  $("trackerNote").textContent = note;
 }
 
 function boundedDetection(detection) {
@@ -297,8 +307,8 @@ function boundedDetection(detection) {
   const values = [box?.x, box?.y, box?.width, box?.height].map(Number);
   if (!values.every(Number.isFinite)) return null;
   let [x, y, width, height] = values;
-  x = Math.max(0, Math.min(1000, x));
-  y = Math.max(0, Math.min(1000, y));
+  x = Math.max(0, Math.min(999, x));
+  y = Math.max(0, Math.min(999, y));
   width = Math.max(1, Math.min(1000 - x, width));
   height = Math.max(1, Math.min(1000 - y, height));
   if (width < 2 || height < 2) return null;
@@ -358,7 +368,11 @@ function renderVisualDetections() {
     overlay.append(box);
   }
   overlay.hidden = false;
-  status.textContent = visualDetectionSource === "model" ? "Vision overlay · latest model pass" : "Vision overlay · local demo tracker";
+  status.textContent = visualDetectionSource === "yolo"
+    ? "YOLO11n · live on this device"
+    : visualDetectionSource === "model"
+      ? "Vision overlay · latest model pass"
+      : "Vision overlay · local demo tracker";
   status.hidden = false;
 }
 
@@ -642,7 +656,6 @@ function renderInsight(insight) {
   const observation = insight.observation;
   const analysis = insight.analysis;
   const presentation = insight.presentation || {};
-  setVisualDetections(observation.visual_detections, "model");
   renderResearchPlan(insight);
   document.body.classList.add("has-read");
   if (observation.sport) {
@@ -718,6 +731,13 @@ $("helpClose").addEventListener("click", () => $("help").removeAttribute("open-p
 $("help").addEventListener("click", (event) => { if (event.target === $("help")) $("help").removeAttribute("open-panel"); });
 window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch(() => {}));
 new ResizeObserver(renderVisualDetections).observe(document.querySelector(".theater-screen"));
+window.bloomYoloInput = Object.freeze({
+  video: remotePreview,
+  setDetections: setVisualDetections,
+  setTrackerState,
+  isFeedActive: () => remoteFeedActive,
+  isDemo: () => Boolean(demoStream),
+});
 window.bloomDemo = Object.freeze({ start: startDemoFeed, stop: () => { stopDemoFeed(); return "BloomKnights local demo stream stopped."; } });
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
 $("helpNote").textContent = NOTE;
@@ -743,6 +763,188 @@ if (idleTitleEl) setInterval(() => {
     idleTitleEl.style.opacity = "1";
   }, 2500);
 }, 4500);
+</script>
+<script type="module">
+  import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.mjs";
+
+  // YOLO11n runs in the viewer, directly against the already-connected WebRTC
+  // stream. No video frame is sent to the server for this overlay.
+  const bridge = window.bloomYoloInput;
+  const MODEL_URL = "/models/yolo11n.onnx";
+  const INPUT_SIZE = 320;
+  const DETECTION_INTERVAL_MS = 200;
+  const CONFIDENCE_THRESHOLD = .36;
+  const IOU_THRESHOLD = .48;
+  const TRACKED_CLASSES = new Map([[0, { label: "PLAYER", kind: "player" }], [32, { label: "BALL", kind: "ball" }]]);
+  const canvas = document.createElement("canvas");
+  canvas.width = INPUT_SIZE;
+  canvas.height = INPUT_SIZE;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  let sessionPromise = null;
+  let running = false;
+  let runToken = 0;
+  let lastFpsUpdate = 0;
+
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+  // SharedArrayBuffer is unavailable on a normal public tunnel, so threaded
+  // WASM is only safe when the page has explicitly opted into isolation.
+  ort.env.wasm.numThreads = crossOriginIsolated
+    ? Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2))
+    : 1;
+
+  function iou(a, b) {
+    const left = Math.max(a.x1, b.x1);
+    const top = Math.max(a.y1, b.y1);
+    const right = Math.min(a.x2, b.x2);
+    const bottom = Math.min(a.y2, b.y2);
+    const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+    const union = (a.x2 - a.x1) * (a.y2 - a.y1) + (b.x2 - b.x1) * (b.y2 - b.y1) - intersection;
+    return union > 0 ? intersection / union : 0;
+  }
+
+  function nms(candidates) {
+    const kept = [];
+    for (const candidate of candidates.sort((a, b) => b.confidence - a.confidence)) {
+      if (kept.some((existing) => existing.classId === candidate.classId && iou(existing, candidate) >= IOU_THRESHOLD)) continue;
+      kept.push(candidate);
+      if (kept.length === 12) break;
+    }
+    return kept;
+  }
+
+  function makeTensor(video) {
+    const sourceWidth = video.videoWidth;
+    const sourceHeight = video.videoHeight;
+    const scale = Math.min(INPUT_SIZE / sourceWidth, INPUT_SIZE / sourceHeight);
+    const drawWidth = sourceWidth * scale;
+    const drawHeight = sourceHeight * scale;
+    const padX = (INPUT_SIZE - drawWidth) / 2;
+    const padY = (INPUT_SIZE - drawHeight) / 2;
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+    context.drawImage(video, 0, 0, sourceWidth, sourceHeight, padX, padY, drawWidth, drawHeight);
+    const pixels = context.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
+    const input = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE);
+    const area = INPUT_SIZE * INPUT_SIZE;
+    for (let index = 0; index < area; index += 1) {
+      input[index] = pixels[index * 4] / 255;
+      input[area + index] = pixels[index * 4 + 1] / 255;
+      input[area * 2 + index] = pixels[index * 4 + 2] / 255;
+    }
+    return { tensor: new ort.Tensor("float32", input, [1, 3, INPUT_SIZE, INPUT_SIZE]), sourceWidth, sourceHeight, scale, padX, padY };
+  }
+
+  function decode(output, transform) {
+    const { data, dims } = output;
+    if (dims.length !== 3) return [];
+    const channelFirst = dims[1] < dims[2];
+    const count = channelFirst ? dims[2] : dims[1];
+    const featureCount = channelFirst ? dims[1] : dims[2];
+    if (featureCount < 5) return [];
+    const value = (candidate, feature) => channelFirst
+      ? data[feature * count + candidate]
+      : data[candidate * featureCount + feature];
+    const candidates = [];
+    for (let candidate = 0; candidate < count; candidate += 1) {
+      let classId = -1;
+      let confidence = 0;
+      for (const id of TRACKED_CLASSES.keys()) {
+        const score = value(candidate, 4 + id);
+        if (score > confidence) { confidence = score; classId = id; }
+      }
+      if (confidence < CONFIDENCE_THRESHOLD || classId < 0) continue;
+      const centerX = value(candidate, 0);
+      const centerY = value(candidate, 1);
+      const width = value(candidate, 2);
+      const height = value(candidate, 3);
+      const x1 = Math.max(0, (centerX - width / 2 - transform.padX) / transform.scale);
+      const y1 = Math.max(0, (centerY - height / 2 - transform.padY) / transform.scale);
+      const x2 = Math.min(transform.sourceWidth, (centerX + width / 2 - transform.padX) / transform.scale);
+      const y2 = Math.min(transform.sourceHeight, (centerY + height / 2 - transform.padY) / transform.scale);
+      if (x2 - x1 < 3 || y2 - y1 < 3) continue;
+      candidates.push({ x1, y1, x2, y2, classId, confidence });
+    }
+    return nms(candidates).map((candidate) => {
+      const metadata = TRACKED_CLASSES.get(candidate.classId);
+      return {
+        ...metadata,
+        confidence: candidate.confidence,
+        bbox: {
+          x: Math.round(candidate.x1 / transform.sourceWidth * 1000),
+          y: Math.round(candidate.y1 / transform.sourceHeight * 1000),
+          width: Math.round((candidate.x2 - candidate.x1) / transform.sourceWidth * 1000),
+          height: Math.round((candidate.y2 - candidate.y1) / transform.sourceHeight * 1000),
+        },
+      };
+    });
+  }
+
+  async function getSession() {
+    if (!sessionPromise) {
+      sessionPromise = ort.InferenceSession.create(MODEL_URL, {
+        executionProviders: ["wasm"],
+        graphOptimizationLevel: "all",
+      });
+    }
+    return sessionPromise;
+  }
+
+  function schedule(token, delay = DETECTION_INTERVAL_MS) {
+    window.setTimeout(() => detect(token), delay);
+  }
+
+  async function detect(token) {
+    if (!running || token !== runToken || !bridge.isFeedActive() || bridge.isDemo()) return;
+    if (bridge.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !bridge.video.videoWidth) {
+      schedule(token, 100);
+      return;
+    }
+    const started = performance.now();
+    try {
+      const session = await getSession();
+      const transform = makeTensor(bridge.video);
+      const outputs = await session.run({ [session.inputNames[0]]: transform.tensor });
+      const output = outputs[session.outputNames[0]];
+      bridge.setDetections(decode(output, transform), "yolo");
+      if (started - lastFpsUpdate > 1_000) {
+        const fps = Math.max(1, Math.round(1_000 / Math.max(1, performance.now() - started)));
+        bridge.setTrackerState(`YOLO11n live · ${fps} FPS`, "Player and ball boxes run locally from the WebRTC stream.");
+        lastFpsUpdate = started;
+      }
+    } catch (error) {
+      running = false;
+      bridge.setDetections([], "yolo");
+      bridge.setTrackerState("YOLO unavailable", "Live tracking could not start in this browser; event analysis is still available.");
+      console.warn("BloomKnights YOLO tracker failed", error);
+      return;
+    }
+    schedule(token, Math.max(0, DETECTION_INTERVAL_MS - (performance.now() - started)));
+  }
+
+  function start({ demo = false } = {}) {
+    if (demo) {
+      stop();
+      bridge.setTrackerState("Local demo tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
+      return;
+    }
+    if (running) return;
+    running = true;
+    const token = ++runToken;
+    bridge.setTrackerState("YOLO11n loading…", "Loading the lightweight on-device player tracker.");
+    detect(token);
+  }
+
+  function stop() {
+    running = false;
+    runToken += 1;
+  }
+
+  window.addEventListener("bloom-live-feed", (event) => {
+    if (event.detail?.active) start(event.detail);
+    else stop();
+  });
+  window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11n", input_size: INPUT_SIZE }) });
+  if (bridge.isFeedActive()) start({ demo: bridge.isDemo() });
 </script>
 </body>
 </html>

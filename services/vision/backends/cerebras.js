@@ -85,34 +85,6 @@ const LIVE_EVENT_SCHEMA = {
     situation: { type: "string" },
     visible_facts: { type: "array", items: { type: "string" } },
     changes_across_frames: { type: "array", items: { type: "string" } },
-    visual_detections: {
-      type: "array",
-      maxItems: 12,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          label: { type: "string" },
-          kind: { type: "string", enum: ["athlete", "player", "fighter", "golfer", "referee", "ball", "other"] },
-          // Coordinates are normalized against the newest source frame, not
-          // the camera viewport. This makes them safe to remap over a
-          // cover-cropped WebRTC <video> element in the browser.
-          bbox: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              x: { type: "integer", minimum: 0, maximum: 1000 },
-              y: { type: "integer", minimum: 0, maximum: 1000 },
-              width: { type: "integer", minimum: 1, maximum: 1000 },
-              height: { type: "integer", minimum: 1, maximum: 1000 },
-            },
-            required: ["x", "y", "width", "height"],
-          },
-          confidence: { type: "number", minimum: 0, maximum: 1 },
-        },
-        required: ["label", "kind", "bbox", "confidence"],
-      },
-    },
     confidence: { type: "number", minimum: 0, maximum: 1 },
   },
   required: [
@@ -134,7 +106,6 @@ const LIVE_EVENT_SCHEMA = {
     "situation",
     "visible_facts",
     "changes_across_frames",
-    "visual_detections",
     "confidence",
   ],
 };
@@ -168,7 +139,6 @@ const MULTISPORT_PROMPT = [
   "For basketball capture quarter, clock, score, and possession when visible.",
   "For golf capture tournament, round, current hole, player names, visible ranks, and to-par or round scores from the leaderboard; participant_a and participant_b may be the two most relevant visible players, while score_display preserves golf notation.",
   "For baseball, hockey, tennis, cricket, motorsport, esports, and other sports capture the persistent score or leaderboard plus the sport-specific phase, clock, inning, set, lap, map, or situation that is visibly supported.",
-  "On the newest frame only, locate clearly visible on-screen athletes, players, fighters, golfers, referees, or the ball for the video overlay. Return at most 12 visual_detections using x, y, width, and height as integers normalized from 0 to 1000 against the full newest image (top-left origin). Do not include scoreboard graphics, text, advertisements, or tiny/uncertain figures. Use a stable generic label such as PLAYER when identity is not visibly supported. Return an empty visual_detections array if there are no reliable subjects.",
   "Never invent players, injuries, cards, downs, rounds, scores, or events.",
   "For fields that do not apply, use UNKNOWN, an empty string, an empty participants array, or zero numeric scores and lower confidence accordingly.",
 ].join(" ");
