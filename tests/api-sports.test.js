@@ -111,7 +111,9 @@ test("POST /api/frames accepts an optional sport and stays backward compatible",
     };
 
     const noSport = await submit(frame);
-    assert.equal(noSport.status, 201);
+    // Accepted frames enter the quota-aware analyzer batch: 202 while queued,
+    // 201 once a batch is analyzed. Both mean "ingested".
+    assert.ok([201, 202].includes(noSport.status), `got ${noSport.status}`);
     const noSportBody = await noSport.json();
     assert.equal(noSportBody.sport, "nba", "omitted sport defaults to nba");
     assert.equal(noSportBody.selection.accepted, true);
