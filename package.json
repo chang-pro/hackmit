@@ -6,6 +6,7 @@
   "description": "Camera-to-insight pipeline with capture, scoreboard extraction, state reconciliation, probability, and market comparison",
   "scripts": {
     "start": "node services/api/server.js",
+    "start:fixture": "VISION_BACKEND=fixture ALLOW_FIXTURE_LIVE=true node services/api/server.js",
     "test": "node --test 'tests/*.test.js'",
     "evaluate": "node scripts/evaluate-fixtures.js"
   }

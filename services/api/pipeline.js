@@ -1,38 +1,70 @@
-// Pipeline orchestration: frame -> parsed state -> canonical state ->
-// probability -> market -> comparison -> gated presentation (README §7.8–§8).
+// Camera-to-insight orchestration. A live frame is parsed by a configured
+// structured-vision backend, normalized, reconciled over time, converted into
+// a win probability, and compared with a market when a matching contract is
+// available.
 
-import { parseFrame } from "../vision/index.js";
+import { extractScoreboard, liveBackendName, parseFrame } from "../vision/index.js";
 import { resolveEvent } from "../vision/resolver.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { estimate } from "../probability/index.js";
 import { mockAdapter } from "../market/mock-adapter.js";
+import { analyzeGameContext } from "../analytics/cerebras.js";
 
 const MIN_STATE_CONFIDENCE = 0.8;
 const MAX_MARKET_AGE_MS = 30_000;
 
-const reconciler = new Reconciler();
+const fixtureReconciler = new Reconciler();
+const liveReconciler = new Reconciler();
 
-// ── Extraction seam ─────────────────────────────────────────────────────────
-// Slice 2 (real OCR, in progress on a parallel branch) replaces the body of
-// this function only: given a live frame it should run scoreboard detection +
-// parsing on that frame's image instead of reading the fixture. Nothing
-// outside this function changes when it lands.
-// Until then, live frames flow through the gateway/selector (Slice 4) but the
-// parsed scoreboard still comes from the committed fixture, and the returned
-// payload marks extraction as "fixture_parse" so nobody mistakes it for OCR.
-async function extractState(fixturePath, liveFrame) {
-  const { frame, parsed } = await parseFrame(fixturePath);
-  if (!liveFrame) return { frame, parsed, extraction: "fixture_parse" };
-  return { frame: liveFrame, parsed, extraction: "fixture_parse" };
+function backendLabel(backend) {
+  return typeof backend === "string" ? backend : backend?.name ?? "custom";
 }
 
-export async function runPipeline(fixturePath, adapter = mockAdapter, liveFrame = null) {
-  const { frame, parsed, extraction } = await extractState(fixturePath, liveFrame);
-  const event = resolveEvent(parsed);
-  const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
+async function marketSnapshot(adapter, eventId, outcome) {
+  try {
+    const marketId = await adapter.find_market(eventId, outcome);
+    return { snapshot: await adapter.get_market_snapshot(marketId), error: null };
+  } catch (err) {
+    return { snapshot: null, error: err.message };
+  }
+}
 
-  if (!state) {
+async function buildInsight({
+  frame,
+  parsed,
+  extraction,
+  source,
+  adapter,
+  reconciler,
+  sessionId,
+}) {
+  let event;
+  try {
+    event = resolveEvent(parsed, frame.captured_at);
+  } catch (err) {
     return {
+      session_id: sessionId,
+      source,
+      extraction,
+      frame: publicFrame(frame),
+      parsed_scoreboard: parsed,
+      presentation: {
+        status: "unresolved_event",
+        short_text: "I can read part of the scoreboard, but I cannot identify the NBA matchup yet.",
+        reason: err.message,
+      },
+    };
+  }
+
+  const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
+  if (!state || state.event_id !== event.event_id) {
+    return {
+      session_id: sessionId,
+      source,
+      extraction,
+      frame: publicFrame(frame),
+      event,
+      parsed_scoreboard: parsed,
       presentation: {
         status: "no_state",
         short_text: "I can see the game, but the scoreboard is not clear enough yet.",
@@ -41,55 +73,89 @@ export async function runPipeline(fixturePath, adapter = mockAdapter, liveFrame 
     };
   }
 
-  // Slice 1 convention: estimate the away team's win probability (matches the
-  // demo fixture's BOS outcome). The estimated outcome becomes configurable
-  // when the UX layer lands.
   const teamId = state.away_team_id;
   const est = estimate(state, teamId);
+  const { snapshot, error: marketError } = await marketSnapshot(adapter, event.event_id, est.outcome);
 
-  const marketId = adapter.find_market(event.event_id, est.outcome);
-  const snapshot = adapter.get_market_snapshot(marketId);
+  let market = null;
+  let comparison = null;
+  if (snapshot) {
+    const gapPts = Number(((est.probability - snapshot.display_probability) * 100).toFixed(1));
+    const freshnessMs = Date.now() - Date.parse(snapshot.provider_timestamp);
+    market = {
+      provider: snapshot.provider,
+      market_id: snapshot.market_id,
+      probability: snapshot.display_probability,
+      is_mock: snapshot.is_mock,
+      provider_timestamp: snapshot.provider_timestamp,
+    };
+    comparison = {
+      event_id: event.event_id,
+      outcome: est.outcome,
+      model_probability: est.probability,
+      market_probability: snapshot.display_probability,
+      gap_percentage_points: gapPts,
+      direction: gapPts > 0 ? "model_higher" : gapPts < 0 ? "model_lower" : "aligned",
+      state_confidence: state.confidence,
+      freshness_ms: freshnessMs,
+      generated_at: new Date().toISOString(),
+    };
+  }
 
-  const gapPts = Number(((est.probability - snapshot.display_probability) * 100).toFixed(1));
-  const freshnessMs = Date.now() - Date.parse(snapshot.provider_timestamp);
+  let analytics = null;
+  let analyticsError = null;
+  if (extraction === "cerebras") {
+    try {
+      analytics = await analyzeGameContext({
+        event,
+        game_state: {
+          away_team_id: state.away_team_id,
+          home_team_id: state.home_team_id,
+          away_score: state.away_score,
+          home_score: state.home_score,
+          period: state.period,
+          clock_seconds: state.clock_seconds,
+        },
+        baseline_outcome: est.outcome,
+        baseline_probability: est.probability,
+        state_confidence: state.confidence,
+        market,
+        comparison,
+      });
+    } catch (err) {
+      analyticsError = err.message;
+    }
+  }
 
-  const comparison = {
-    event_id: event.event_id,
-    outcome: est.outcome,
-    model_probability: est.probability,
-    market_probability: snapshot.display_probability,
-    gap_percentage_points: gapPts,
-    direction: gapPts > 0 ? "model_higher" : gapPts < 0 ? "model_lower" : "aligned",
-    state_confidence: state.confidence,
-    freshness_ms: freshnessMs,
-    generated_at: new Date().toISOString(),
-  };
-
-  // Confidence and freshness gate (README §7.9): decline to present a precise
-  // comparison when inputs are unreliable.
+  const team = teamId.slice(4).toUpperCase();
   let status = "ready";
   let shortText;
   if (state.confidence < MIN_STATE_CONFIDENCE) {
     status = "low_confidence";
     shortText = "I can see the game, but the scoreboard is not clear enough yet.";
-  } else if (freshnessMs > MAX_MARKET_AGE_MS) {
+  } else if (!comparison) {
+    status = "market_unavailable";
+    shortText = `${team} model estimate ${Math.round(est.probability * 100)}%. No matching market is available.`;
+  } else if (comparison.freshness_ms > MAX_MARKET_AGE_MS) {
     status = "stale_market";
     shortText = "Game identified. Current market data is stale, so no comparison is available.";
   } else {
-    const team = teamId.slice(4).toUpperCase();
-    const dir = comparison.direction === "model_higher" ? "higher" : "lower";
+    const direction = comparison.direction === "model_higher" ? "higher" : "lower";
     shortText = `${team} ${Math.round(est.probability * 100)}%. Market ${Math.round(
-      snapshot.display_probability * 100
-    )}%. Model is ${Math.abs(gapPts)} points ${dir}.`;
+      comparison.market_probability * 100
+    )}%. Model is ${Math.abs(comparison.gap_percentage_points)} points ${direction}.`;
   }
 
-  // One complete update through the system (README §8).
   return {
-    session_id: "session_slice1",
-    source: liveFrame ? "live" : "fixture",
-    extraction, // "fixture_parse" until Slice 2's real OCR replaces the seam
+    session_id: sessionId,
+    source,
+    extraction,
+    frame: publicFrame(frame),
     event,
+    parsed_scoreboard: parsed,
     state: {
+      away_team_id: state.away_team_id,
+      home_team_id: state.home_team_id,
       away_score: state.away_score,
       home_score: state.home_score,
       period: state.period,
@@ -99,24 +165,84 @@ export async function runPipeline(fixturePath, adapter = mockAdapter, liveFrame 
       accepted,
       rejection_reason: reason,
     },
-    estimate: { outcome: est.outcome, probability: est.probability, model_version: est.model_version },
-    market: {
-      provider: snapshot.provider,
-      market_id: snapshot.market_id,
-      probability: snapshot.display_probability,
-      is_mock: snapshot.is_mock,
-      provider_timestamp: snapshot.provider_timestamp,
+    estimate: {
+      outcome: est.outcome,
+      probability: est.probability,
+      model_version: est.model_version,
+      confidence: est.confidence,
     },
+    analytics,
+    market,
     comparison,
+    diagnostics: { market_error: marketError, analytics_error: analyticsError },
     presentation: {
       status,
       short_text: shortText,
+      analyst_text: analytics?.summary ?? null,
       spoken_text:
-        status === "ready"
-          ? `${teamId.slice(4)}'s estimated win probability is ${Math.round(
+        comparison && status === "ready"
+          ? `${team}'s estimated win probability is ${Math.round(
               est.probability * 100
-            )} percent. The market is at ${Math.round(snapshot.display_probability * 100)} percent.`
+            )} percent. The market is at ${Math.round(comparison.market_probability * 100)} percent.`
           : shortText,
     },
   };
+}
+
+function publicFrame(frame) {
+  const { image_base64: _image, fixture_path: _fixture, ...safe } = frame;
+  return safe;
+}
+
+export async function runFramePipeline(
+  frame,
+  {
+    adapter = mockAdapter,
+    visionBackend = liveBackendName(),
+    reconciler = liveReconciler,
+    sessionId = "session_phone",
+  } = {}
+) {
+  const parsed = await extractScoreboard(frame, visionBackend);
+  return buildInsight({
+    frame,
+    parsed,
+    extraction: backendLabel(visionBackend),
+    source: "live",
+    adapter,
+    reconciler,
+    sessionId,
+  });
+}
+
+// Backward-compatible fixture entry point used by the deterministic demo and
+// existing tests. Passing liveFrame delegates to the real camera pipeline.
+export async function runPipeline(
+  fixturePath,
+  adapter = mockAdapter,
+  liveFrame = null,
+  options = {}
+) {
+  if (liveFrame) {
+    return runFramePipeline(liveFrame, {
+      adapter,
+      visionBackend: options.visionBackend ?? liveBackendName(),
+      reconciler: options.reconciler ?? liveReconciler,
+      sessionId: options.sessionId ?? "session_phone",
+    });
+  }
+  const { frame, parsed } = await parseFrame(fixturePath);
+  return buildInsight({
+    frame,
+    parsed,
+    extraction: "fixture",
+    source: "fixture",
+    adapter,
+    reconciler: options.reconciler ?? fixtureReconciler,
+    sessionId: options.sessionId ?? "session_fixture",
+  });
+}
+
+export function resetLivePipeline() {
+  liveReconciler.reset();
 }

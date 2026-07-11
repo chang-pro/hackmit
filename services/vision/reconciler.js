@@ -12,6 +12,10 @@ export class Reconciler {
     this.state = null;
   }
 
+  reset() {
+    this.state = null;
+  }
+
   // Returns { accepted, state, reason } — state is always the canonical
   // (possibly retained) state, never null once one observation is accepted.
   observe(event, parsed, frame) {
