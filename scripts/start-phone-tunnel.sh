@@ -5,13 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PORT="${PORT:-3000}"
-CLOUDFLARED_BIN="${CLOUDFLARED_BIN:-$(command -v cloudflared || true)}"
 SERVER_PID=""
-
-if [[ -z "$CLOUDFLARED_BIN" ]]; then
-  echo "cloudflared is not installed. Install it with: brew install cloudflared" >&2
-  exit 1
-fi
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]]; then
@@ -45,10 +39,11 @@ echo
 echo "Creating public HTTPS phone/glasses endpoint..."
 echo "Open the printed URL with /capture on the desktop, then copy its generated phone pairing link."
 echo "Continuous camera video is direct WebRTC between the paired browsers."
-echo "This tunnel carries SDP/ICE signaling and user-gated analysis snapshots only."
+echo "This public tunnel carries SDP/ICE signaling and user-gated analysis snapshots only."
 echo
 
-"$CLOUDFLARED_BIN" tunnel \
-  --no-autoupdate \
-  --protocol http2 \
-  --url "http://127.0.0.1:${PORT}"
+if command -v lt >/dev/null 2>&1; then
+  lt --port "$PORT"
+else
+  npx --yes localtunnel --port "$PORT"
+fi

@@ -46,19 +46,18 @@ Continuous **Start live feed** uses `getUserMedia`, which mobile browsers normal
 Campus networks commonly prevent two wireless clients from reaching each other, so a laptop LAN address such as `http://10.x.x.x:3000` may be unreachable from the phone. Use the outbound HTTPS tunnel instead:
 
 ```bash
-brew install cloudflared
 npm run phone:tunnel
 ```
 
 The command starts the analyzer and prints a random public URL similar to:
 
 ```text
-https://random-words.trycloudflare.com
+https://random-name.loca.lt
 ```
 
-Open `https://random-words.trycloudflare.com/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The Quick Tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers.
+Open `https://random-name.loca.lt/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider.
 
-Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
+LocalTunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
 ## Plumbing-only test without a model key
 
@@ -162,11 +161,11 @@ Other endpoints:
 
 ## Frame cadence
 
-The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the Quick Tunnel. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
+The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the public HTTP tunnel. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
 
-The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Cloudflare Realtime TURN: set `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` on the server. For each ten-minute pairing session, the server exchanges that long-lived key for short-lived browser ICE credentials and returns them only to callers holding that session id. Do not put the TURN key or API token in frontend source code.
+The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Metered Open Relay: set `METERED_TURN_APP_NAME` and `METERED_TURN_API_KEY` on the server. For each ten-minute pairing session, the server retrieves the provider-issued browser ICE configuration and returns it only to callers holding that session id. Do not put the API key in frontend source code.
 
-An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. TURN relays encrypted WebRTC packets; it is separate from the Quick Tunnel, which continues to carry only pairing/signaling and gated analysis snapshots.
+An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. When a TURN URL is configured, BloomKnights uses relay-only WebRTC so client-isolated Wi-Fi does not waste time attempting a direct media candidate. TURN is independent from the public HTTP tunnel, which carries only pairing/signaling and gated analysis snapshots.
 
 ## Cerebras models
 

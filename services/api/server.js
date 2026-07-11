@@ -114,35 +114,29 @@ function configuredIceServers() {
   return DEFAULT_ICE_SERVERS;
 }
 
-function cloudflareTurnConfiguration() {
-  const keyId = process.env.CLOUDFLARE_TURN_KEY_ID?.trim();
-  const apiToken = process.env.CLOUDFLARE_TURN_API_TOKEN?.trim();
-  if (!keyId || !apiToken) return null;
-  const requestedTtl = Number(process.env.CLOUDFLARE_TURN_TTL_SECONDS ?? 900);
-  return {
-    keyId,
-    apiToken,
-    // Keep issued browser credentials short-lived and aligned with the ten-minute pairing TTL.
-    ttlSeconds: Number.isFinite(requestedTtl) ? Math.min(3_600, Math.max(600, requestedTtl)) : 900,
-  };
+function meteredTurnConfiguration() {
+  const appName = process.env.METERED_TURN_APP_NAME?.trim();
+  const apiKey = process.env.METERED_TURN_API_KEY?.trim();
+  if (!appName || !apiKey) return null;
+  if (!/^[a-z0-9-]+$/i.test(appName)) return null;
+  return { appName, apiKey };
 }
 
-async function createCloudflareTurnIceServers(configuration) {
+async function createMeteredTurnIceServers(configuration) {
   const response = await fetch(
-    `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(configuration.keyId)}/credentials/generate-ice-servers`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${configuration.apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ ttl: configuration.ttlSeconds }),
-    }
+    `https://${configuration.appName}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(configuration.apiKey)}`
   );
-  if (!response.ok) throw new Error(`Cloudflare TURN credentials request failed (${response.status})`);
+  if (!response.ok) throw new Error(`Metered TURN credentials request failed (${response.status})`);
   const body = await response.json();
-  if (!isIceServerList(body?.iceServers)) throw new Error("Cloudflare TURN returned an invalid ICE server list");
-  return body.iceServers;
+  if (!isIceServerList(body)) throw new Error("Metered TURN returned an invalid ICE server list");
+  return body;
+}
+
+function hasTurnServer(iceServers) {
+  return iceServers.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((url) => /^turns?:/i.test(url));
+  });
 }
 
 async function sendHtml(res, filename, appDir = "demo-web") {
@@ -531,12 +525,18 @@ export function createBloomServer({
     }
     try {
       if (!session.ice_servers) {
-        const turnConfiguration = cloudflareTurnConfiguration();
+        const turnConfiguration = meteredTurnConfiguration();
         session.ice_servers = turnConfiguration
-          ? await createCloudflareTurnIceServers(turnConfiguration)
+          ? await createMeteredTurnIceServers(turnConfiguration)
           : configuredIceServers();
       }
-      sendJson(res, 200, { ice_servers: session.ice_servers });
+      sendJson(res, 200, {
+        ice_servers: session.ice_servers,
+        // A relay-only policy makes a configured TURN service the dependable
+        // path on client-isolated campus networks instead of waiting on a
+        // direct ICE candidate that can never succeed.
+        ice_transport_policy: hasTurnServer(session.ice_servers) ? "relay" : "all",
+      });
     } catch (err) {
       sendJson(res, 502, { error: `Unable to configure WebRTC relay: ${err.message}` });
     }
