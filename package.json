@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Slices 1-2: end-to-end skeleton with pluggable scoreboard extraction — frame -> parsed state -> probability -> mock market -> comparison",
+  "description": "Camera-to-insight pipeline with capture, scoreboard extraction, state reconciliation, probability, and market comparison",
   "scripts": {
     "start": "node services/api/server.js",
     "test": "node --test 'tests/*.test.js'",

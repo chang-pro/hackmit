@@ -31,6 +31,24 @@ test("fixture frame produces a complete, gated comparison", async () => {
   assert.match(out.presentation.short_text, /BOS \d+%\. Market \d+%\./);
 });
 
+test("a live frame flows through the extraction seam and is labeled honestly", async () => {
+  const liveFrame = {
+    frame_id: "frame_000042",
+    captured_at: new Date().toISOString(),
+    source: "webcam",
+    image_uri: "memory://capture/frame_000042",
+    width: 1280,
+    height: 720,
+  };
+  const out = await runPipeline(FIXTURE, undefined, liveFrame);
+  assert.equal(out.source, "live");
+  assert.equal(out.extraction, "fixture_parse", "no real OCR claimed before Slice 2");
+  assert.equal(out.state.observed_at, liveFrame.captured_at);
+
+  const fixtureOut = await runPipeline(FIXTURE);
+  assert.equal(fixtureOut.source, "fixture");
+});
+
 test("market adapter requires a unique contract match", () => {
   assert.throws(() => mockAdapter.find_market("nba_2026_07_11_bos_nyk", "nba_lal_wins"));
   const id = mockAdapter.find_market("nba_2026_07_11_bos_nyk", "nba_bos_wins");
