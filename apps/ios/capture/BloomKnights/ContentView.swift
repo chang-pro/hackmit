@@ -68,6 +68,12 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                         .foregroundColor(streamer.uploadStatus.hasPrefix("Uploaded") ? .green : .orange)
                 }
+                if !streamer.uplinkStatus.isEmpty {
+                    Text(streamer.uplinkStatus)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(streamer.uplinkStatus.contains("fail 0") ? .green : .orange)
+                }
                 if !streamer.lastError.isEmpty {
                     Text(streamer.lastError)
                         .font(.caption)
