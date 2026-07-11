@@ -50,23 +50,23 @@ final class FrameDecoder: @unchecked Sendable {
         guard queued < maxQueued else { waitForKeyframe = true; lock.unlock(); return }
         queued += 1
         lock.unlock()
-        work.async { [weak self] in
-            self?.decode(sb)
-            self?.finished()
-        }
+        work.async { [weak self] in self?.decode(sb) }   // decode() owns the decrement
     }
 
     private func finished() { lock.lock(); queued = max(0, queued - 1); lock.unlock() }
 
+    // decode() must decrement `queued` EXACTLY once — on any early return, and
+    // otherwise in the async decode callback (so the cap reflects frames still
+    // in flight, not just submitted). Fixes Codex's queue-undercount finding.
     private func decode(_ sb: CMSampleBuffer) {
-        guard let fmt = CMSampleBufferGetFormatDescription(sb) else { return }
+        guard let fmt = CMSampleBufferGetFormatDescription(sb) else { finished(); return }
         lock.lock()
-        guard running else { lock.unlock(); return }
+        guard running else { lock.unlock(); finished(); return }
         if let s = session, !VTDecompressionSessionCanAcceptFormatDescription(s, formatDescription: fmt) {
             VTDecompressionSessionInvalidate(s); session = nil
         }
         if session == nil {
-            guard Self.isKeyframe(sb) else { lock.unlock(); return }
+            guard Self.isKeyframe(sb) else { lock.unlock(); finished(); return }
             // NV12 is WebRTC's native camera format and half the memory of BGRA.
             let attrs: [CFString: Any] = [
                 kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
@@ -80,15 +80,17 @@ final class FrameDecoder: @unchecked Sendable {
                 outputCallback: nil,
                 decompressionSessionOut: &made
             )
-            guard status == noErr, let made else { lock.unlock(); return }
+            guard status == noErr, let made else { lock.unlock(); finished(); return }
             session = made
         }
-        guard let s = session else { lock.unlock(); return }
+        guard let s = session else { lock.unlock(); finished(); return }
         lock.unlock()
-        VTDecompressionSessionDecodeFrame(s, sampleBuffer: sb, flags: [], infoFlagsOut: nil) {
+        let submit = VTDecompressionSessionDecodeFrame(s, sampleBuffer: sb, flags: [], infoFlagsOut: nil) {
             [weak self] status, _, imageBuffer, _, _ in
-            guard status == noErr, let imageBuffer, let self else { return }
-            self.onFrame?(imageBuffer)
+            if status == noErr, let imageBuffer { self?.onFrame?(imageBuffer) }
+            self?.finished()   // decode truly done → free a queue slot
         }
+        // If the submit itself failed, the callback above never fires.
+        if submit != noErr { finished() }
     }
 }
