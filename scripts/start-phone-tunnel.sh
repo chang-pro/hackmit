@@ -40,10 +40,9 @@ echo "Creating public HTTPS phone/glasses endpoint..."
 echo "Open the printed URL with /capture on the desktop, then copy its generated phone pairing link."
 echo "Continuous camera video is direct WebRTC between the paired browsers."
 echo "This public tunnel carries SDP/ICE signaling and user-gated analysis snapshots only."
+echo "The public page opens directly; there is no LocalTunnel password/interstitial page."
 echo
 
-if command -v lt >/dev/null 2>&1; then
-  lt --port "$PORT"
-else
-  npx --yes localtunnel --port "$PORT"
-fi
+# Tunnelmole gives us a direct public HTTPS endpoint without LocalTunnel's
+# anti-abuse form, which otherwise blocks a phone user before the pairing page.
+npx --yes tunnelmole "$PORT"

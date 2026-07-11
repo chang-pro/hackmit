@@ -52,10 +52,10 @@ npm run phone:tunnel
 The command starts the analyzer and prints a random public URL similar to:
 
 ```text
-https://random-name.loca.lt
+https://random-name.tunnelmole.net
 ```
 
-Open `https://random-name.loca.lt/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider.
+Open `https://random-name.tunnelmole.net/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider. Unlike the previous LocalTunnel path, the public URL opens directly—there is no IP/password interstitial for the camera user.
 
 LocalTunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
