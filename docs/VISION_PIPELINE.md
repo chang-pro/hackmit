@@ -177,6 +177,8 @@ bloomDemo.start()
 
 It renders a local animated synthetic broadcast through a canvas `MediaStream` and activates the same connected-video UI state as a real camera. Stop it with `bloomDemo.stop()`. It never sends a frame to the backend; model analysis remains off unless you explicitly enable it.
 
+For a shareable UI-review link, open `/capture?demo=1` instead.
+
 ## Cerebras models
 
 The live provider is intentionally simple:

@@ -77,14 +77,57 @@
   .analyze { padding: .75rem 1rem; border-radius: 999px; color: var(--ink); background: linear-gradient(135deg, rgba(255,255,255,.75), rgba(255,255,255,.25)) padding-box, linear-gradient(135deg, rgba(255,151,204,.8), rgba(121,200,255,.8)) border-box; box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 11px 25px rgba(91,113,191,.13); }
   .analyze.active { color: #1b6856; background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(202,255,239,.32)) padding-box, linear-gradient(135deg, #78f3d1, #a7dcff, #d6caff) border-box; }
   .help { background: rgba(237,241,255,.46); }.help-card { border-color: rgba(255,255,255,.82); background: rgba(255,255,255,.76); box-shadow: 0 30px 90px rgba(77,94,150,.22); }.steps li + li { border-color: rgba(51,60,91,.10); }.steps li::before { border-color: rgba(93,112,170,.22); color: #16866a; background: rgba(120,243,209,.15); }.help-note { border-color: rgba(51,60,91,.1); }
+  /* Active feed: a quiet theater workspace, not a full-screen HUD. */
+  .theater-shell { position: absolute; z-index: 1; inset: 0; pointer-events: none; }
+  .theater-screen { position: absolute; inset: 0; overflow: hidden; }
+  .analysis-tiles { display: none; }
+  body.running .theater-shell { top: 1.5rem; right: calc(clamp(18rem, 25vw, 23rem) + 3rem); bottom: 1.5rem; left: 1.5rem; }
+  body.running .theater-screen { overflow: hidden; border: 1px solid rgba(255,255,255,.82); border-radius: 1.45rem; background: #101624; box-shadow: 0 24px 60px rgba(40,54,94,.20), inset 0 1px 0 rgba(255,255,255,.20); }
+  body.running #video, body.running #remotePreview { border-radius: inherit; }
+  body.running .scrim { display: none; }
+  body.running .ambient { opacity: .22; }
+  body.running .reticle, body.running .dock { display: none; }
+  body.running .analysis-tiles { position: absolute; z-index: 5; top: 1.5rem; right: 1.5rem; bottom: 1.5rem; display: grid; width: clamp(18rem, 25vw, 23rem); grid-template-rows: minmax(0, 1.35fr) auto minmax(0, .9fr); gap: .9rem; align-content: stretch; }
+  .analysis-tile { min-width: 0; border: 1px solid rgba(255,255,255,.78); border-radius: 1.2rem; background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(255,255,255,.34)); box-shadow: 0 16px 38px rgba(86,104,162,.14), inset 0 1px 0 rgba(255,255,255,.82); backdrop-filter: blur(26px) saturate(165%); -webkit-backdrop-filter: blur(26px) saturate(165%); }
+  .research-tile { display: flex; flex-direction: column; padding: 1.15rem; }
+  .tile-eyebrow { color: #66708f; font: .58rem var(--mono); letter-spacing: .15em; text-transform: uppercase; }
+  .tile-title { margin-top: .45rem; color: var(--ink); font-size: 1.04rem; font-weight: 700; letter-spacing: -.025em; }
+  .tile-note { margin: .38rem 0 0; color: var(--ink-muted); font-size: .78rem; line-height: 1.45; }
+  .research-queries { display: grid; gap: .48rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+  .research-queries li { display: grid; grid-template-columns: .5rem 1fr; gap: .52rem; align-items: start; color: #48526f; font: .7rem/1.4 var(--mono); }
+  .research-queries li::before { content: ""; width: .4rem; height: .4rem; margin-top: .28rem; border-radius: 50%; background: linear-gradient(135deg, #ff8fc4, #79c8ff); box-shadow: 0 0 0 3px rgba(148,173,255,.12); }
+  .control-tile { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 1.05rem; }
+  .control-tile .tile-title { margin-top: .28rem; font-size: .92rem; }.control-tile .tile-note { max-width: 18ch; font-size: .71rem; }
+  .control-tile .analyze { flex: none; padding: .7rem .9rem; }
+  body.running .readout { position: static; display: none; width: auto; margin: 0; padding: 1.05rem; border-radius: 1.2rem; opacity: 1; transform: none; }
+  body.running.has-read .readout { display: block; }
+  body.running .readout .tile-eyebrow { margin-bottom: .45rem; }
+  body.running .readout .ro-game { font-size: .62rem; }
+  body.running .readout .ro-prob { font-size: clamp(2.6rem, 4.2vw, 3.35rem); }
+  body.running .readout .ro-say { font-size: .78rem; }
+  @media (max-width: 900px) {
+    body.running .theater-shell { top: 1rem; right: 1rem; bottom: 43vh; left: 1rem; }
+    body.running .analysis-tiles { top: auto; right: 1rem; bottom: 1rem; left: 1rem; width: auto; grid-template-columns: 1.2fr 1fr; grid-template-rows: minmax(0, 1fr); gap: .7rem; }
+    body.running .readout { display: none !important; }
+    .research-tile { padding: .9rem; }.control-tile { padding: .9rem; }
+  }
+  @media (max-width: 560px) {
+    body.running .theater-shell { bottom: 48vh; }
+    body.running .analysis-tiles { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+    .research-queries { grid-template-columns: 1fr 1fr; }.research-queries li { font-size: .62rem; }
+  }
   @media (max-width: 640px) { .dock { bottom: max(.85rem, env(safe-area-inset-bottom)); }.connect { min-width: 9.75rem; } }
   @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
 </style>
 </head>
 <body>
 <div class="stage">
-  <video id="video" autoplay playsinline muted></video>
-  <video id="remotePreview" autoplay playsinline muted></video>
+  <div class="theater-shell">
+    <div class="theater-screen">
+      <video id="video" autoplay playsinline muted></video>
+      <video id="remotePreview" autoplay playsinline muted></video>
+    </div>
+  </div>
   <div class="scrim"></div>
   <div class="ambient" aria-hidden="true"><span></span><span></span><span></span></div>
 
@@ -107,17 +150,35 @@
       </div>
     </div>
 
-    <div class="readout glass-card" id="readout" aria-live="polite">
-      <div class="ro-game" id="roGame">—</div>
-      <div class="ro-prob" id="roModel">—</div>
-      <div class="ro-cap">Model win probability</div>
-      <div class="ro-cmp"><span class="mk" id="roMarket">MKT —</span><span class="gp" id="roGap">—</span></div>
-      <div class="ro-say" id="roSay">Reading the scoreboard…</div>
-      <button class="ro-speak" id="speak">🔊 Speak</button>
-    </div>
+    <aside class="analysis-tiles" aria-label="Analysis workspace">
+      <section class="analysis-tile research-tile">
+        <div class="tile-eyebrow">Research plan</div>
+        <div class="tile-title" id="researchStatus">Awaiting visible event state</div>
+        <p class="tile-note">These are queued investigation paths—not completed searches.</p>
+        <ul class="research-queries" id="researchQueries"></ul>
+      </section>
+
+      <section class="analysis-tile control-tile">
+        <div>
+          <div class="tile-eyebrow">Vision analysis</div>
+          <div class="tile-title">Camera connected</div>
+          <p class="tile-note">Enable only when you want to spend model requests.</p>
+        </div>
+        <button class="analyze" id="analyze" hidden>Analyze</button>
+      </section>
+
+      <section class="readout analysis-tile" id="readout" aria-live="polite">
+        <div class="tile-eyebrow">Model probability</div>
+        <div class="ro-game" id="roGame">—</div>
+        <div class="ro-prob" id="roModel">—</div>
+        <div class="ro-cap">Model win probability</div>
+        <div class="ro-cmp"><span class="mk" id="roMarket">MKT —</span><span class="gp" id="roGap">—</span></div>
+        <div class="ro-say" id="roSay">Reading the scoreboard…</div>
+        <button class="ro-speak" id="speak">🔊 Speak</button>
+      </section>
+    </aside>
 
     <footer class="dock">
-      <button class="analyze" id="analyze" hidden>Analyze</button>
       <button class="connect" id="toggle">New pairing</button>
       <span class="stats" id="stats" aria-hidden="true"></span>
     </footer>
@@ -195,6 +256,7 @@ function setRemoteFeedUI(active) {
     $("idleHint").textContent = "Direct camera connection established. Analysis remains off until you choose it.";
     analyzeButton.hidden = false;
     updateAnalyzeButton();
+    renderResearchPlan();
     return;
   }
   document.body.classList.remove("running", "remote-feed");
@@ -203,6 +265,35 @@ function setRemoteFeedUI(active) {
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
   setStatusPill("idle", "waiting for phone");
+}
+
+function renderResearchPlan(insight = null) {
+  const observation = insight?.observation;
+  const analysis = insight?.analysis;
+  const status = $("researchStatus");
+  const list = $("researchQueries");
+  const queries = observation
+    ? [
+        `Find current prediction market · ${observation.event_name || "recognized event"}`,
+        `Verify live score · ${[observation.score_display, observation.phase, observation.clock].filter(Boolean).join(" ") || "state pending"}`,
+        `Check event context · ${observation.competition || observation.sport || "sport pending"}`,
+        ...(analysis?.primary_market_question ? [`Compare model question · ${analysis.primary_market_question}`] : []),
+      ]
+    : [
+        "Identify the broadcast event and participants",
+        "Locate the matching prediction-market contract",
+        "Check official score, clock, and freshness",
+      ];
+  status.textContent = observation
+    ? "Research plan from visible state"
+    : remoteAnalysisEnabled
+      ? "Collecting visual context"
+      : "Awaiting visible event state";
+  list.replaceChildren(...queries.map((query) => {
+    const item = document.createElement("li");
+    item.textContent = query;
+    return item;
+  }));
 }
 
 function paintDemoBroadcast(context, width, height, now) {
@@ -425,6 +516,7 @@ function renderInsight(insight) {
   const observation = insight.observation;
   const analysis = insight.analysis;
   const presentation = insight.presentation || {};
+  renderResearchPlan(insight);
   document.body.classList.add("has-read");
   if (observation.sport) {
     document.body.dataset.detectedSport = SPORT_LABEL[observation.sport] || observation.sport.toUpperCase();
@@ -473,6 +565,7 @@ analyzeButton.addEventListener("click", async () => {
     const data = await api(enable ? "/api/analysis/start" : "/api/analysis/stop", { method: "POST" });
     remoteAnalysisEnabled = data.analysis_enabled === true;
     updateAnalyzeButton();
+    renderResearchPlan();
     setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : "WebRTC live");
   } catch {
     setStatusPill("error", "analysis error");
@@ -493,6 +586,8 @@ window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch((
 window.bloomDemo = Object.freeze({ start: startDemoFeed, stop: () => { stopDemoFeed(); return "BloomKnights local demo stream stopped."; } });
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
 $("helpNote").textContent = NOTE;
+renderResearchPlan();
+if (new URLSearchParams(location.search).get("demo") === "1") setTimeout(startDemoFeed, 0);
 setInterval(refreshAnalysis, INSIGHT_POLL_MS);
 setInterval(refreshVideoStats, INSIGHT_POLL_MS);
 createPairing().catch(() => setStatusPill("error", "pairing error"));
