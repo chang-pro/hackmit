@@ -221,7 +221,8 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
 
 export function analysisFromDemoIntelligence(intelligence, modelAnalysis = null) {
   if (!intelligence) return modelAnalysis;
-  if (modelAnalysis && intelligence.mode === "illustrative_sport_template") {
+  if (intelligence.mode === "illustrative_sport_template") {
+    if (!modelAnalysis) return null;
     return {
       ...modelAnalysis,
       risk_note: [modelAnalysis.risk_note, intelligence.disclosure].filter(Boolean).join(" "),
