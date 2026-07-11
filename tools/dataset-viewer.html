@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BloomKnights Dataset Viewer</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel2: #1d212b;
+    --border: #2a2f3a;
+    --text: #d7dae0;
+    --muted: #8a92a0;
+    --accent: #5b9dd9;
+    --warn: #e0b341;
+    --bad: #e06060;
+    --good: #62c48c;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: .3px; }
+  header h1 span { color: var(--accent); }
+  .ctl { display: flex; align-items: center; gap: 6px; }
+  .ctl label { color: var(--muted); font-size: 12px; }
+  input[type="number"] {
+    width: 64px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px; padding: 4px 6px; font: inherit;
+  }
+  select {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px; padding: 4px 6px; font: inherit;
+  }
+  button, .filebtn {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: 5px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover, .filebtn:hover { border-color: var(--accent); }
+  button.primary { background: #24405c; border-color: #33587c; }
+  button.danger  { border-color: #6b3434; }
+  #dirInput { display: none; }
+  .stats { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .stats b { color: var(--text); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* left: pair list */
+  #list {
+    width: 260px; overflow-y: auto; background: var(--panel);
+    border-right: 1px solid var(--border); flex-shrink: 0;
+  }
+  .row {
+    padding: 6px 10px; cursor: pointer; font-family: var(--mono); font-size: 12px;
+    border-bottom: 1px solid #14171d; display: flex; gap: 6px; align-items: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row:hover { background: var(--panel2); }
+  .row.active { background: #223146; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--good); }
+  .row.flagged  .dot { background: var(--warn); }
+  .row.bad      .dot { background: var(--bad); }
+  .row.unlabeled .dot { background: var(--muted); }
+  .row .name { overflow: hidden; text-overflow: ellipsis; }
+
+  /* center: image */
+  #viewer {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+    background: #0a0c10;
+  }
+  #imgwrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    min-height: 0; padding: 12px; position: relative;
+  }
+  #img { max-width: 100%; max-height: 100%; border: 1px solid var(--border); border-radius: 4px; }
+  #badge {
+    position: absolute; top: 20px; left: 20px; padding: 4px 10px; border-radius: 4px;
+    font-size: 12px; font-weight: 600; display: none;
+  }
+  #badge.flagged { display: block; background: rgba(224,179,65,.15); color: var(--warn); border: 1px solid var(--warn); }
+  #badge.bad     { display: block; background: rgba(224,96,96,.15);  color: var(--bad);  border: 1px solid var(--bad); }
+  #pairbar {
+    padding: 8px 16px; background: var(--panel); border-top: 1px solid var(--border);
+    display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12px;
+  }
+  #pairbar .fname { color: var(--accent); overflow: hidden; text-overflow: ellipsis; }
+  #pairbar .pos { color: var(--muted); margin-left: auto; white-space: nowrap; }
+
+  /* right: label */
+  #labelpane {
+    width: 380px; flex-shrink: 0; overflow-y: auto;
+    background: var(--panel); border-left: 1px solid var(--border); padding: 14px;
+  }
+  #labelpane h2 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin: 14px 0 6px; }
+  #labelpane h2:first-child { margin-top: 0; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 2px 10px; font-family: var(--mono); font-size: 12.5px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { word-break: break-all; }
+  .conf-low { color: var(--warn); font-weight: 700; }
+  pre {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; font: 11.5px/1.5 var(--mono); overflow-x: auto; color: #b9c2d0;
+  }
+  .empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); flex-direction: column; gap: 10px; text-align: center; padding: 30px;
+  }
+  .keys { font-size: 12px; color: var(--muted); }
+  .keys kbd {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 6px; font-family: var(--mono); font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Bloom<span>Knights</span> dataset viewer</h1>
+  <label class="filebtn" for="dirInput">Open dataset folder…</label>
+  <input type="file" id="dirInput" webkitdirectory multiple>
+  <div class="ctl">
+    <label for="thresh">conf &lt;</label>
+    <input type="number" id="thresh" min="0" max="1" step="0.05" value="0.85">
+  </div>
+  <div class="ctl">
+    <label for="filter">show</label>
+    <select id="filter">
+      <option value="all">all</option>
+      <option value="flagged">flagged</option>
+      <option value="bad">marked bad</option>
+      <option value="unlabeled">unlabeled</option>
+    </select>
+  </div>
+  <button id="markBad" class="danger">Mark bad (B)</button>
+  <button id="exportBad" class="primary">Export bad-list</button>
+  <div class="stats" id="stats">no dataset loaded</div>
+</header>
+
+<main>
+  <div id="list"></div>
+  <div id="viewer">
+    <div id="imgwrap">
+      <div class="empty" id="emptyMsg">
+        <div>Open a dataset folder (<code>DATASET_DIR</code> or one sport subfolder).<br>
+        Pairs are matched as <code>&lt;name&gt;.jpg</code> + <code>&lt;name&gt;.state.json</code>.</div>
+        <div class="keys">
+          <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> or <kbd>J</kbd>/<kbd>K</kbd> prev &middot; next &nbsp;
+          <kbd>B</kbd> toggle bad &nbsp; <kbd>F</kbd> next flagged
+        </div>
+      </div>
+      <img id="img" alt="" style="display:none">
+      <div id="badge"></div>
+    </div>
+    <div id="pairbar" style="display:none">
+      <span class="fname" id="fname"></span>
+      <span class="pos" id="pos"></span>
+    </div>
+  </div>
+  <div id="labelpane" style="display:none"></div>
+</main>
+
+<script>
+"use strict";
+
+// pair: { name, sport, imgFile, labelFile, label(parsed json)|null, minConf|null, bad }
+let pairs = [];
+let visible = [];   // indices into pairs, after filter
+let cur = -1;       // index into visible
+let objectUrl = null;
+
+const $ = (id) => document.getElementById(id);
+const threshInput = $("thresh"), filterSel = $("filter");
+
+// Required-field keys checked for the flag, per normalize.js contracts.
+const REQUIRED_CONF_KEYS = ["teams", "scores", "period", "clock"];
+
+// ---- loading -------------------------------------------------------------
+
+$("dirInput").addEventListener("change", async (e) => {
+  const files = Array.from(e.target.files);
+  const images = new Map(), labels = new Map();
+  for (const f of files) {
+    const rel = f.webkitRelativePath || f.name;
+    if (/(^|\/)(rejected)\//.test(rel)) continue; // skip already-rejected pairs
+    if (/\.(jpe?g|png|webp)$/i.test(f.name)) {
+      images.set(rel.replace(/\.(jpe?g|png|webp)$/i, ""), f);
+    } else if (/\.state\.json$/i.test(f.name)) {
+      labels.set(rel.replace(/\.state\.json$/i, ""), f);
+    }
+  }
+
+  pairs = [];
+  for (const [base, imgFile] of images) {
+    const labelFile = labels.get(base) ?? null;
+    let label = null;
+    if (labelFile) {
+      try { label = JSON.parse(await labelFile.text()); } catch { label = null; }
+    }
+    const parts = base.split("/");
+    pairs.push({
+      name: parts[parts.length - 1],
+      path: base,
+      sport: label?.sport ?? (parts.length > 1 ? parts[parts.length - 2] : "?"),
+      imgFile, labelFile, label,
+      minConf: minConfidence(label),
+      bad: false,
+    });
+  }
+  pairs.sort((a, b) => a.path.localeCompare(b.path));
+  applyFilter();
+  if (visible.length) show(0);
+  else render();
+});
+
+// Minimum confidence across state.confidence and the required per-field
+// confidences from parsed.field_confidences (v2 labels), if present.
+function minConfidence(label) {
+  if (!label) return null;
+  const vals = [];
+  if (typeof label.state?.confidence === "number") vals.push(label.state.confidence);
+  const fc = label.parsed?.field_confidences;
+  if (fc) for (const k of REQUIRED_CONF_KEYS) {
+    if (typeof fc[k] === "number") vals.push(fc[k]);
+  }
+  return vals.length ? Math.min(...vals) : null;
+}
+
+function isFlagged(p) {
+  const t = parseFloat(threshInput.value);
+  return p.minConf !== null && p.minConf < t;
+}
+
+// ---- filtering + list ------------------------------------------------------
+
+function applyFilter() {
+  const mode = filterSel.value;
+  visible = pairs
+    .map((p, i) => i)
+    .filter((i) => {
+      const p = pairs[i];
+      if (mode === "flagged") return isFlagged(p) && !p.bad;
+      if (mode === "bad") return p.bad;
+      if (mode === "unlabeled") return !p.label;
+      return true;
+    });
+  if (cur >= visible.length) cur = visible.length - 1;
+  render();
+}
+filterSel.addEventListener("change", () => { cur = visible.length ? 0 : -1; applyFilter(); if (cur === 0) show(0); });
+threshInput.addEventListener("change", applyFilter);
+
+function rowClass(p) {
+  if (p.bad) return "bad";
+  if (!p.label) return "unlabeled";
+  if (isFlagged(p)) return "flagged";
+  return "ok";
+}
+
+function render() {
+  const list = $("list");
+  list.innerHTML = "";
+  for (let vi = 0; vi < visible.length; vi++) {
+    const p = pairs[visible[vi]];
+    const div = document.createElement("div");
+    div.className = `row ${rowClass(p)}${vi === cur ? " active" : ""}`;
+    div.innerHTML = `<span class="dot"></span><span class="name">${p.name}</span>`;
+    div.addEventListener("click", () => show(vi));
+    list.appendChild(div);
+  }
+  const flagged = pairs.filter((p) => isFlagged(p) && !p.bad).length;
+  const bad = pairs.filter((p) => p.bad).length;
+  const unlabeled = pairs.filter((p) => !p.label).length;
+  $("stats").innerHTML = pairs.length
+    ? `<b>${pairs.length}</b> pairs &middot; <b style="color:var(--warn)">${flagged}</b> flagged &middot; ` +
+      `<b style="color:var(--bad)">${bad}</b> bad &middot; <b>${unlabeled}</b> unlabeled`
+    : "no dataset loaded";
+}
+
+// ---- detail view -----------------------------------------------------------
+
+function show(vi) {
+  if (vi < 0 || vi >= visible.length) return;
+  cur = vi;
+  const p = pairs[visible[vi]];
+
+  $("emptyMsg").style.display = "none";
+  const img = $("img");
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(p.imgFile);
+  img.src = objectUrl;
+  img.style.display = "block";
+
+  const badge = $("badge");
+  badge.className = p.bad ? "bad" : (isFlagged(p) ? "flagged" : "");
+  badge.textContent = p.bad ? "MARKED BAD" : (isFlagged(p) ? `LOW CONFIDENCE (${p.minConf?.toFixed(2)})` : "");
+
+  $("pairbar").style.display = "flex";
+  $("fname").textContent = p.path;
+  $("pos").textContent = `${vi + 1} / ${visible.length}`;
+
+  const pane = $("labelpane");
+  pane.style.display = "block";
+  pane.innerHTML = p.label ? labelHtml(p) : `<h2>label</h2><div class="kv"><span class="k">status</span><span class="v" style="color:var(--muted)">unlabeled (image only)</span></div>`;
+
+  render();
+  const active = document.querySelector(".row.active");
+  if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+
+function labelHtml(p) {
+  const L = p.label, st = L.state ?? {}, t = parseFloat(threshInput.value);
+  const kv = (k, v, low) =>
+    `<span class="k">${esc(k)}</span><span class="v${low ? " conf-low" : ""}">${esc(v ?? "—")}</span>`;
+
+  let html = `<h2>state (reconciled)</h2><div class="kv">`;
+  html += kv("event_id", st.event_id);
+  html += kv("away / home", `${st.away_team_id ?? "?"} ${st.away_score ?? "?"} — ${st.home_score ?? "?"} ${st.home_team_id ?? "?"}`);
+  html += kv("period", st.period);
+  html += kv("clock_seconds", st.clock_seconds);
+  html += kv("confidence", typeof st.confidence === "number" ? st.confidence.toFixed(3) : null,
+             typeof st.confidence === "number" && st.confidence < t);
+  html += `</div>`;
+
+  const fc = L.parsed?.field_confidences;
+  if (fc) {
+    html += `<h2>parsed field confidences</h2><div class="kv">`;
+    for (const [k, v] of Object.entries(fc)) {
+      const low = REQUIRED_CONF_KEYS.includes(k) && typeof v === "number" && v < t;
+      html += kv(k, typeof v === "number" ? v.toFixed(2) : v, low);
+    }
+    html += `</div>`;
+  }
+  if (L.provenance) {
+    html += `<h2>provenance</h2><div class="kv">`;
+    for (const [k, v] of Object.entries(L.provenance)) html += kv(k, JSON.stringify(v));
+    html += `</div>`;
+  }
+  html += `<h2>full label json</h2><pre>${esc(JSON.stringify(L, null, 2))}</pre>`;
+  return html;
+}
+
+// ---- bad marking + export ---------------------------------------------------
+
+function toggleBad() {
+  if (cur < 0) return;
+  const p = pairs[visible[cur]];
+  p.bad = !p.bad;
+  show(cur);
+}
+$("markBad").addEventListener("click", toggleBad);
+
+$("exportBad").addEventListener("click", () => {
+  const bad = pairs.filter((p) => p.bad).map((p) => ({
+    path: p.path,
+    image: p.imgFile.webkitRelativePath || p.imgFile.name,
+    label: p.labelFile ? (p.labelFile.webkitRelativePath || p.labelFile.name) : null,
+    sport: p.sport,
+    min_confidence: p.minConf,
+    reason: "human_bad",
+  }));
+  const blob = new Blob(
+    [JSON.stringify({ exported_at: new Date().toISOString(), threshold: parseFloat(threshInput.value), bad }, null, 2)],
+    { type: "application/json" }
+  );
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "bad-list.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ---- keyboard ----------------------------------------------------------------
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  switch (e.key) {
+    case "ArrowRight": case "k": case "K": if (cur < visible.length - 1) show(cur + 1); e.preventDefault(); break;
+    case "ArrowLeft":  case "j": case "J": if (cur > 0) show(cur - 1); e.preventDefault(); break;
+    case "b": case "B": toggleBad(); break;
+    case "f": case "F": { // jump to next flagged
+      for (let vi = cur + 1; vi < visible.length; vi++) {
+        if (isFlagged(pairs[visible[vi]]) && !pairs[visible[vi]].bad) { show(vi); break; }
+      }
+      break;
+    }
+  }
+});
+</script>
+</body>
+</html>

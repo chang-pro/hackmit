@@ -2,15 +2,13 @@
 // probability -> market -> comparison -> gated presentation (README §7.8–§8).
 
 import { parseFrame } from "../vision/index.js";
-import { resolveEvent } from "../vision/resolver.js";
+import { resolveEventForSport, subjectSlug } from "../vision/resolver.js";
 import { Reconciler } from "../vision/reconciler.js";
-import { estimate } from "../probability/index.js";
+import { getSport, estimateForSport } from "../sports/index.js";
 import { marketAdapter } from "../market/index.js";
 
 const MIN_STATE_CONFIDENCE = 0.8;
 const MAX_MARKET_AGE_MS = 30_000;
-
-const defaultReconciler = new Reconciler();
 
 // ── Extraction seam ─────────────────────────────────────────────────────────
 // Slice 2 (real OCR) replaces the body of this function only: given a live
@@ -20,8 +18,8 @@ const defaultReconciler = new Reconciler();
 // Until then, live frames flow through the gateway/selector (Slice 4) but the
 // parsed scoreboard still comes from the committed fixture, and the returned
 // payload marks extraction as "fixture_parse" so nobody mistakes it for OCR.
-async function extractState(fixturePath, liveFrame) {
-  const { frame, parsed } = await parseFrame(fixturePath);
+async function extractState(fixturePath, liveFrame, sport) {
+  const { frame, parsed } = await parseFrame(fixturePath, "fixture", sport);
   if (!liveFrame) return { frame, parsed, extraction: "fixture_parse" };
   return { frame: liveFrame, parsed, extraction: "fixture_parse" };
 }
@@ -32,14 +30,29 @@ async function extractState(fixturePath, liveFrame) {
 // The demo server passes a fresh Reconciler per fixture request: the demo
 // fixtures are minutes of game time apart, and §7.5 invariants (max score
 // jump per observation) apply to consecutive frames, not across demo moments.
+// `sportId` selects the sport config (probability model, resolver aliases,
+// normalization, market matching). null/undefined -> NBA, the original
+// behavior. The fixture's own sport tag must agree with the requested sport —
+// a soccer fixture served as NBA fails loudly, never silently.
 export async function runPipeline(
   fixturePath,
   adapter = marketAdapter,
   liveFrame = null,
-  reconciler = defaultReconciler
+  reconciler = null,
+  sportId = null
 ) {
-  const { frame, parsed, extraction } = await extractState(fixturePath, liveFrame);
-  const event = resolveEvent(parsed);
+  const sport = getSport(sportId);
+  // The default reconciler must carry the sport's own rules — the NBA rules
+  // reject every UFC (no scores field) and golf (no period/clock) observation
+  // as confidence 0 (§7.5).
+  if (!reconciler) reconciler = new Reconciler(sport.reconcilerRules);
+  const { frame, parsed, extraction } = await extractState(fixturePath, liveFrame, sport);
+  if (parsed.sport !== sport.sportTag) {
+    throw new Error(
+      `fixture sport "${parsed.sport}" does not match requested sport "${sport.id}" (expects "${sport.sportTag}")`
+    );
+  }
+  const event = resolveEventForSport(sport, parsed);
   const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
 
   if (!state) {
@@ -52,15 +65,58 @@ export async function runPipeline(
     };
   }
 
-  // Slice 1 convention: estimate the away team's win probability (matches the
-  // demo fixture's BOS outcome). The estimated outcome becomes configurable
-  // when the UX layer lands.
+  // Slice 1 convention: estimate the away-slot subject's win probability
+  // (NBA: away team BOS; UFC: red corner; golf: the leader). The estimated
+  // outcome becomes configurable when the UX layer lands.
   const teamId = state.away_team_id;
-  const est = estimate(state, teamId);
+  const est = estimateForSport(sport, state, teamId);
 
-  // Awaits are no-ops for the sync mock; real adapters are async.
-  const marketId = await adapter.find_market(event.event_id, est.outcome);
-  const snapshot = await adapter.get_market_snapshot(marketId);
+  // Awaits are no-ops for the sync mock; real adapters are async. The state
+  // rides along so moment-aware adapters (the mock's price schedules for
+  // historical replays) can pick the period-accurate price; adapters that
+  // take one argument simply ignore it.
+  // "No matching market" is a first-class outcome (§7.9), not a crash: during
+  // the off-season the real adapter throws NoMatchingMarketError with a
+  // user-presentable safeMessage.
+  let snapshot;
+  try {
+    const marketId = await adapter.find_market(event.event_id, est.outcome);
+    snapshot = await adapter.get_market_snapshot(marketId, state);
+  } catch (err) {
+    if (err.code === "no_matching_market") {
+      return {
+        sport: sport.id,
+        source: liveFrame ? "live" : "fixture",
+        event,
+        estimate: { outcome: est.outcome, probability: est.probability, model_version: est.model_version },
+        presentation: { status: "no_market", short_text: err.safeMessage, reason: err.message },
+      };
+    }
+    throw err;
+  }
+
+  // A snapshot with no usable price or timestamp must not reach the gap math:
+  // null poisons it into NaN freshness and a fake "Market 0%" edge (§7.9).
+  if (snapshot.display_probability == null || snapshot.provider_timestamp == null) {
+    return {
+      sport: sport.id,
+      source: liveFrame ? "live" : "fixture",
+      event,
+      estimate: { outcome: est.outcome, probability: est.probability, model_version: est.model_version },
+      market: {
+        provider: snapshot.provider,
+        market_id: snapshot.market_id,
+        probability: snapshot.display_probability,
+        is_mock: snapshot.is_mock,
+        provider_timestamp: snapshot.provider_timestamp,
+      },
+      presentation: {
+        status: "market_unavailable",
+        short_text:
+          "Game identified. The market has no usable price right now, so no comparison is available.",
+      },
+    };
+  }
 
   const gapPts = Number(((est.probability - snapshot.display_probability) * 100).toFixed(1));
   const freshnessMs = Date.now() - Date.parse(snapshot.provider_timestamp);
@@ -88,16 +144,22 @@ export async function runPipeline(
     status = "stale_market";
     shortText = "Game identified. Current market data is stale, so no comparison is available.";
   } else {
-    const team = teamId.slice(4).toUpperCase();
-    const dir = comparison.direction === "model_higher" ? "higher" : "lower";
+    const team = subjectSlug(teamId).toUpperCase();
+    const tail =
+      comparison.direction === "aligned"
+        ? "Model matches the market."
+        : `Model is ${Math.abs(gapPts)} points ${
+            comparison.direction === "model_higher" ? "higher" : "lower"
+          }.`;
     shortText = `${team} ${Math.round(est.probability * 100)}%. Market ${Math.round(
       snapshot.display_probability * 100
-    )}%. Model is ${Math.abs(gapPts)} points ${dir}.`;
+    )}%. ${tail}`;
   }
 
   // One complete update through the system (README §8).
   return {
     session_id: "session_slice1",
+    sport: sport.id,
     source: liveFrame ? "live" : "fixture",
     extraction, // "fixture_parse" until Slice 2's real OCR replaces the seam
     event,
@@ -106,6 +168,7 @@ export async function runPipeline(
       home_score: state.home_score,
       period: state.period,
       clock_seconds: state.clock_seconds,
+      ...(state.extras ? { extras: state.extras } : {}),
       confidence: state.confidence,
       observed_at: state.observed_at,
       accepted,
@@ -125,7 +188,7 @@ export async function runPipeline(
       short_text: shortText,
       spoken_text:
         status === "ready"
-          ? `${teamId.slice(4)}'s estimated win probability is ${Math.round(
+          ? `${subjectSlug(teamId)}'s estimated win probability is ${Math.round(
               est.probability * 100
             )} percent. The market is at ${Math.round(snapshot.display_probability * 100)} percent.`
           : shortText,

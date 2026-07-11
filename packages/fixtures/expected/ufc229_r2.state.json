@@ -1,0 +1,10 @@
+{
+  "event_id": "ufc_2018_10_06_khabib_mcgregor",
+  "away_team_id": "ufc_khabib",
+  "home_team_id": "ufc_mcgregor",
+  "away_score": null,
+  "home_score": null,
+  "period": 2,
+  "clock_seconds": 210,
+  "extras": { "scheduled_rounds": 5 }
+}

@@ -14,7 +14,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { extractScoreboard } from "../services/vision/index.js";
-import { resolveTeam } from "../services/vision/resolver.js";
+import { resolveWithAliases } from "../services/vision/resolver.js";
+import { getSport } from "../services/sports/index.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const FRAMES_DIR = join(ROOT, "packages", "fixtures", "frames");
@@ -38,6 +39,8 @@ async function loadFixtures() {
       frameId,
       fixturePath,
       frame: raw.frame,
+      // Multi-sport fixtures carry a top-level sport id; legacy NBA ones don't.
+      sport: getSport(raw.sport ?? null),
       expected: JSON.parse(await readFile(expectedPath, "utf8")),
     });
   }
@@ -46,12 +49,12 @@ async function loadFixtures() {
 
 // Diff one parsed scoreboard against expected state. Returns a map of
 // required field -> boolean (correct).
-function diffFields(parsed, expected) {
+function diffFields(parsed, expected, sport) {
   let awayId = null;
   let homeId = null;
   try {
-    awayId = resolveTeam(parsed.away_team_text);
-    homeId = resolveTeam(parsed.home_team_text);
+    awayId = resolveWithAliases(sport.aliases, parsed.away_team_text);
+    homeId = resolveWithAliases(sport.aliases, parsed.home_team_text);
   } catch {
     // unresolvable team text counts as a teams miss
   }
@@ -70,8 +73,8 @@ async function evaluateBackend(backendName, fixtures, frameForFixture) {
   for (const fixture of fixtures) {
     let result;
     try {
-      const parsed = await extractScoreboard(frameForFixture(fixture), backendName);
-      result = diffFields(parsed, fixture.expected);
+      const parsed = await extractScoreboard(frameForFixture(fixture), backendName, fixture.sport);
+      result = diffFields(parsed, fixture.expected, fixture.sport);
     } catch (err) {
       console.log(`  ${fixture.frameId}: extraction failed — ${err.message}`);
       result = Object.fromEntries(REQUIRED_FIELDS.map((f) => [f, false]));
