@@ -91,12 +91,23 @@ final class RTCPublisher: NSObject, ObservableObject {
 
     // MARK: - Connect / disconnect
 
+    // Empty pairCode = one-button mode: ask the server for the newest open
+    // pairing session (created by the desktop /capture page) and join it.
     func connect(baseURL: URL, pairCode: String) async {
         disconnect()
         self.baseURL = baseURL
         state = .joining
         do {
-            let joined = try await api("api/webrtc/join", method: "POST", body: ["pair_code": pairCode])
+            var code = pairCode
+            if code.isEmpty {
+                let hint = try await api("api/webrtc/pair-hint")
+                guard let hinted = hint["pair_code"] as? String else {
+                    throw NSError(domain: "rtc", code: 3,
+                                  userInfo: [NSLocalizedDescriptionKey: "no open session — open /capture on the desktop"])
+                }
+                code = hinted
+            }
+            let joined = try await api("api/webrtc/join", method: "POST", body: ["pair_code": code])
             guard let sid = joined["session_id"] as? String else {
                 throw NSError(domain: "rtc", code: 1, userInfo: [NSLocalizedDescriptionKey: "join returned no session_id"])
             }

@@ -24,7 +24,8 @@ struct ConnectorView: View {
     #if canImport(WebRTC)
     @StateObject private var rtc = RTCPublisher()
     #endif
-    @AppStorage("apiBaseURL") private var apiBaseURL = "http://localhost:3000"
+    // Default = the public tunnel to the Mac. Editable if the tunnel URL rotates.
+    @AppStorage("apiBaseURL") private var apiBaseURL = "https://maps-requirement-charlotte-median.trycloudflare.com"
     @AppStorage("pairCode") private var pairCode = ""
     @State private var showControls = true
     @Environment(\.scenePhase) private var scenePhase
@@ -85,10 +86,10 @@ struct ConnectorView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    TextField("PAIR CODE", text: $pairCode)
+                    TextField("AUTO", text: $pairCode)   // pair code optional — auto-pairs when empty
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
-                        .frame(width: 110)
+                        .frame(width: 80)
                         .font(.system(.body, design: .monospaced).weight(.bold))
                 }
                 .textFieldStyle(.plain)
@@ -143,12 +144,13 @@ struct ConnectorView: View {
                                         to: nil, from: nil, for: nil)
         glasses.start()
         #if canImport(WebRTC)
-        // Every decoded frame -> WebRTC track.
+        // Every decoded frame -> WebRTC track. Pair code empty = auto-pair
+        // with the newest open session from the desktop /capture page.
         let publisher = rtc
         glasses.setFrameTap { buffer in publisher.push(buffer) }
-        if let base = URL(string: apiBaseURL.trimmingCharacters(in: .whitespaces)),
-           !pairCode.trimmingCharacters(in: .whitespaces).isEmpty {
-            Task { await rtc.connect(baseURL: base, pairCode: pairCode.trimmingCharacters(in: .whitespaces).uppercased()) }
+        if let base = URL(string: apiBaseURL.trimmingCharacters(in: .whitespaces)) {
+            let code = pairCode.trimmingCharacters(in: .whitespaces).uppercased()
+            Task { await rtc.connect(baseURL: base, pairCode: code) }
         }
         #endif
     }
