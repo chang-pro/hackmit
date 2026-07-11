@@ -771,8 +771,10 @@ if (idleTitleEl) setInterval(() => {
   // stream. No video frame is sent to the server for this overlay.
   const bridge = window.bloomYoloInput;
   const MODEL_URL = "/models/yolo11n.onnx";
-  const INPUT_SIZE = 320;
-  const DETECTION_INTERVAL_MS = 200;
+  // A full broadcast frame makes distant athletes too small for COCO person
+  // detection. Two overlapped field tiles at 640px preserve far more detail.
+  const INPUT_SIZE = 640;
+  const DETECTION_INTERVAL_MS = 650;
   const CONFIDENCE_THRESHOLD = .36;
   const IOU_THRESHOLD = .48;
   const TRACKED_CLASSES = new Map([[0, { label: "PLAYER", kind: "player" }], [32, { label: "BALL", kind: "ball" }]]);
@@ -812,17 +814,18 @@ if (idleTitleEl) setInterval(() => {
     return kept;
   }
 
-  function makeTensor(video) {
+  function makeTensor(video, region) {
     const sourceWidth = video.videoWidth;
     const sourceHeight = video.videoHeight;
-    const scale = Math.min(INPUT_SIZE / sourceWidth, INPUT_SIZE / sourceHeight);
-    const drawWidth = sourceWidth * scale;
-    const drawHeight = sourceHeight * scale;
+    const crop = region ?? { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
+    const scale = Math.min(INPUT_SIZE / crop.width, INPUT_SIZE / crop.height);
+    const drawWidth = crop.width * scale;
+    const drawHeight = crop.height * scale;
     const padX = (INPUT_SIZE - drawWidth) / 2;
     const padY = (INPUT_SIZE - drawHeight) / 2;
     context.fillStyle = "#000";
     context.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
-    context.drawImage(video, 0, 0, sourceWidth, sourceHeight, padX, padY, drawWidth, drawHeight);
+    context.drawImage(video, crop.x, crop.y, crop.width, crop.height, padX, padY, drawWidth, drawHeight);
     const pixels = context.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
     const input = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE);
     const area = INPUT_SIZE * INPUT_SIZE;
@@ -831,7 +834,17 @@ if (idleTitleEl) setInterval(() => {
       input[area + index] = pixels[index * 4 + 1] / 255;
       input[area * 2 + index] = pixels[index * 4 + 2] / 255;
     }
-    return { tensor: new ort.Tensor("float32", input, [1, 3, INPUT_SIZE, INPUT_SIZE]), sourceWidth, sourceHeight, scale, padX, padY };
+    return { tensor: new ort.Tensor("float32", input, [1, 3, INPUT_SIZE, INPUT_SIZE]), sourceWidth, sourceHeight, crop, scale, padX, padY };
+  }
+
+  function broadcastTiles(video) {
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    const tileWidth = Math.min(width, Math.round(width * .56));
+    return [
+      { x: 0, y: 0, width: tileWidth, height },
+      { x: width - tileWidth, y: 0, width: tileWidth, height },
+    ];
   }
 
   function decode(output, transform) {
@@ -857,23 +870,27 @@ if (idleTitleEl) setInterval(() => {
       const centerY = value(candidate, 1);
       const width = value(candidate, 2);
       const height = value(candidate, 3);
-      const x1 = Math.max(0, (centerX - width / 2 - transform.padX) / transform.scale);
-      const y1 = Math.max(0, (centerY - height / 2 - transform.padY) / transform.scale);
-      const x2 = Math.min(transform.sourceWidth, (centerX + width / 2 - transform.padX) / transform.scale);
-      const y2 = Math.min(transform.sourceHeight, (centerY + height / 2 - transform.padY) / transform.scale);
+      const x1 = Math.max(transform.crop.x, transform.crop.x + (centerX - width / 2 - transform.padX) / transform.scale);
+      const y1 = Math.max(transform.crop.y, transform.crop.y + (centerY - height / 2 - transform.padY) / transform.scale);
+      const x2 = Math.min(transform.crop.x + transform.crop.width, transform.crop.x + (centerX + width / 2 - transform.padX) / transform.scale);
+      const y2 = Math.min(transform.crop.y + transform.crop.height, transform.crop.y + (centerY + height / 2 - transform.padY) / transform.scale);
       if (x2 - x1 < 3 || y2 - y1 < 3) continue;
       candidates.push({ x1, y1, x2, y2, classId, confidence });
     }
+    return candidates;
+  }
+
+  function serializeDetections(candidates, sourceWidth, sourceHeight) {
     return nms(candidates).map((candidate) => {
       const metadata = TRACKED_CLASSES.get(candidate.classId);
       return {
         ...metadata,
         confidence: candidate.confidence,
         bbox: {
-          x: Math.round(candidate.x1 / transform.sourceWidth * 1000),
-          y: Math.round(candidate.y1 / transform.sourceHeight * 1000),
-          width: Math.round((candidate.x2 - candidate.x1) / transform.sourceWidth * 1000),
-          height: Math.round((candidate.y2 - candidate.y1) / transform.sourceHeight * 1000),
+          x: Math.round(candidate.x1 / sourceWidth * 1000),
+          y: Math.round(candidate.y1 / sourceHeight * 1000),
+          width: Math.round((candidate.x2 - candidate.x1) / sourceWidth * 1000),
+          height: Math.round((candidate.y2 - candidate.y1) / sourceHeight * 1000),
         },
       };
     });
@@ -902,13 +919,16 @@ if (idleTitleEl) setInterval(() => {
     const started = performance.now();
     try {
       const session = await getSession();
-      const transform = makeTensor(bridge.video);
-      const outputs = await session.run({ [session.inputNames[0]]: transform.tensor });
-      const output = outputs[session.outputNames[0]];
-      bridge.setDetections(decode(output, transform), "yolo");
+      const candidates = [];
+      for (const tile of broadcastTiles(bridge.video)) {
+        const transform = makeTensor(bridge.video, tile);
+        const outputs = await session.run({ [session.inputNames[0]]: transform.tensor });
+        candidates.push(...decode(outputs[session.outputNames[0]], transform));
+      }
+      bridge.setDetections(serializeDetections(candidates, bridge.video.videoWidth, bridge.video.videoHeight), "yolo");
       if (started - lastFpsUpdate > 1_000) {
-        const fps = Math.max(1, Math.round(1_000 / Math.max(1, performance.now() - started)));
-        bridge.setTrackerState(`YOLO11n live · ${fps} FPS`, "Player and ball boxes run locally from the WebRTC stream.");
+        const hz = (1_000 / Math.max(1, performance.now() - started)).toFixed(1);
+        bridge.setTrackerState(`YOLO11n dense · ${hz} Hz`, "Two overlapping 640px field tiles prioritize distant players.");
         lastFpsUpdate = started;
       }
     } catch (error) {
@@ -918,7 +938,7 @@ if (idleTitleEl) setInterval(() => {
       console.warn("BloomKnights YOLO tracker failed", error);
       return;
     }
-    schedule(token, Math.max(0, DETECTION_INTERVAL_MS - (performance.now() - started)));
+    schedule(token, Math.max(DETECTION_INTERVAL_MS, performance.now() - started));
   }
 
   function start({ demo = false } = {}) {

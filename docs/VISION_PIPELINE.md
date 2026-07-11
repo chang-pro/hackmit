@@ -182,7 +182,7 @@ For a shareable UI-review link, open `/capture?demo=1` instead.
 
 ### Continuous player overlay
 
-The capture page runs bundled YOLO11n directly in the desktop browser against the received WebRTC video. It samples at up to 5 FPS, recognizes COCO `person` and `sports ball` classes, applies local NMS, and maps normalized boxes over the cover-cropped video. The first live stream downloads the bundled 10.4 MB ONNX model to the viewer; after that, tracking creates no Cerebras call, backend frame upload, or tunnel media traffic. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.
+The capture page runs bundled YOLO11n directly in the desktop browser against the received WebRTC video. To detect distant broadcast players, it analyzes two overlapping 640px field tiles rather than shrinking the whole 16:9 frame into one small detector input. It recognizes COCO `person` and `sports ball` classes, merges tile results with local NMS, and maps normalized boxes over the cover-cropped video. Dense mode intentionally trades update rate for small-player recall. The first live stream downloads the bundled 10.4 MB ONNX model to the viewer; after that, tracking creates no Cerebras call, backend frame upload, or tunnel media traffic. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.
 
 Gemma remains deliberately user-gated behind **Analyze** for the job YOLO cannot do: reading scoreboards, identifying the event, and assembling prediction context from sparse five-frame windows.
 
