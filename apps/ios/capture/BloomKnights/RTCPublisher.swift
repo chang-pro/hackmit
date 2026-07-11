@@ -188,7 +188,11 @@ final class RTCPublisher: NSObject, ObservableObject {
         pollTask = Task { [weak self] in
             while let self, !Task.isCancelled, self.sessionId != nil {
                 await self.pollOnce()
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                // Poll FAST (150ms) until the answer lands so offer/answer/ICE
+                // setup is near-instant (Codex: the 1s poll was the #1 latency
+                // bottleneck). Back off to 1s once negotiated to spare the server.
+                let ns: UInt64 = self.haveRemoteDescription ? 1_000_000_000 : 150_000_000
+                try? await Task.sleep(nanoseconds: ns)
             }
         }
     }
