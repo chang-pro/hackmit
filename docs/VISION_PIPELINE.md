@@ -38,7 +38,7 @@ The server prints the exact phone URL. On the current machine it will resemble:
 http://10.32.242.101:3000/phone
 ```
 
-Open `/capture` on the desktop first and use its generated pairing link on the phone. Choose **Start live feed** on the phone, fill most of the view with the television or monitor, and keep the scoreboard unobstructed. The video connects directly between phone and desktop; press **Analyze** on the desktop only when you are ready to spend model requests.
+Open `/capture` on the desktop and `/phone` on the camera device. Choose **Start live feed** on the phone, fill most of the view with the television or monitor, and keep the scoreboard unobstructed. The latest started phone or glasses feed automatically becomes the desktop feed. Video connects directly between phone and desktop; press **Analyze** on the desktop only when you are ready to spend model requests.
 
 Continuous **Start live feed** uses `getUserMedia`, which mobile browsers normally expose only in a secure HTTPS context. Use the photo flow until an HTTPS tunnel or the native app is available.
 
@@ -56,7 +56,7 @@ The command starts the analyzer and serves the stable demo URL:
 https://capture.saicharanramineni.com
 ```
 
-Open `https://capture.saicharanramineni.com/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider. Unlike the previous LocalTunnel and Tunnelmole paths, the public URL opens with a trusted certificate—there is no IP/password interstitial for the camera user.
+Open `https://capture.saicharanramineni.com/capture` on the desktop and `https://capture.saicharanramineni.com/phone` on the phone, then start the camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the browser peers or through the configured TURN provider. Unlike the previous LocalTunnel and Tunnelmole paths, the public URL opens with a trusted certificate—there is no IP/password interstitial for the camera user.
 
 The stable hostname is backed by the named `bloomknights-capture` Cloudflare Tunnel. Its credentials JSON lives only at `~/.cloudflared/<tunnel-id>.json`; never commit it. The hostname survives restarts, but the connector process must be running for the route to answer. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
@@ -70,13 +70,13 @@ This validates phone connectivity, image upload, frame selection, UI rendering, 
 
 ## Client contract
 
-The desktop creates a short-lived pairing session:
+The desktop viewer follows the current active camera session:
 
 ```http
-POST /api/webrtc/session
+GET /api/webrtc/active
 ```
 
-The phone exchanges its pairing code for a session at `POST /api/webrtc/join`, then the two pages exchange SDP offers/answers and ICE candidates through `POST /api/webrtc/signal` plus `GET /api/webrtc/poll`. Those endpoints carry only setup metadata—never JPEGs or video bytes.
+When the phone or glasses starts, it claims that session at `POST /api/webrtc/active`. If another provider is already live, the new one replaces it. Both pages then exchange SDP offers/answers and ICE candidates through `POST /api/webrtc/signal` plus `GET /api/webrtc/poll`. Those endpoints carry only setup metadata—never JPEGs or video bytes.
 
 Analysis starts only after `POST /api/analysis/start`. At that point the phone also submits one high-quality JPEG every 2.4 seconds to the analysis endpoint:
 
@@ -150,10 +150,10 @@ Other endpoints:
 - `GET /api/comparison` — compatibility alias for `/api/latest`.
 - `POST /api/reset` — clears buffered frames and canonical game state.
 - `GET /phone` — phone-first camera capture page.
-- `GET /capture` — desktop WebRTC viewer and pairing control.
+- `GET /capture` — desktop WebRTC viewer and Analyze control.
 - `GET /api/live-frame` — metadata for the newest inbound camera frame.
-- `POST /api/webrtc/session` — create a ten-minute desktop pairing session.
-- `POST /api/webrtc/join` — resolve a pairing code on the phone.
+- `GET /api/webrtc/active` — read the single viewer's active camera session.
+- `POST /api/webrtc/active` — claim that camera session; newest publisher wins.
 - `POST /api/webrtc/signal`, `GET /api/webrtc/poll` — SDP/ICE signaling only.
 - `GET /api/webrtc/config?session_id=<id>` — session-bound STUN/TURN servers for browser peers.
 - `GET /api/analysis/status` — analysis-enabled state for the phone client.
@@ -164,9 +164,9 @@ Other endpoints:
 
 The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the public HTTP tunnel. The phone requests 4K/15fps capture with a detail-preserving 12 Mbps sender ceiling; browsers that cannot supply 4K fall back gracefully. `/capture` reports the received resolution, frame rate, and bitrate in its dock. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
 
-The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Metered Open Relay: set `METERED_TURN_APP_NAME` and `METERED_TURN_API_KEY` on the server. For each ten-minute pairing session, the server retrieves the provider-issued browser ICE configuration and returns it only to callers holding that session id. Do not put the API key in frontend source code.
+The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Metered Open Relay: set `METERED_TURN_APP_NAME` and `METERED_TURN_API_KEY` on the server. For each ten-minute active session, the server retrieves the provider-issued browser ICE configuration and returns it only to callers holding that session id. Do not put the API key in frontend source code.
 
-An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. When a TURN URL is configured, BloomKnights uses relay-only WebRTC so client-isolated Wi-Fi does not waste time attempting a direct media candidate. TURN is independent from the public HTTP tunnel, which carries only pairing/signaling and gated analysis snapshots.
+An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. When a TURN URL is configured, BloomKnights uses relay-only WebRTC so client-isolated Wi-Fi does not waste time attempting a direct media candidate. TURN is independent from the public HTTP tunnel, which carries only active-session signaling and gated analysis snapshots.
 
 ## Browser-only UI demo
 
@@ -211,7 +211,7 @@ The app team needs to establish the direct media peer connection and send gated 
 
 1. Capture rear-camera JPEG at 720p or 1080p.
 2. Downscale so the longest edge is at most 1600 pixels.
-3. Join the desktop pairing session and exchange SDP/ICE through the WebRTC signaling endpoints; add the camera track to the resulting peer connection.
+3. Claim the active session with `POST /api/webrtc/active`, then exchange SDP/ICE through the WebRTC signaling endpoints; add the camera track to the resulting peer connection.
 4. Read `analysis_enabled` from `GET /api/analysis/status`. Send a 1600-pixel JPEG to `POST /api/frames` every 2.4 seconds only when it is `true`.
 5. Do not send a sport selector value; detection and event switching are server-owned.
 6. Never overlap analysis requests.

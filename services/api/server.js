@@ -9,8 +9,8 @@
 //   GET  /api/health            — vision backend + buffer + quota status
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
-//   POST /api/webrtc/session     — create a short-lived viewer pairing session
-//   POST /api/webrtc/join        — exchange a pairing code for a session id
+//   GET  /api/webrtc/active      — single viewer's active camera session
+//   POST /api/webrtc/active      — claim the active camera session (latest wins)
 //   POST /api/webrtc/signal      — relay SDP/ICE signaling (never media)
 //   GET  /api/webrtc/poll        — poll pending SDP/ICE signaling messages
 //   GET  /api/webrtc/config      — session-bound browser-safe ICE configuration
@@ -28,7 +28,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { runPipeline, resetLivePipeline } from "./pipeline.js";
 import { LiveEventAnalyzer } from "./live-event-analyzer.js";
 import { CaptureGateway } from "../capture/gateway.js";
@@ -235,6 +235,7 @@ export function createBloomServer({
   let latestInsightAt = 0;
   let analysisEnabled = false;
   const webrtcSessions = new Map();
+  let activeWebRtcSessionId = null;
 
   function resetAnalysisState() {
     analyzer.reset();
@@ -248,6 +249,9 @@ export function createBloomServer({
     const now = Date.now();
     for (const [sessionId, session] of webrtcSessions) {
       if (session.expires_at <= now) webrtcSessions.delete(sessionId);
+    }
+    if (activeWebRtcSessionId && !webrtcSessions.has(activeWebRtcSessionId)) {
+      activeWebRtcSessionId = null;
     }
   }
 
@@ -432,65 +436,54 @@ export function createBloomServer({
     });
   }
 
-  function createWebRtcSession(res) {
-    pruneWebRtcSessions();
-    let pairCode;
-    do {
-      pairCode = randomBytes(5).toString("hex").toUpperCase();
-    } while ([...webrtcSessions.values()].some((session) => session.pair_code === pairCode));
+  function newWebRtcSession() {
     const session = {
       session_id: randomUUID(),
-      pair_code: pairCode,
       created_at: Date.now(),
       expires_at: Date.now() + WEBRTC_SESSION_TTL_MS,
       phone_joined: false,
       signals: { phone: [], viewer: [] },
     };
     webrtcSessions.set(session.session_id, session);
-    sendJson(res, 201, {
-      session_id: session.session_id,
-      pair_code: session.pair_code,
-      expires_at: new Date(session.expires_at).toISOString(),
-    });
+    return session;
   }
 
-  // One-button pairing for the glasses app: returns the newest session that
-  // has not yet been joined by a camera, so the app can join
-  // without the user typing the code. The desktop /capture page still shows
-  // the code for the manual path.
-  function webRtcPairHint(res) {
+  function activeWebRtcSession({ create = true } = {}) {
     pruneWebRtcSessions();
-    const open = [...webrtcSessions.values()]
-      .filter((session) => !session.phone_joined)
-      .sort((a, b) => b.created_at - a.created_at)[0];
-    if (!open) {
-      sendJson(res, 404, { error: "no open pairing session — open /capture on the desktop first" });
-      return;
+    let session = activeWebRtcSessionId ? webrtcSessions.get(activeWebRtcSessionId) : null;
+    if (!session && create) {
+      session = newWebRtcSession();
+      activeWebRtcSessionId = session.session_id;
     }
-    sendJson(res, 200, {
-      pair_code: open.pair_code,
-      expires_at: new Date(open.expires_at).toISOString(),
-    });
+    return session ?? null;
   }
 
-  async function joinWebRtcSession(req, res) {
-    try {
-      const body = await readJsonBody(req);
-      const pairCode = String(body?.pair_code ?? "").trim().toUpperCase();
-      pruneWebRtcSessions();
-      const session = [...webrtcSessions.values()].find((entry) => entry.pair_code === pairCode);
-      if (!session) {
-        sendJson(res, 404, { error: "pairing code is invalid or expired" });
-        return;
-      }
-      session.phone_joined = true;
-      sendJson(res, 200, {
-        session_id: session.session_id,
-        expires_at: new Date(session.expires_at).toISOString(),
-      });
-    } catch (err) {
-      sendJson(res, err.statusCode ?? 400, { error: err.message });
+  function publicWebRtcSession(session) {
+    return {
+      session_id: session.session_id,
+      expires_at: new Date(session.expires_at).toISOString(),
+      provider_active: session.phone_joined === true,
+    };
+  }
+
+  // The demo has one viewer and one camera at a time. The viewer follows this
+  // room automatically; a newly started phone/glasses feed replaces the old
+  // provider instead of asking anyone to copy a code or URL.
+  function getActiveWebRtcSession(res) {
+    const session = activeWebRtcSession();
+    sendJson(res, 200, publicWebRtcSession(session));
+  }
+
+  function claimActiveWebRtcSession(res) {
+    let session = activeWebRtcSession();
+    if (session.phone_joined) {
+      for (const peer of ["phone", "viewer"]) session.signals[peer].push({ kind: "hangup", payload: null });
+      session = newWebRtcSession();
+      activeWebRtcSessionId = session.session_id;
     }
+    session.phone_joined = true;
+    session.provider_started_at = Date.now();
+    sendJson(res, 200, publicWebRtcSession(session));
   }
 
   async function relayWebRtcSignal(req, res) {
@@ -518,6 +511,7 @@ export function createBloomServer({
         return;
       }
       const target = from === "phone" ? "viewer" : "phone";
+      if (from === "phone" && kind === "hangup") session.phone_joined = false;
       const queue = session.signals[target];
       if (queue.length >= MAX_WEBRTC_SIGNALS_PER_PEER) queue.shift();
       queue.push({ kind, payload });
@@ -614,12 +608,10 @@ export function createBloomServer({
         res.end();
       } else if (req.method === "POST" && url.pathname === "/api/frames") {
         await handleFrameSubmission(req, res);
-      } else if (req.method === "POST" && url.pathname === "/api/webrtc/session") {
-        createWebRtcSession(res);
-      } else if (req.method === "GET" && url.pathname === "/api/webrtc/pair-hint") {
-        webRtcPairHint(res);
-      } else if (req.method === "POST" && url.pathname === "/api/webrtc/join") {
-        await joinWebRtcSession(req, res);
+      } else if (req.method === "GET" && url.pathname === "/api/webrtc/active") {
+        getActiveWebRtcSession(res);
+      } else if (req.method === "POST" && url.pathname === "/api/webrtc/active") {
+        claimActiveWebRtcSession(res);
       } else if (req.method === "POST" && url.pathname === "/api/webrtc/signal") {
         await relayWebRtcSignal(req, res);
       } else if (req.method === "POST" && url.pathname === "/api/analysis/start") {
@@ -631,6 +623,7 @@ export function createBloomServer({
         resetLivePipeline();
         resetAnalysisState();
         webrtcSessions.clear();
+        activeWebRtcSessionId = null;
         sendJson(res, 200, { status: "reset" });
       } else if (req.method === "GET" && url.pathname === "/api/health") {
         sendJson(res, 200, {
