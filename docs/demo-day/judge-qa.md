@@ -5,13 +5,13 @@ Rules: 2–3 sentences, then stop talking. Never bluff a number. The honest-fall
 ---
 
 **1. What's your end-to-end latency?**
-Our design budget is 2–5 seconds from a stable scoreboard change to a spoken answer, and every pipeline stage is instrumented so we know where the time goes — vision parsing is the fat part at 0.5–2s. Today's demo runs the vision stage on committed fixtures, so what you saw is the real pipeline minus real OCR time. We publish the budget in the README rather than claiming a measured number we don't have yet.
+The phone captures a fast five-frame opening window in roughly four seconds, followed by the live Cerebras vision request; later windows are capped at one every 12 seconds to respect the five-request-per-minute limit. We expose acquisition, model, and cooldown state rather than claiming a latency number we have not measured end to end on this venue network.
 
 **2. Is that real computer vision, or staged?**
-The capture path is real — glasses frames really stream to the server, get rate-limited and dedup'd — but scoreboard extraction currently reads a committed fixture, and the API literally labels it `extraction: "fixture_parse"` so nobody can mistake it. We built the whole system around one honest seam: when OCR lands, one function body changes and nothing else does. We'd rather show you a truthful pipeline than a faked demo.
+In the primary demo, continuous video really comes from the phone or glasses over WebRTC, YOLO11s tracks players locally with WebGPU, and Cerebras Gemma reads five ordered camera frames into a strict event schema. The historical intelligence, market, and web-research layers are precollected for these four old games and are visibly labeled; the separate rehearsal URL also says when no camera or model call occurred.
 
 **3. How accurate is the win-probability model?**
-It's a small, explainable baseline — score margin, time left, period, home court — that passes hard sanity tests: up 20 with 30 seconds left prints near-certainty, a tie at tip-off prints near the prior. We deliberately shipped explainable-and-right-shaped before sophisticated, because a fancy model fed noisy vision state is worse than a simple one fed clean state. Calibration against historical play-by-play is the very next model milestone.
+The live repository contains small, explainable sport-specific baselines with sanity and boundary tests, but these four historical demo probabilities are explicitly illustrative checkpoints rather than a claimed calibrated production model. The funded milestone is calibration against licensed play-by-play and market histories; today we prove the screen-to-state-to-market product loop without inventing a validation score.
 
 **4. Isn't this just an API wrapper around Polymarket?**
 Polymarket is one adapter behind an interface; the product is everything before the price arrives: reading the physical world into structured game state, reconciling noisy frames, estimating a probability, and refusing to speak when confidence is low. The market API is the easiest 5% of this system. Swap in Kalshi tomorrow and the product doesn't change.
@@ -38,13 +38,13 @@ For the hackathon we read public market data and mostly demo on a labeled mock �
 The system requires a unique event-to-contract match before it compares anything; no market means it says so plainly instead of inventing a number — you still get the model's win probability, just no gap. That's a deliberate design: the confidence gate would rather show less than mislead. And five sports plus elections, awards shows, and esports on the same architecture means the calendar is never actually empty.
 
 **12. What about replays, commercials, and cut-aways fooling the vision system?**
-The reconciler enforces game invariants — scores don't decrease, the clock runs down, points arrive in 1s, 2s, and 3s — so an implausible frame is rejected and the last trusted state is kept. Our test suite covers exactly these cases: score jumps, low-confidence frames, decreasing scores. When it's genuinely unsure it says "scoreboard not clear enough yet" instead of guessing.
+Gemma is prompted to prefer the persistent primary scorebug over tickers, replays, and studio graphics, while the router requires an exact event identity and an anchored score/phase/clock checkpoint before deterministic data appears. Ambiguous frames hold the last trusted checkpoint or show a pending state; they do not borrow a probability from the first famous game in that sport.
 
 **13. You're pointing a camera at everything. Privacy?**
 Frames are processed for the requested analysis and we avoid storing raw footage by default — we log structured state and latency, not images. Capture status is always visible to the wearer, and the committed fixtures are sanitized team-owned data. The glasses hardware itself carries Meta's recording indicator; we don't defeat any of that.
 
 **14. The market number in your demo was mocked. Why should I believe the real integration works?**
-Because the real one is in the repo: a Polymarket adapter with captured API responses committed as test fixtures — real event lookups, real contract resolution, real edge cases like a non-game market. We demoed on mock because a stage demo shouldn't depend on venue wifi, and our rule is that mock data is always labeled — you saw the amber banner. Honest fallback is a feature we designed, not a corner we cut.
+The repository includes a Polymarket adapter, recorded provider payloads, unique event/contract matching, and tests for ambiguous and missing markets. We use labeled replay prices on stage because these games are historical and a funding demo should not depend on a currently listed contract; swapping the adapter does not change the camera, event, or comparison pipeline.
 
 **15. What did you actually build this weekend versus take off the shelf?**
-Off the shelf: Node's standard library — the server has zero dependencies. Built: the capture gateway and frame selector, the state reconciler with its invariants, five sport-specific probability models, the market adapter layer with mock and Polymarket implementations, the confidence/freshness gate, both web UIs, an iOS companion, and 68 passing tests. The off-the-shelf part of this product is genuinely small.
+Off the shelf: Cerebras inference, ONNX Runtime WebGPU, YOLO weights, Meta's device SDK, Cloudflare signaling, and TURN. Built here: the capture and latest-provider flow, temporal model gating, universal event schema, exact-event/checkpoint router, four historical intelligence timelines, probability and market comparison contracts, mock-research experience, viewer, iOS companion, failure-safe rehearsal layer, and the repository's full passing test suite.

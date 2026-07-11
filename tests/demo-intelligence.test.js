@@ -94,24 +94,13 @@ const TARGETS = [
       situation: "Back control and submission threat",
     }),
     "ufc-229",
-    "round-four-finish-window",
+    "submission-finish",
   ],
 ];
 
-const REHEARSAL_CHECKPOINTS = [
-  ["world-cup-2022-final", "argentina-two-goal-lead"],
-  ["world-cup-2022-final", "france-equalizer"],
-  ["world-cup-2022-final", "extra-time-level"],
-  ["nba-finals-2016-game-7", "halftime-deficit"],
-  ["nba-finals-2016-game-7", "late-tie"],
-  ["nba-finals-2016-game-7", "irving-three"],
-  ["super-bowl-li", "twenty-eight-three"],
-  ["super-bowl-li", "one-score-game"],
-  ["super-bowl-li", "game-tied"],
-  ["ufc-229", "round-two-control"],
-  ["ufc-229", "round-three-reset"],
-  ["ufc-229", "round-four-finish-window"],
-];
+const REHEARSAL_CHECKPOINTS = listDemoIntelligencePacks().flatMap((pack) =>
+  pack.checkpoints.map((checkpoint) => [pack.id, checkpoint.id])
+);
 
 test("all four funding-demo intelligence packs are published", () => {
   const packs = listDemoIntelligencePacks();
@@ -128,8 +117,8 @@ test("all four funding-demo intelligence packs are published", () => {
   }
 });
 
-test("all twelve rehearsal checkpoints resolve exactly without model calls", () => {
-  assert.equal(REHEARSAL_CHECKPOINTS.length, 12);
+test("every catalog rehearsal checkpoint resolves exactly without model calls", () => {
+  assert.ok(REHEARSAL_CHECKPOINTS.length >= 4);
   const catalog = new Map(
     listDemoIntelligencePacks().map((pack) => [
       pack.id,
@@ -193,6 +182,219 @@ test("Cerebras-style observations resolve all four events and timeline moments",
   }
 });
 
+test("one target side, ticker pollution, and conflicting metadata never unlock exact markets", () => {
+  const unrelated = [
+    observation({
+      sport: "basketball",
+      competition: "NBA",
+      event_name: "Warriors vs Lakers",
+      event_identity: "nba:warriors-vs-lakers",
+      participants: [{ name: "Golden State Warriors" }, { name: "Los Angeles Lakers" }],
+      participant_a: "Golden State Warriors",
+      participant_b: "Los Angeles Lakers",
+      score_a: 92,
+      score_b: 89,
+      phase: "Q4",
+      clock: "0:53",
+    }),
+    observation({
+      sport: "american_football",
+      competition: "NFL",
+      event_name: "Patriots vs Jets",
+      event_identity: "nfl:patriots-vs-jets",
+      participants: [{ name: "New England Patriots" }, { name: "New York Jets" }],
+      participant_a: "New England Patriots",
+      participant_b: "New York Jets",
+      score_a: 3,
+      score_b: 28,
+      phase: "Q3",
+      clock: "8:31",
+    }),
+    observation({
+      sport: "mma",
+      competition: "UFC",
+      event_name: "Khabib vs Poirier",
+      event_identity: "mma:khabib-vs-poirier",
+      event_format: "head_to_head",
+      participants: [{ name: "Khabib Nurmagomedov" }, { name: "Dustin Poirier" }],
+      participant_a: "Khabib Nurmagomedov",
+      participant_b: "Dustin Poirier",
+      score_a: 0,
+      score_b: 0,
+      phase: "Round 4",
+      clock: "1:57",
+    }),
+    observation({
+      competition: "FIFA World Cup",
+      event_name: "Argentina vs Mexico",
+      event_identity: "soccer:argentina-vs-mexico",
+      participants: [{ name: "Argentina" }, { name: "Mexico" }],
+      participant_a: "Argentina",
+      participant_b: "Mexico",
+    }),
+  ];
+  for (const visible of unrelated) {
+    const intelligence = selectDemoIntelligence(visible);
+    assert.notEqual(intelligence?.mode, "precollected_event_replay", visible.event_name);
+    assert.equal(intelligence?.market ?? null, null, visible.event_name);
+    assert.equal(intelligence?.moment_id ?? null, null, visible.event_name);
+    assert.deepEqual(intelligence?.evidence ?? [], [], visible.event_name);
+    assert.deepEqual(intelligence?.research ?? [], [], visible.event_name);
+    assert.deepEqual(intelligence?.checkpoints ?? [], [], visible.event_name);
+  }
+
+  const tickerPollution = selectDemoIntelligence(observation({
+    sport: "basketball",
+    competition: "NBA",
+    event_name: "Lakers vs Celtics",
+    event_identity: "nba:lakers-vs-celtics",
+    participants: [
+      { name: "Los Angeles Lakers" },
+      { name: "Boston Celtics" },
+      { name: "Cleveland Cavaliers", role_or_position: "ticker" },
+      { name: "Golden State Warriors", role_or_position: "ticker" },
+    ],
+    participant_a: "Los Angeles Lakers",
+    participant_b: "Boston Celtics",
+    score_a: 89,
+    score_b: 89,
+    phase: "Q4",
+    clock: "4:39",
+  }));
+  assert.notEqual(tickerPollution.mode, "precollected_event_replay");
+  assert.equal(tickerPollution.market, null);
+  assert.equal(tickerPollution.moment_id, null);
+  assert.deepEqual(tickerPollution.research, []);
+
+  const conflicting = selectDemoIntelligence(observation({
+    sport: "basketball",
+    competition: "NBA Regular Season",
+    event_name: "Cavaliers vs Warriors 2025",
+    event_identity: "nba:2025-cle-gsw",
+    participants: [{ name: "Cleveland Cavaliers" }, { name: "Golden State Warriors" }],
+    participant_a: "Cleveland Cavaliers",
+    participant_b: "Golden State Warriors",
+    score_a: 42,
+    score_b: 49,
+    phase: "Halftime",
+    clock: "0:00",
+  }));
+  assert.equal(conflicting.match_basis, "conflicting_metadata");
+  assert.notEqual(conflicting.mode, "precollected_event_replay");
+  assert.equal(conflicting.market, null);
+  assert.equal(conflicting.moment_id, null);
+  assert.deepEqual(conflicting.research, []);
+});
+
+test("unique identity wording and dotted primary abbreviations survive normalization", () => {
+  const identityOnly = selectDemoIntelligence(observation({
+    sport: "NBA Basketball",
+    competition: "NBA Finals",
+    event_name: "",
+    event_identity: "NBA:2016.FINALS.GAME.7.CAVALIERS.WARRIORS",
+    participants: [],
+    participant_a: "",
+    participant_b: "",
+    score_a: 92,
+    score_b: 89,
+    phase: "4Q",
+    clock: "O:53",
+  }));
+  assert.equal(identityOnly.mode, "precollected_event_replay");
+  assert.equal(identityOnly.pack_id, "nba-finals-2016-game-7");
+  assert.equal(identityOnly.moment_id, "irving-three");
+  assert.equal(identityOnly.match_basis, "identity_token");
+
+  const dotted = selectDemoIntelligence(observation({
+    sport: "NBA Basketball",
+    competition: "NBA Finals",
+    event_name: "",
+    event_identity: "",
+    participants: [{ name: "C.L.E." }, { name: "G.S.W." }],
+    participant_a: "C.L.E.",
+    participant_b: "G.S.W.",
+    score_a: 92,
+    score_b: 89,
+    phase: "4Q",
+    clock: "O:53",
+  }));
+  assert.equal(dotted.mode, "precollected_event_replay");
+  assert.equal(dotted.moment_id, "irving-three");
+});
+
+test("deterministic matching clamps confidence and stays pending below 0.72", () => {
+  const pending = selectDemoIntelligence(observation({ confidence: 0.71 }));
+  assert.equal(pending.mode, "precollected_event_pending");
+  assert.equal(pending.match_confidence, 0.71);
+  assert.equal(pending.market, null);
+  assert.equal(analysisFromDemoIntelligence(pending, null), null);
+
+  const ready = selectDemoIntelligence(observation({ confidence: 0.72 }));
+  assert.equal(ready.mode, "precollected_event_replay");
+  assert.equal(ready.match_confidence, 0.72);
+  assert.ok(ready.market);
+});
+
+test("unresolved checkpoints and ambiguous MMA phases stay pending without odds", () => {
+  const unresolved = selectDemoIntelligence(observation({
+    score_a: null,
+    score_b: null,
+    score_display: "UNKNOWN",
+    phase: "UNKNOWN",
+    clock: "UNKNOWN",
+    situation: "UNKNOWN",
+    visible_facts: [],
+    changes_across_frames: [],
+  }));
+  assert.equal(unresolved.mode, "precollected_event_pending");
+  assert.equal(unresolved.moment_id, null);
+  assert.equal(unresolved.market, null);
+  assert.equal(analysisFromDemoIntelligence(unresolved, { primary_probability: 0.99 }), null);
+
+  const mma = selectDemoIntelligence(observation({
+    sport: "mma",
+    competition: "UFC 229",
+    event_name: "Khabib vs McGregor",
+    event_identity: "mma:ufc-229-khabib-nurmagomedov-vs-conor-mcgregor",
+    event_format: "head_to_head",
+    participants: [{ name: "Khabib" }, { name: "McGregor" }],
+    participant_a: "Khabib",
+    participant_b: "McGregor",
+    score_a: 0,
+    score_b: 0,
+    score_display: "",
+    phase: "RD 4",
+    clock: "UNKNOWN",
+    situation: "",
+  }));
+  assert.equal(mma.mode, "precollected_event_pending");
+  assert.equal(mma.moment_id, null);
+  assert.equal(mma.market, null);
+});
+
+test("ambiguous observations hold a trusted checkpoint instead of inventing another", () => {
+  const previous = getDemoRehearsalInsight("ufc-229", "round-four-control").demo_intelligence;
+  const held = selectDemoIntelligence(observation({
+    sport: "mma",
+    competition: "UFC 229",
+    event_name: "Khabib vs McGregor",
+    event_identity: "mma:ufc-229-khabib-nurmagomedov-vs-conor-mcgregor",
+    event_format: "head_to_head",
+    participants: [{ name: "Khabib" }, { name: "McGregor" }],
+    participant_a: "Khabib",
+    participant_b: "McGregor",
+    score_a: 0,
+    score_b: 0,
+    score_display: "",
+    phase: "RD 4",
+    clock: "UNKNOWN",
+    situation: "",
+  }), { previous });
+  assert.equal(held.mode, "precollected_event_replay");
+  assert.equal(held.checkpoint_status, "held_previous");
+  assert.equal(held.moment_id, "round-four-control");
+});
+
 test("low-confidence vision never receives a demo pack", () => {
   assert.equal(selectDemoIntelligence(observation({ confidence: 0.4 })), null);
 });
@@ -209,7 +411,11 @@ test("sport-only fallback is labeled and does not overwrite a real model answer"
     competition: "FIFA World Cup",
   }));
   assert.equal(intelligence.mode, "illustrative_sport_template");
-  assert.equal(intelligence.moment_id, "argentina-two-goal-lead");
+  assert.equal(intelligence.moment_id, null);
+  assert.equal(intelligence.market, null);
+  assert.deepEqual(intelligence.evidence, []);
+  assert.deepEqual(intelligence.research, []);
+  assert.deepEqual(intelligence.checkpoints, []);
   const realModel = { primary_probability: 0.42, risk_note: "Visual model" };
   assert.equal(analysisFromDemoIntelligence(intelligence, realModel).primary_probability, 0.42);
   assert.equal(analysisFromDemoIntelligence(intelligence, null), null);
@@ -234,10 +440,11 @@ test("timeline selection cannot rewind after a noisy later observation", () => {
 
 test("known event remains deterministic when the analytics model is unavailable", async () => {
   const visible = TARGETS[0][0];
+  let analyticsCalls = 0;
   const analyzer = new LiveEventAnalyzer({
     batchSize: 1,
     visionBackend: { name: "test-vision", extractEventBatch: async () => visible },
-    analyze: async () => { throw new Error("analytics offline"); },
+    analyze: async () => { analyticsCalls += 1; throw new Error("analytics offline"); },
   });
   const result = await analyzer.submit({
     frame_id: "frame_demo",
@@ -249,10 +456,52 @@ test("known event remains deterministic when the analytics model is unavailable"
     height: 720,
   }, { force: true });
   assert.equal(result.insight.demo_intelligence.pack_id, "world-cup-2022-final");
-  assert.equal(result.insight.analysis.primary_probability, 0.96);
+  assert.equal(
+    result.insight.analysis.primary_probability,
+    result.insight.demo_intelligence.market.model_probability
+  );
   assert.equal(result.insight.market.is_mock, true);
-  assert.equal(result.insight.comparison.gap_percentage_points, 11);
-  assert.equal(result.insight.diagnostics.analytics_error, "analytics offline");
+  assert.equal(
+    result.insight.comparison.gap_percentage_points,
+    result.insight.demo_intelligence.market.gap_percentage_points
+  );
+  assert.equal(analyticsCalls, 0, "exact ready packs skip optional GPT enrichment by default");
+  assert.equal(result.insight.diagnostics.analytics_error, null);
+  assert.equal(result.insight.diagnostics.analytics_skipped, true);
+  assert.equal(result.insight.diagnostics.analytics_skip_reason, "exact_deterministic_pack");
+});
+
+test("exact pack summary remains deterministic when GPT enrichment conflicts", async () => {
+  const visible = TARGETS[0][0];
+  const expected = selectDemoIntelligence(visible).summary;
+  const analyzer = new LiveEventAnalyzer({
+    batchSize: 1,
+    enrichExactDemo: true,
+    visionBackend: { name: "test-vision", extractEventBatch: async () => visible },
+    analyze: async () => ({
+      event_summary: "Wrong game and wrong score.",
+      primary_market_question: "Wrong question?",
+      primary_outcome: "Wrong outcome",
+      primary_probability: 0.01,
+      confidence: 0.1,
+      alternate_markets: [],
+      key_factors: ["Untrusted enrichment"],
+      what_changed: "Wrong",
+      next_probability_trigger: "Wrong",
+      risk_note: "Wrong",
+    }),
+  });
+  const result = await analyzer.submit({
+    frame_id: "frame_conflict",
+    source: "phone_live",
+    captured_at: "2026-07-11T20:00:00.000Z",
+    mime_type: "image/jpeg",
+    image_base64: "ZGVtbw==",
+    width: 1280,
+    height: 720,
+  }, { force: true });
+  assert.equal(result.insight.analysis.event_summary, expected);
+  assert.notEqual(result.insight.analysis.primary_probability, 0.01);
 });
 
 test("detected event flows through the server into the stable latest-live contract", async (t) => {
@@ -283,8 +532,14 @@ test("detected event flows through the server into the stable latest-live contra
   assert.equal(response.status, 201);
   const submitted = await response.json();
   assert.equal(submitted.insight.demo_intelligence.pack_id, "super-bowl-li");
-  assert.equal(submitted.insight.market.probability, 0.55);
-  assert.equal(submitted.insight.comparison.gap_percentage_points, -1);
+  assert.equal(
+    submitted.insight.market.probability,
+    submitted.insight.demo_intelligence.market.market_probability
+  );
+  assert.equal(
+    submitted.insight.comparison.gap_percentage_points,
+    submitted.insight.demo_intelligence.market.gap_percentage_points
+  );
   const latest = await (await fetch(`${base}/api/latest`)).json();
   assert.equal(latest.demo_intelligence.moment_id, "game-tied");
   assert.equal(latest.sport, "football");

@@ -12,7 +12,8 @@ phone/app camera -> direct WebRTC peer connection -> desktop capture viewer
 desktop capture viewer -> bundled YOLO11s WebGPU -> continuous local player/ball overlay
 phone/app analysis JPEGs (only after user action) -> fast first five-frame window -> Gemma 4 event extraction
 -> automatic event-switch check -> matching precollected event intelligence pack
--> GPT OSS/GLM narrative enrichment -> model/market/evidence presentation JSON
+-> deterministic exact-pack result or GPT OSS/GLM for unmatched events
+-> model/market/evidence presentation JSON
 ```
 
 The native app owns camera permissions and frame delivery. The Next.js frontend owns rendering. Neither client should implement OCR, game-state correction, probability calculation, market comparison, or sport selection. The camera feed is the selector.
@@ -155,7 +156,7 @@ Gemma remains the source of truth for what the camera sees. After each successfu
 
 The closest checkpoint is selected by score first, then phase and clock. Progress cannot rewind within an event, and an automatic event switch clears the prior checkpoint. Exact matches return `mode: "precollected_event_replay"`; sport-only matches return `mode: "illustrative_sport_template"`. Vision confidence below 0.55 receives no pack.
 
-Each pack includes cached evidence traces, a deterministic model probability, an explicitly mocked replay-market probability, what changed, and the next probability trigger. GPT OSS or GLM may enrich the wording, but it cannot replace the committed checkpoint probabilities. If the analytics call fails, the exact event still produces the deterministic demo result and exposes the failure under `diagnostics.analytics_error`.
+Together the packs contain 27 chronological checkpoints from opening state through resolved result. Each includes cached evidence traces, a deterministic model probability, an explicitly mocked replay-market probability, what changed, and the next probability trigger. Exact ready packs return immediately after vision and skip the optional GPT OSS/GLM pass by default, eliminating a second network dependency from the stage path. `CEREBRAS_EXACT_DEMO_ENRICHMENT=true` opts into that pass, but it cannot replace the checkpoint probability or deterministic summary. Unmatched events may still use GPT OSS/GLM for live model-led analysis.
 
 `GET /api/latest` returns only the latest live analyzed result and persists until reset. It never silently falls back to an NBA fixture. `GET /api/comparison` retains the explicit deterministic fixture/debug path, and `GET /api/demo/intelligence` lists the four available packs.
 
@@ -217,7 +218,7 @@ The live provider is intentionally simple:
 2. The backend compares stable `event_identity`, sport, competition, and participants with the last trusted observation. A real event change clears the old context; a leaderboard showing another player does not.
 3. `gpt-oss-120b` receives the trusted event observation plus same-event context and emits the primary prediction-market question, probability, alternate markets, key factors, changes, and the next probability-moving trigger.
 
-Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for the second pass. `CEREBRAS_MODEL_INTERVAL_MS` may be increased but is clamped to a minimum of 12,000 ms, and `CEREBRAS_FRAMES_PER_REQUEST` is capped at five. The API key stays server-side and must never be sent by the phone or frontend.
+Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for model-led unmatched-event analysis or opted-in exact-pack enrichment. `CEREBRAS_MODEL_INTERVAL_MS` may be increased but is clamped to a minimum of 12,000 ms, and `CEREBRAS_FRAMES_PER_REQUEST` is capped at five. The API key stays server-side and must never be sent by the phone or frontend.
 
 ## Honest failure behavior
 

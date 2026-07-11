@@ -4,6 +4,8 @@ Snapshot of the system **as implemented** on 2026-07-11. The README describes in
 
 The product loop: point a camera at a live sports broadcast, read the scoreboard, estimate the win probability, compare it with the prediction-market price, and speak/show a one-line result.
 
+> **Current live path.** The production demo no longer fixture-parses camera frames. `/phone` or the native glasses companion sends continuous WebRTC media to `/capture`; only user-gated snapshots reach `LiveEventAnalyzer`, where Cerebras Gemma extracts a universal event observation from five frames. `services/demo/intelligence.js` exact-matches one of four historical event packs and an anchored checkpoint, then `/api/latest` serves the unified observation, prediction, mock market, evidence, and mock-research payload. The older `pipeline.js` fixture/normalizer/model path remains available through `/api/comparison` for deterministic lower-level tests and the data dashboard. Any fixture-first language below applies to that legacy/debug path, not `/api/frames` live analysis.
+
 ```text
 camera frame -> gateway -> selector -> extraction -> normalize -> resolver
             -> reconciler -> probability model -> market adapter -> gate -> presentation
@@ -19,7 +21,7 @@ Everything runs as **one zero-dependency Node process** (`node services/api/serv
 |---|---|---|
 | Capture gateway | `services/capture/gateway.js` | Source-agnostic frame ingestion (§7.1). Validates submissions, assigns `frame_id`, holds frames in a 30-slot in-memory ring buffer. `image_uri` is a `memory://` reference — nothing touches disk. |
 | Frame selector | `services/capture/selector.js` | Rate limit (500 ms => ~2 fps ceiling) + near-duplicate skip (byte length + sampled FNV-1a hash of the base64 payload). Byte-level only; perceptual dedup is a documented future Slice 2 item. |
-| Dataset writer | `services/capture/dataset.js` | Opt-in training-data collector. Writes **nothing** unless `DATASET_DIR` is set; then saves accepted frames as `.jpg` + latest reconciled state as a label. **Not yet wired into the server** — no caller exists in `server.js` (in flight; `apps/demo-web/data.html` already polls a future `/api/dataset/summary`). |
+| Dataset writer | `services/capture/dataset.js` | Opt-in training-data collector. Writes **nothing** unless `DATASET_DIR` is set; when enabled, the server pairs accepted images with the latest trusted structured state. |
 | Vision backends | `services/vision/backends/fixture.js`, `services/vision/backends/gemini.js` | Pluggable scoreboard extraction (§7.3). `fixture` reads the saved `parsed_scoreboard` from a fixture JSON (deterministic). `gemini` sends the frame image to Gemini (`gemini-2.0-flash`) with a `responseSchema` so it must return typed JSON; requires `GEMINI_API_KEY`, throws a clear "backend unavailable" error without it. |
 | Normalize | `services/vision/normalize.js` (+ `normalize-soccer.js`, `-football.js`, `-ufc.js`, `-golf.js`) | Coerces noisy backend output ("2:14", "4th", "OT2", "45+2'", "-12 thru 16") into the typed `ParsedScoreboard` contract. Required fields throw on garbage; optional fields (possession, shot clock) drop silently. Backends that don't report confidences get `UNREPORTED_CONFIDENCE = 0.5` so the gate treats them as untrusted. |
 | Resolver | `services/vision/resolver.js` | Broadcast label -> stable internal ID (`BOS` -> `nba_bos`) via exact-match alias tables. **No fuzzy matching, ever** — unknown labels throw. Builds `event_id` like `nba_2026_07_11_bos_nyk`. |
@@ -28,8 +30,8 @@ Everything runs as **one zero-dependency Node process** (`node services/api/serv
 | Probability models | `services/probability/index.js` (NBA), `models/{football,soccer,ufc,golf}.js`, shared math in `models/gaussian.js` | Deterministic, bounded, explainable models. Consume `CanonicalGameState` only — never pixels. All clamp output to (0.001, 0.999): the model never claims certainty. |
 | Market adapters | `services/market/index.js` (registry), `mock-adapter.js`, `polymarket-adapter.js` | Three operations behind one interface: `list_live_events` / `find_market` / `get_market_snapshot`. Registry picks by `MARKET_PROVIDER` env, **default `mock`**. Every mock snapshot is `is_mock: true`. |
 | Pipeline | `services/api/pipeline.js` | Orchestrates one frame end-to-end and assembles the README §8 payload, including the confidence/freshness gate. |
-| Server | `services/api/server.js` | `node:http` server: `POST /api/frames`, `GET /api/comparison`, serves the two demo-web pages. Full endpoint reference: `docs/architecture/API.md`. |
-| Web apps | `apps/demo-web/index.html` (dashboard + HUD lens preview + Web Speech), `capture.html` (webcam -> `/api/frames` at ~1 fps), `data.html` (fixture/stats explorer) | Presentation-neutral JSON in, rendering client-side. `data.html` has **no server route yet** (open it from disk or add a route — in flight). |
+| Server | `services/api/server.js` | `node:http` server: WebRTC signaling, analysis control, `POST /api/frames`, live-only `GET /api/latest`, rehearsal/catalog endpoints, legacy `GET /api/comparison`, and all demo pages. |
+| Web apps | `apps/demo-web/index.html`, `capture.html`, `phone.html`, `data.html` | `/phone` is the browser camera provider; `/capture` receives continuous WebRTC video, runs local YOLO, gates Cerebras analysis, and renders live predictions/research. `/data` explores deterministic fixtures and saved stats. |
 | iOS app | `apps/ios/BloomKnights/BloomKnights/` (SwiftUI) | `CameraStreamer.swift` samples the iPhone camera at ~1 fps, JPEG->base64, POSTs to `/api/frames` (source `"ios_app"`) — the phone stands in for the Meta glasses. `ApiClient.swift` + `Models.swift` mirror the backend JSON via `convertFromSnakeCase`. `Speaker.swift` reads `presentation.spoken_text` via AVSpeechSynthesizer. `DemoCatalog.swift` polls `GET /api/comparison` every 5 s. |
 | Scripts | `scripts/evaluate-fixtures.js` (per-field extraction accuracy vs `packages/fixtures/expected/`), `scripts/evaluate-model.js` (scenario table + optional CSV calibration harness), `scripts/extract-clip-frames.sh` (ffmpeg ~1 fps frame extraction; output must stay out of git) | Measurement is real or absent — the gemini evaluation is *skipped*, not faked, without a key and real images; calibration numbers are never printed without historical data. |
 
@@ -65,7 +67,7 @@ flowchart LR
             POLY["polymarket (Gamma API)"]
         end
         GATE["confidence + freshness gate"]
-        DS["DatasetWriter (opt-in,<br/>DATASET_DIR — not wired yet)"]
+        DS["DatasetWriter (opt-in,<br/>DATASET_DIR)"]
     end
 
     IOS -->|"POST /api/frames"| GW

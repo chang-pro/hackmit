@@ -1,67 +1,86 @@
 # Demo-day setup checklist
 
-Work top to bottom. Every box is checkable without judges in the room. The whole point: by T-2 minutes, nothing on stage is being tried for the first time.
+Run this top to bottom on the actual demo network and projector. Do not introduce a new pull, dependency, clip, or browser after this pass.
 
-## T-60 min · Machine and server
+## T-60 · Machine and stable service
 
-- [ ] Laptop on wall power. Sleep/screensaver OFF. Notifications OFF (Windows Focus Assist / macOS Do Not Disturb).
-- [ ] Fresh pull is NOT required — demo runs the tree you rehearsed. Do not `git pull` on demo day.
-- [ ] `npm test` → expect **68 pass, 0 fail**. If anything fails, you changed something; revert it.
-- [ ] Port 3000 free? Check first, never blanket-kill:
-  - Windows: `Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue`
-  - If taken by something you can't stop: run `PORT=3001 npm start` and use `:3001` in every tab. The server reads `PORT` from env (`services/api/server.js`).
-- [ ] `npm start` → console prints `BloomKnights demo: http://localhost:3000 (webcam capture: /capture)`.
-- [ ] Keep that terminal visible on a second monitor if you have one — it's your server heartbeat.
+- [ ] Laptop is on power; sleep, notifications, and automatic updates are off.
+- [ ] `git status -sb` shows the rehearsed commit and no unexplained changes.
+- [ ] `npm test` finishes with zero failures. Trust the current total; do not hardcode an old test count.
+- [ ] Start the server and named Cloudflare connector with `npm run phone:tunnel`.
+- [ ] Leave that terminal running. It must show registered tunnel connections without a repeating error loop.
+- [ ] Run:
 
-## T-45 min · Endpoint smoke test (the click gate)
+  ```bash
+  curl -fsS https://capture.saicharanramineni.com/api/health | jq .
+  curl -fsS https://capture.saicharanramineni.com/api/demo/intelligence | jq .
+  ```
 
-Curl every moment you plan to click on stage. **A moment that doesn't return `"status": "ready"` here does not go in the show.**
+- [ ] Health reports `status: "ok"`, `vision.selected: "cerebras"`, `vision.error: null`, and `demo_intelligence_packs: 4`.
+- [ ] The catalog lists the World Cup Final, 2016 NBA Finals Game 7, Super Bowl LI, and UFC 229.
 
-- [ ] `curl http://localhost:3000/api/comparison?fixture=frame_000184` → ready, model ~0.878, gap +28.7
-- [ ] `curl http://localhost:3000/api/comparison?fixture=frame_000260` → ready, model 0.999, gap +40.9
-- [ ] Ending A gate: `curl "http://localhost:3000/api/comparison?sport=football&fixture=<sb51 id from the dashboard>"`
-  - Returns 200 + ready → Ending A (Super Bowl LI flip) is GO.
-  - Returns 400 (`unknown fixture`) → the checked-out server and fixture catalog are out of sync. Do not demo until `npm test` passes and `/api/demo/intelligence` lists all four packs.
-- [ ] Known 404s that are fine to ignore: `/api/sports` and `/data` (dashboard falls back to its built-in catalog; the analytics page is not routed).
+## T-45 · Check every stage checkpoint
 
-## T-30 min · Browser and tabs
+- [ ] Open `https://capture.saicharanramineni.com/capture?demo=1&cycle=1`.
+- [ ] Confirm each event renders a prediction, mock market comparison, four `MOCK WEB` research cards, and an explicit `REHEARSAL · NO MODEL CALL` label.
+- [ ] Pin one checkpoint directly if needed:
 
-- [ ] One browser window, exactly these tabs, in order:
-  1. `http://localhost:3000/` — NBA tab, Q4 2:14 selected
-  2. `http://localhost:3000/capture` — best working capture mode selected
-  3. (Ending A only) second dashboard tab parked on Football / SB LI Q3
-  4. `apps/demo-video/out/bloomknights-demo.mp4` — for looping BEFORE the slot and as emergency ending
-- [ ] Close every other tab and window. Bookmark bar hidden. Full screen (F11) rehearsed once.
-- [ ] Zoom: on the projector, set so the three big numbers + the lens preview fit without scrolling (usually 100–110%; check on the *actual* projector, not your screen — projectors are often 1280×720).
-- [ ] The dashboard is dark-themed — ask for room lights near the screen to be dimmed if possible.
-- [ ] Hard-refresh tab 1 once and confirm: numbers load, skeleton shimmer clears, status pill says **ready**, amber "Simulated market feed" banner shows.
-- [ ] Offline venue note: the dashboard pulls Google Fonts (Outfit / JetBrains Mono) from the internet. No wifi → system fonts load instead. Purely cosmetic; do not panic, do not fix.
+  ```text
+  /capture?demo=1&pack=<pack-id>&moment=<checkpoint-id>
+  ```
 
-## T-20 min · Capture fallback chain (test ALL rungs, top down)
+- [ ] Never use rehearsal mode as proof of camera recognition. It is the honest UI/recovery floor.
 
-The demo NEVER dies — because every rung below was tested this hour, and the bottom rung needs no camera at all.
+## T-30 · Real two-device path
 
-- [ ] **Rung 1 — Glasses stream:** Start a livestream from the Ray-Bans (Meta AI app / WhatsApp video call), open that stream on this laptop, then on `/capture` pick "Ray-Ban stream" → browser asks to share a screen/window → share the stream window. Counters tick: sent / accepted / skipped.
-- [ ] **Rung 2 — Webcam at a screen:** second laptop (or phone) plays a game clip; this laptop's webcam points at it. `/capture` → webcam mode → counters tick. Position and focus the webcam NOW and tape it down.
-- [ ] **Rung 3 — Clip replay:** a game-clip video file saved locally on the demo laptop (know the exact folder). `/capture` → clip replay → choose file → counters tick.
-- [ ] **Rung 4 — Pure fixture:** close/ignore capture entirely. The dashboard's demo moments run on committed fixtures and need zero camera. This is the floor and it cannot break.
-- [ ] Honesty check: whatever rung you use, the pipeline output labels extraction `fixture_parse` and mock market data `is_mock: true` with the amber banner. Never remove or hide the labels — they're a talking point, not a bug (see judge-qa.md).
+- [ ] Viewer laptop: `https://capture.saicharanramineni.com/capture` in current Chrome or Edge.
+- [ ] Camera device: native glasses companion or `https://capture.saicharanramineni.com/phone`.
+- [ ] Start the camera feed. The latest provider appears automatically; there is no pairing code or refresh button.
+- [ ] Confirm continuous video on the viewer before pressing **Analyze**.
+- [ ] Confirm the viewer eventually reports `YOLO11s WebGPU`. WASM is a functional but slower fallback.
+- [ ] Press **Analyze** once. Confirm the acquisition counter advances and a live insight appears.
+- [ ] Stop analysis and confirm video continues while the old prediction disappears.
 
-## T-10 min · Audio
+## T-20 · Four canonical clips
 
-- [ ] System output = the venue speaker / HDMI audio, not the laptop's dead speaker. Volume ~80%.
-- [ ] On the dashboard, click **Speak**. You must clearly hear "…estimated win probability is 88 percent…" from the back of the room.
-- [ ] Speech is browser `speechSynthesis` — works offline, but voice choice depends on the OS. Whatever voice you hear now is what judges hear. If it's silent: check tab mute (right-click tab), check OS output device.
-- [ ] Leave **auto-speak on update** UNCHECKED for the demo (you control when it talks; auto-speak mid-sentence steps on you).
+Use only these identities unless their JSON packs have been deliberately recalibrated:
 
-## T-2 min · Final state
+1. 2022 FIFA World Cup Final — Argentina vs France.
+2. 2016 NBA Finals Game 7 — Cavaliers vs Warriors.
+3. Super Bowl LI — Patriots vs Falcons.
+4. UFC 229 — Khabib Nurmagomedov vs Conor McGregor.
 
-- [ ] Tab 1 front and center: NBA / Q4 2:14 / status **ready**.
-- [ ] Server terminal shows no errors.
-- [ ] Hype video looping until you're introduced, then Alt-Tab to tab 1.
-- [ ] Phone on silent. Breathe. First line: "This is BloomKnights."
+- [ ] Each clip keeps the primary scorebug visible and large enough to read.
+- [ ] Each clip reaches at least one committed checkpoint and shows `Historical replay`, not `Sport template`.
+- [ ] Switch through all four without touching a sport selector.
+- [ ] Terminal footage resolves to 100% for the known winner instead of retaining a pre-finish estimate.
+- [ ] If any teammate clip is a different event, stop and update the pack. Never attach a famous game's facts to unrelated footage.
 
-## Offline mode (no venue internet) — summary
+## T-10 · Projector and audio
 
-- Market data: the **mock adapter is the default** (`MARKET_PROVIDER` unset → mock). Fully offline, deterministic, labeled with the amber banner. This is the recommended demo config even WITH internet — live Polymarket (`MARKET_PROVIDER=polymarket`) adds a network dependency for zero stage value.
-- Fixtures, model, speech: all local. The only internet-touching things are Google Fonts (cosmetic) and Rung 1's glasses livestream (has 3 fallback rungs).
+- [ ] Test at the projector's native resolution, especially 1280×720.
+- [ ] The theater remains the largest surface; prediction and at least one research result are visible without page scrolling.
+- [ ] Browser zoom is fixed for the entire pitch.
+- [ ] Click **Speak** once and verify venue audio. If it fails on stage, read the visible sentence yourself and keep moving.
+- [ ] Close unrelated tabs, hide bookmarks, and enable Do Not Disturb.
+
+## T-2 · Final state
+
+- [ ] Viewer is open on `/capture`, camera feed is live, and analysis is **off**.
+- [ ] World Cup clip is framed at the first rehearsed checkpoint.
+- [ ] Tunnel terminal is healthy; `/api/health` still returns 200.
+- [ ] Rehearsal URL is bookmarked as the final fallback.
+- [ ] Opening line is memorized: “Prediction markets know their contracts. BloomKnights knows what I am looking at.”
+
+## Recovery ladder
+
+1. Meta glasses companion → viewer.
+2. Phone browser → viewer.
+3. Prerecorded canonical clip displayed to either camera source.
+4. Quota-free `/capture?demo=1&cycle=1` rehearsal.
+
+The first three prove visual recognition. The fourth proves the interaction and intelligence presentation while explicitly disclosing that no camera or model call occurred.
+
+## Network reality
+
+The live path needs internet for HTTPS signaling, TURN when required by campus NAT, and Cerebras inference. Continuous video uses WebRTC between the peers or the TURN relay; Cloudflare carries page delivery, signaling, and gated analysis snapshots, not the live media stream. If the venue loses internet completely, use the local rehearsal floor and say so plainly.

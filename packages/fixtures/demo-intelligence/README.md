@@ -13,6 +13,8 @@ These four JSON files are the deterministic funding-demo layer used after Cerebr
 
 If the teammate clips differ, update the pack identity, aliases, moments, evidence, and disclosure before demo day. Do not preserve the old facts under a new clip.
 
+Each pack also carries top-level `identity_tokens`: normalized, event-specific identities that Cerebras may return in `event_identity`, `event_name`, or competition context. They must be unique to that exact historical event (for example `super-bowl-li` or `nba:2016-finals-game-7-cavaliers-warriors`), never generic league-only labels such as `nba`, `ufc`, or `world cup`.
+
 ## Routing rules
 
 `services/demo/intelligence.js` performs:
@@ -37,7 +39,9 @@ Every moment must contain:
 - At least three evidence entries with provider, query, and cached-result detail.
 - At least one honest disclosure at the pack level.
 
-For UFC, store the broadcast countdown clock. UFC 229 ended at 3:03 elapsed in round four, which is 1:57 remaining.
+Moments are stored in chronological order and cover the opening state, decisive score or control changes, and a terminal result. The primary market question and settlement meaning must remain identical across the full timeline. A verified terminal checkpoint uses exactly `1.0` for both model and mock-market probability, describes the outcome as resolved, and uses `next_trigger` to state that no further trigger remains.
+
+For UFC, store the broadcast countdown clock. UFC 229 ended at 3:03 elapsed in round four, which is 1:57 remaining; the unresolved pre-finish checkpoint must therefore occur earlier than 1:57.
 
 ## Mock research schema
 
