@@ -10,7 +10,7 @@ import { marketAdapter } from "../market/index.js";
 const MIN_STATE_CONFIDENCE = 0.8;
 const MAX_MARKET_AGE_MS = 30_000;
 
-const reconciler = new Reconciler();
+const defaultReconciler = new Reconciler();
 
 // ── Extraction seam ─────────────────────────────────────────────────────────
 // Slice 2 (real OCR) replaces the body of this function only: given a live
@@ -28,7 +28,16 @@ async function extractState(fixturePath, liveFrame) {
 
 // Default adapter comes from the Slice 5 registry (MARKET_PROVIDER env,
 // default "mock"); tests may inject any adapter directly.
-export async function runPipeline(fixturePath, adapter = marketAdapter, liveFrame = null) {
+// `reconciler` is injectable so callers can scope reconciliation to a session.
+// The demo server passes a fresh Reconciler per fixture request: the demo
+// fixtures are minutes of game time apart, and §7.5 invariants (max score
+// jump per observation) apply to consecutive frames, not across demo moments.
+export async function runPipeline(
+  fixturePath,
+  adapter = marketAdapter,
+  liveFrame = null,
+  reconciler = defaultReconciler
+) {
   const { frame, parsed, extraction } = await extractState(fixturePath, liveFrame);
   const event = resolveEvent(parsed);
   const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
