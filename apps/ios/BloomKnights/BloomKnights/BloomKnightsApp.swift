@@ -24,10 +24,11 @@ struct ConnectorView: View {
     #if canImport(WebRTC)
     @StateObject private var rtc = RTCPublisher()
     #endif
-    // Default = the public tunnel to the Mac. Editable if the tunnel URL rotates.
-    @AppStorage("apiBaseURL") private var apiBaseURL = "https://maps-requirement-charlotte-median.trycloudflare.com"
+    // Public tunnel URLs are temporary, so never ship a stale endpoint here.
+    @AppStorage("apiBaseURL") private var apiBaseURL = ""
     @AppStorage("pairCode") private var pairCode = ""
     @State private var showControls = true
+    @State private var connectionError = ""
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -53,7 +54,11 @@ struct ConnectorView: View {
             if showControls { controls }
         }
         .background(Color.black)
-        .task { glasses.monitor() }
+        .task {
+            // Clear the hard-coded pre-Metered tunnel retained by older app installs.
+            if apiBaseURL.contains(".trycloudflare.com") { apiBaseURL = "" }
+            glasses.monitor()
+        }
         .onChange(of: scenePhase) { _, phase in
             // Locking / backgrounding kills the SDK capture — tear down honestly.
             if phase == .background && glasses.isBusy { stopEverything() }
@@ -82,7 +87,7 @@ struct ConnectorView: View {
             // Bottom control card
             VStack(spacing: 10) {
                 HStack(spacing: 8) {
-                    TextField("Server URL", text: $apiBaseURL)
+                    TextField("PUBLIC TUNNEL URL", text: $apiBaseURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -111,8 +116,8 @@ struct ConnectorView: View {
                 }
                 .buttonStyle(.plain)
 
-                if !glasses.lastError.isEmpty {
-                    Text(glasses.lastError)
+                if !connectionError.isEmpty || !glasses.lastError.isEmpty {
+                    Text(connectionError.isEmpty ? glasses.lastError : connectionError)
                         .font(.caption2)
                         .foregroundStyle(.red.opacity(0.9))
                         .lineLimit(2)
@@ -140,6 +145,12 @@ struct ConnectorView: View {
 
     private func toggle() {
         if glasses.isBusy { stopEverything(); return }
+        let address = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let base = URL(string: address), base.scheme != nil, base.host != nil else {
+            connectionError = "Paste the current public tunnel URL from the desktop before connecting."
+            return
+        }
+        connectionError = ""
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
         glasses.start()
@@ -148,10 +159,8 @@ struct ConnectorView: View {
         // with the newest open session from the desktop /capture page.
         let publisher = rtc
         glasses.setFrameTap { buffer in publisher.push(buffer) }
-        if let base = URL(string: apiBaseURL.trimmingCharacters(in: .whitespaces)) {
-            let code = pairCode.trimmingCharacters(in: .whitespaces).uppercased()
-            Task { await rtc.connect(baseURL: base, pairCode: code) }
-        }
+        let code = pairCode.trimmingCharacters(in: .whitespaces).uppercased()
+        Task { await rtc.connect(baseURL: base, pairCode: code) }
         #endif
     }
 

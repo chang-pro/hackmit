@@ -437,6 +437,7 @@ export function createBloomServer({
       pair_code: pairCode,
       created_at: Date.now(),
       expires_at: Date.now() + WEBRTC_SESSION_TTL_MS,
+      phone_joined: false,
       signals: { phone: [], viewer: [] },
     };
     webrtcSessions.set(session.session_id, session);
@@ -448,13 +449,13 @@ export function createBloomServer({
   }
 
   // One-button pairing for the glasses app: returns the newest session that
-  // is still waiting for a phone (no offer relayed yet), so the app can join
+  // has not yet been joined by a camera, so the app can join
   // without the user typing the code. The desktop /capture page still shows
   // the code for the manual path.
   function webRtcPairHint(res) {
     pruneWebRtcSessions();
     const open = [...webrtcSessions.values()]
-      .filter((session) => session.signals.viewer.length === 0)
+      .filter((session) => !session.phone_joined)
       .sort((a, b) => b.created_at - a.created_at)[0];
     if (!open) {
       sendJson(res, 404, { error: "no open pairing session — open /capture on the desktop first" });
@@ -476,6 +477,7 @@ export function createBloomServer({
         sendJson(res, 404, { error: "pairing code is invalid or expired" });
         return;
       }
+      session.phone_joined = true;
       sendJson(res, 200, {
         session_id: session.session_id,
         expires_at: new Date(session.expires_at).toISOString(),
