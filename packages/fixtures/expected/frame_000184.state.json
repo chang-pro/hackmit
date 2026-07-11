@@ -1,0 +1,10 @@
+{
+  "event_id": "nba_2026_07_11_bos_nyk",
+  "away_team_id": "nba_bos",
+  "home_team_id": "nba_nyk",
+  "away_score": 104,
+  "home_score": 101,
+  "period": 4,
+  "clock_seconds": 134,
+  "possession_team_id": "nba_bos"
+}

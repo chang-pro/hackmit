@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BloomKnights — Debug View</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }
+  h1 { font-size: 1.2rem; letter-spacing: 0.04em; }
+  .headline { font-size: 2rem; font-weight: 700; margin: 1rem 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem; }
+  .card h2 { font-size: 0.75rem; text-transform: uppercase; color: #8b949e; margin: 0 0 0.5rem; }
+  .big { font-size: 1.8rem; font-weight: 700; }
+  .gap-pos { color: #3fb950; } .gap-neg { color: #f85149; }
+  .mock { color: #d29922; font-size: 0.8rem; }
+  pre { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem; overflow-x: auto; font-size: 0.75rem; }
+  .status { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; background: #1f6feb33; border: 1px solid #1f6feb; }
+</style>
+</head>
+<body>
+  <h1>BloomKnights <span class="status" id="status">loading…</span></h1>
+  <div class="headline" id="headline">—</div>
+  <div class="grid">
+    <div class="card"><h2>Game state</h2><div class="big" id="score">—</div><div id="clock"></div></div>
+    <div class="card"><h2>Model</h2><div class="big" id="model">—</div><div id="modelVersion"></div></div>
+    <div class="card"><h2>Market</h2><div class="big" id="market">—</div><div class="mock" id="mock"></div></div>
+    <div class="card"><h2>Gap</h2><div class="big" id="gap">—</div><div id="freshness"></div></div>
+  </div>
+  <h2 style="margin-top:2rem;font-size:0.75rem;text-transform:uppercase;color:#8b949e">Raw pipeline output</h2>
+  <pre id="raw">—</pre>
+<script>
+async function refresh() {
+  const r = await fetch("/api/comparison");
+  const d = await r.json();
+  document.getElementById("raw").textContent = JSON.stringify(d, null, 2);
+  if (d.error || !d.comparison) {
+    document.getElementById("status").textContent = d.presentation?.status || "error";
+    document.getElementById("headline").textContent = d.presentation?.short_text || d.error;
+    return;
+  }
+  const c = d.comparison;
+  document.getElementById("status").textContent = d.presentation.status;
+  document.getElementById("headline").textContent = d.presentation.short_text;
+  document.getElementById("score").textContent = `${d.state.away_score}–${d.state.home_score}`;
+  document.getElementById("clock").textContent = `Q${d.state.period} · ${Math.floor(d.state.clock_seconds/60)}:${String(d.state.clock_seconds%60).padStart(2,"0")} · conf ${d.state.confidence}`;
+  document.getElementById("model").textContent = `${(c.model_probability*100).toFixed(1)}%`;
+  document.getElementById("modelVersion").textContent = d.estimate.model_version;
+  document.getElementById("market").textContent = `${(c.market_probability*100).toFixed(1)}%`;
+  document.getElementById("mock").textContent = d.market.is_mock ? "⚠ MOCK market data" : `live · ${d.market.provider}`;
+  const g = document.getElementById("gap");
+  g.textContent = `${c.gap_percentage_points > 0 ? "+" : ""}${c.gap_percentage_points} pts`;
+  g.className = "big " + (c.gap_percentage_points >= 0 ? "gap-pos" : "gap-neg");
+  document.getElementById("freshness").textContent = `market age ${c.freshness_ms} ms`;
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
