@@ -43,9 +43,9 @@ fi
 
 echo
 echo "Creating public HTTPS phone/glasses endpoint..."
-echo "On the phone, open the printed trycloudflare.com URL with /phone appended."
-echo "On a desktop browser, open the same URL with /capture appended to view the phone/glasses feed."
-echo "Use the same public URL as the app's API base; POST frames to /api/frames."
+echo "Open the printed URL with /capture on the desktop, then copy its generated phone pairing link."
+echo "Continuous camera video is direct WebRTC between the paired browsers."
+echo "This tunnel carries SDP/ICE signaling and user-gated analysis snapshots only."
 echo
 
 "$CLOUDFLARED_BIN" tunnel \

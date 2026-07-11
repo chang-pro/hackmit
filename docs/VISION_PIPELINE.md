@@ -7,7 +7,8 @@ This is the execution guide for the BloomKnights camera-to-insight backend. The 
 Our service owns everything after camera capture:
 
 ```text
-phone/app video -> continuous JPEG relay -> desktop capture viewer
+phone/app camera -> direct WebRTC peer connection -> desktop capture viewer
+                  \-> HTTPS tunnel carries SDP/ICE signaling only
 phone/app analysis JPEGs (only after user action) -> five-frame window -> Gemma 4 event extraction
 -> automatic event-switch check -> GPT OSS/GLM prediction analysis -> presentation-ready JSON
 ```
@@ -36,7 +37,7 @@ The server prints the exact phone URL. On the current machine it will resemble:
 http://10.32.242.101:3000/phone
 ```
 
-Open that URL on the phone and choose **Start live feed**. Fill most of the view with the television or monitor, keep the scoreboard unobstructed, and avoid glare. Open `/capture` on a desktop browser to see the relayed feed; press **Analyze** there only when you are ready to spend model requests.
+Open `/capture` on the desktop first and use its generated pairing link on the phone. Choose **Start live feed** on the phone, fill most of the view with the television or monitor, and keep the scoreboard unobstructed. The video connects directly between phone and desktop; press **Analyze** on the desktop only when you are ready to spend model requests.
 
 Continuous **Start live feed** uses `getUserMedia`, which mobile browsers normally expose only in a secure HTTPS context. Use the photo flow until an HTTPS tunnel or the native app is available.
 
@@ -55,7 +56,7 @@ The command starts the analyzer and prints a random public URL similar to:
 https://random-words.trycloudflare.com
 ```
 
-Open `https://random-words.trycloudflare.com/phone` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. Open `/capture` on the desktop to view the incoming phone/glasses feed and press **Analyze** only when you want model calls to begin.
+Open `https://random-words.trycloudflare.com/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The Quick Tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers.
 
 Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
@@ -69,14 +70,13 @@ This validates phone connectivity, image upload, frame selection, UI rendering, 
 
 ## Client contract
 
-The continuous relay accepts low-resolution JPEG frames without invoking a model:
+The desktop creates a short-lived pairing session:
 
 ```http
-POST /api/live-stream
-Content-Type: application/json
+POST /api/webrtc/session
 ```
 
-`GET /api/live-stream` is the MJPEG endpoint rendered by the desktop capture page. It is intentionally separate from analysis.
+The phone exchanges its pairing code for a session at `POST /api/webrtc/join`, then the two pages exchange SDP offers/answers and ICE candidates through `POST /api/webrtc/signal` plus `GET /api/webrtc/poll`. Those endpoints carry only setup metadata—never JPEGs or video bytes.
 
 Analysis starts only after `POST /api/analysis/start`. At that point the phone also submits one high-quality JPEG every 2.4 seconds to the analysis endpoint:
 
@@ -150,16 +150,21 @@ Other endpoints:
 - `GET /api/comparison` — compatibility alias for `/api/latest`.
 - `POST /api/reset` — clears buffered frames and canonical game state.
 - `GET /phone` — phone-first camera capture page.
-- `GET /capture` — desktop viewer for the newest phone/glasses frame.
+- `GET /capture` — desktop WebRTC viewer and pairing control.
 - `GET /api/live-frame` — metadata for the newest inbound camera frame.
-- `GET /api/live-stream` — continuous MJPEG stream for the desktop viewer.
-- `GET /api/live-stream/status` — stream freshness and analysis-enabled state.
+- `POST /api/webrtc/session` — create a ten-minute desktop pairing session.
+- `POST /api/webrtc/join` — resolve a pairing code on the phone.
+- `POST /api/webrtc/signal`, `GET /api/webrtc/poll` — SDP/ICE signaling only.
+- `GET /api/webrtc/config` — configured STUN/TURN servers for browser peers.
+- `GET /api/analysis/status` — analysis-enabled state for the phone client.
 - `POST /api/analysis/start` — begin quota-limited model analysis.
 - `POST /api/analysis/stop` — stop model analysis while video keeps streaming.
 
 ## Frame cadence
 
-The phone sends a 960-pixel JPEG to the relay about five times per second, so the desktop viewer looks like a continuous live feed. This relay never invokes a model. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
+The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the Quick Tunnel. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
+
+The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. Supply browser-safe, time-limited STUN/TURN credentials through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. Do not put long-lived credentials in frontend source code.
 
 ## Cerebras models
 
@@ -182,12 +187,12 @@ Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for the second pass. `
 
 ## Native app handoff
 
-The app team needs to send both the relay and the gated analysis requests. Recommended behavior:
+The app team needs to establish the direct media peer connection and send gated analysis snapshots. Recommended behavior:
 
 1. Capture rear-camera JPEG at 720p or 1080p.
 2. Downscale so the longest edge is at most 1600 pixels.
-3. Send a 960-pixel JPEG to `POST /api/live-stream` about five times per second for the desktop live feed.
-4. Read `analysis_enabled` from the relay response. Send a 1600-pixel JPEG to `POST /api/frames` every 2.4 seconds only when it is `true`.
+3. Join the desktop pairing session and exchange SDP/ICE through the WebRTC signaling endpoints; add the camera track to the resulting peer connection.
+4. Read `analysis_enabled` from `GET /api/analysis/status`. Send a 1600-pixel JPEG to `POST /api/frames` every 2.4 seconds only when it is `true`.
 5. Do not send a sport selector value; detection and event switching are server-owned.
 6. Never overlap analysis requests.
 7. Speak or render `insight.presentation`.

@@ -94,7 +94,7 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   assert.equal(latest.extraction, "test-phone-vision-batch");
 });
 
-test("continuous relay publishes camera frames without enabling analysis", async (t) => {
+test("WebRTC signaling relays setup messages without proxying media", async (t) => {
   const server = createBloomServer({
     liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),
   });
@@ -103,37 +103,47 @@ test("continuous relay publishes camera frames without enabling analysis", async
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
 
-  const controller = new AbortController();
-  const mjpeg = await fetch(`${base}/api/live-stream`, { signal: controller.signal });
-  assert.match(mjpeg.headers.get("content-type"), /multipart\/x-mixed-replace/);
+  const created = await fetch(`${base}/api/webrtc/session`, { method: "POST" });
+  assert.equal(created.status, 201);
+  const session = await created.json();
+  assert.match(session.session_id, /^[0-9a-f-]{36}$/);
+  assert.match(session.pair_code, /^[0-9A-F]{10}$/);
 
-  const upload = await fetch(`${base}/api/live-stream`, {
+  const joined = await fetch(`${base}/api/webrtc/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pair_code: session.pair_code }),
+  });
+  assert.equal(joined.status, 200);
+  assert.equal((await joined.json()).session_id, session.session_id);
+
+  const offer = { type: "offer", sdp: "v=0" };
+  const sent = await fetch(`${base}/api/webrtc/signal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: session.session_id, from: "phone", kind: "offer", payload: offer }),
+  });
+  assert.equal(sent.status, 202);
+  const viewerSignals = await (
+    await fetch(`${base}/api/webrtc/poll?session_id=${session.session_id}&peer=viewer`)
+  ).json();
+  assert.deepEqual(viewerSignals.signals, [{ kind: "offer", payload: offer }]);
+
+  const oversizedSignal = await fetch(`${base}/api/webrtc/signal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      source: "phone_live",
-      captured_at: "2026-07-11T20:14:32.491Z",
-      mime_type: "image/png",
-      image_base64: "cGhvbmUtZnJhbWU=",
-      width: 1280,
-      height: 720,
+      session_id: session.session_id,
+      from: "phone",
+      kind: "ice",
+      payload: { candidate: "x".repeat(128 * 1024) },
     }),
   });
-  assert.equal(upload.status, 202);
-  assert.equal((await upload.json()).analysis_enabled, false);
+  assert.equal(oversizedSignal.status, 413);
 
-  const status = await (await fetch(`${base}/api/live-stream/status`)).json();
-  assert.equal(status.analysis_enabled, false);
-  assert.equal(status.stream.frame_id, "stream_00000001");
-  assert.equal(status.stream.width, 1280);
-
-  const reader = mjpeg.body.getReader();
-  const chunks = [];
-  while (Buffer.concat(chunks).indexOf(Buffer.from("phone-frame")) === -1) {
-    const { value, done } = await reader.read();
-    assert.equal(done, false);
-    chunks.push(Buffer.from(value));
-  }
-  assert.match(Buffer.concat(chunks).toString("latin1"), /--bloomknights-frame/);
-  controller.abort();
+  const config = await (await fetch(`${base}/api/webrtc/config`)).json();
+  assert.deepEqual(config.ice_servers, [{ urls: "stun:stun.l.google.com:19302" }]);
+  const analysis = await (await fetch(`${base}/api/analysis/status`)).json();
+  assert.equal(analysis.analysis_enabled, false);
+  assert.equal((await fetch(`${base}/api/live-stream`)).status, 404);
 });
