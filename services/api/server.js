@@ -12,7 +12,7 @@
 //   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
-//   GET  /, /capture, /phone, /data, /landing, /pitch — pages
+//   GET  /, /capture, /phone, /desktop-capture, /data, /landing, /pitch — pages
 
 import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
@@ -387,12 +387,17 @@ export function createBloomServer({
         req.method === "GET" &&
         (url.pathname === "/capture" || url.pathname === "/capture.html")
       ) {
-        await sendHtml(res, "capture.html");
+        await sendHtml(res, "phone.html");
       } else if (
         req.method === "GET" &&
         (url.pathname === "/phone" || url.pathname === "/phone.html")
       ) {
         await sendHtml(res, "phone.html");
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/desktop-capture" || url.pathname === "/desktop-capture.html")
+      ) {
+        await sendHtml(res, "capture.html");
       } else if (req.method === "GET" && (url.pathname === "/data" || url.pathname === "/data.html")) {
         await sendHtml(res, "data.html");
       } else if (req.method === "GET" && url.pathname === "/landing") {
