@@ -40,6 +40,25 @@ Open that URL on the phone and choose **Take photo**. This invokes the phone's r
 
 Continuous **Start live feed** uses `getUserMedia`, which mobile browsers normally expose only in a secure HTTPS context. Use the photo flow until an HTTPS tunnel or the native app is available.
 
+## University or isolated Wi-Fi
+
+Campus networks commonly prevent two wireless clients from reaching each other, so a laptop LAN address such as `http://10.x.x.x:3000` may be unreachable from the phone. Use the outbound HTTPS tunnel instead:
+
+```bash
+brew install cloudflared
+npm run phone:tunnel
+```
+
+The command starts the analyzer and prints a random public URL similar to:
+
+```text
+https://random-words.trycloudflare.com
+```
+
+Open `https://random-words.trycloudflare.com/capture` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. The glasses/native app can use the same origin as its API base and send frames to `POST /api/frames`.
+
+Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
+
 ## Plumbing-only test without a model key
 
 ```bash
