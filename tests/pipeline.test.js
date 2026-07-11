@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { runPipeline } from "../services/api/pipeline.js";
 import { mockAdapter } from "../services/market/mock-adapter.js";
+import { Reconciler } from "../services/vision/reconciler.js";
 
 const FIXTURE = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -31,7 +32,7 @@ test("fixture frame produces a complete, gated comparison", async () => {
   assert.match(out.presentation.short_text, /BOS \d+%\. Market \d+%\./);
 });
 
-test("a live frame flows through the extraction seam and is labeled honestly", async () => {
+test("a live in-memory camera frame runs the configured vision backend", async () => {
   const liveFrame = {
     frame_id: "frame_000042",
     captured_at: new Date().toISOString(),
@@ -39,10 +40,30 @@ test("a live frame flows through the extraction seam and is labeled honestly", a
     image_uri: "memory://capture/frame_000042",
     width: 1280,
     height: 720,
+    mime_type: "image/jpeg",
+    image_base64: "dGVzdC1mcmFtZQ==",
   };
-  const out = await runPipeline(FIXTURE, undefined, liveFrame);
+  const visionBackend = {
+    name: "test-camera",
+    async extract(frame) {
+      assert.equal(frame.image_base64, liveFrame.image_base64);
+      return {
+        away_team_text: "BOS",
+        home_team_text: "NYK",
+        away_score: 104,
+        home_score: 101,
+        period_text: "Q4",
+        clock_text: "2:14",
+        field_confidences: { teams: 0.98, scores: 0.96, period: 0.99, clock: 0.94 },
+      };
+    },
+  };
+  const out = await runPipeline(FIXTURE, undefined, liveFrame, {
+    visionBackend,
+    reconciler: new Reconciler(),
+  });
   assert.equal(out.source, "live");
-  assert.equal(out.extraction, "fixture_parse", "no real OCR claimed before Slice 2");
+  assert.equal(out.extraction, "test-camera");
   assert.equal(out.state.observed_at, liveFrame.captured_at);
 
   const fixtureOut = await runPipeline(FIXTURE);

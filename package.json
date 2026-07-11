@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Wearable visual intelligence for live sports prediction markets — camera frame -> scoreboard state -> win probability -> market comparison",
+  "description": "Camera-to-insight pipeline with capture, scoreboard extraction, state reconciliation, probability, and market comparison",
   "scripts": {
-    "start": "node services/api/server.js",
+    "start": "node --env-file-if-exists=.env services/api/server.js",
+    "phone:tunnel": "bash scripts/start-phone-tunnel.sh",
+    "start:fixture": "VISION_BACKEND=fixture ALLOW_FIXTURE_LIVE=true node services/api/server.js",
     "test": "node --test \"tests/*.test.js\"",
-    "evaluate": "node scripts/evaluate-fixtures.js"
+    "evaluate": "node scripts/evaluate-fixtures.js",
+    "pull-stats": "node scripts/pull-stats.js"
   }
 }

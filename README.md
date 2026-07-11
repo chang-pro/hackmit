@@ -638,6 +638,16 @@ This proves the interfaces and product loop.
 
 ## 12. Team workstreams
 
+### Current ownership boundary
+
+- **Vision/backend lane (this repository branch):** owns the complete camera-to-insight path: frame ingestion, selection, scoreboard extraction, event resolution, temporal reconciliation, probability, market comparison, gating, and the JSON API.
+- **Teammate 1:** owns the Next.js frontend and renders backend results. The frontend should not duplicate vision or probability logic.
+- **Teammate 2:** owns the native app, camera permissions, frame capture, and delivery to the backend. The app should treat the backend response as the source of truth.
+
+Until the native app is ready, `/capture` is the canonical phone-camera test client. See [`docs/VISION_PIPELINE.md`](docs/VISION_PIPELINE.md) for the live contract and operating instructions.
+
+On university networks with client isolation, run `npm run phone:tunnel` and open the generated public HTTPS URL with `/capture`; do not use the laptop's LAN IP.
+
 These tracks can progress in parallel once shared contracts are agreed upon.
 
 ### Vision and state
