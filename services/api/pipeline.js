@@ -5,14 +5,14 @@ import { parseFrame } from "../vision/index.js";
 import { resolveEvent } from "../vision/resolver.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { estimate } from "../probability/index.js";
-import { mockAdapter } from "../market/mock-adapter.js";
+import { marketAdapter } from "../market/index.js";
 
 const MIN_STATE_CONFIDENCE = 0.8;
 const MAX_MARKET_AGE_MS = 30_000;
 
 const reconciler = new Reconciler();
 
-export async function runPipeline(fixturePath, adapter = mockAdapter) {
+export async function runPipeline(fixturePath, adapter = marketAdapter) {
   const { frame, parsed } = await parseFrame(fixturePath);
   const event = resolveEvent(parsed);
   const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
@@ -33,8 +33,9 @@ export async function runPipeline(fixturePath, adapter = mockAdapter) {
   const teamId = state.away_team_id;
   const est = estimate(state, teamId);
 
-  const marketId = adapter.find_market(event.event_id, est.outcome);
-  const snapshot = adapter.get_market_snapshot(marketId);
+  // Awaits are no-ops for the sync mock; real adapters are async.
+  const marketId = await adapter.find_market(event.event_id, est.outcome);
+  const snapshot = await adapter.get_market_snapshot(marketId);
 
   const gapPts = Number(((est.probability - snapshot.display_probability) * 100).toFixed(1));
   const freshnessMs = Date.now() - Date.parse(snapshot.provider_timestamp);
