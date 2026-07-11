@@ -87,6 +87,10 @@ final class PreviewSink: @unchecked Sendable {
 // untouched if the backend is down.
 final class FrameUplink: @unchecked Sendable {
     private let lock = NSLock()
+    // Dedicated serial queue so the heavy decode + WebRTC-push + JPEG work
+    // NEVER runs on the SDK's frame-delivery thread — doing it inline backs up
+    // the SDK's bounded delivery queue and stalls the whole stream.
+    private let work = DispatchQueue(label: "com.bloomknights.uplink", qos: .userInitiated)
     private var decodeSession: VTDecompressionSession?
     private var streaming = false
     private var lastUploadAt = Date.distantPast
@@ -127,7 +131,13 @@ final class FrameUplink: @unchecked Sendable {
         return true
     }
 
+    // Called on the SDK delivery thread — hand off immediately and return, so
+    // the delivery thread is never blocked by decode/encode/push work.
     func ingest(_ sb: CMSampleBuffer) {
+        work.async { [weak self] in self?.ingestSync(sb) }
+    }
+
+    private func ingestSync(_ sb: CMSampleBuffer) {
         guard let fmt = CMSampleBufferGetFormatDescription(sb) else { return }
 
         lock.lock()
@@ -538,15 +548,14 @@ final class GlassesStreamer: ObservableObject {
                     }
                 }
 
-                // .high (720x1280) for readable cards INCLUDING the board at table
-                // distance. SDK 0.8 added automatic WiFi transport ("consistent video
-                // quality at high resolution settings") — at .high the SDK delivers
-                // frames over WiFi/softAP instead of Bluetooth (far more bandwidth),
-                // so 720p runs stable where it used to stall on BT. The phone drops to
-                // cellular during the session (fine — we record locally) + a one-time
-                // WiFi permission prompt. If it still cuts, WiFi didn't engage and we
-                // dig into the enable path; fall back to .medium 504x896.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 24)
+                // .medium (504x896) @ 24fps — the ONLY resolution proven to stream
+                // smooth + continuous over Bluetooth on this SDK. Device tests:
+                // .high (720x1280) stalls at ANY fps when frames ride Bluetooth (the
+                // glasses throttle hard when the BT channel congests → the ~1-minute
+                // freeze); .medium ran clean ~8 min. SDK 0.8's WiFi/softAP transport
+                // (which would let .high run stable) only engages on some networks and
+                // did NOT engage here, so we stay on the reliable .medium path.
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 24)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
