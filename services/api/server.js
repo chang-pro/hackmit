@@ -1,12 +1,12 @@
-// BloomKnights API server. The mobile client posts base64 frames and receives
-// the complete camera-to-insight result in the same response (live Cerebras
-// vision when configured). The demo pages replay famous-match fixtures across
-// five sports. Zero dependencies (node:http).
+// BloomKnights API server. The mobile client posts base64 frames; frames are
+// batched through the quota-aware LiveEventAnalyzer (Cerebras vision +
+// analytics, one model call per interval). The demo pages replay famous-match
+// fixtures across five sports. Zero dependencies (node:http).
 //
 // Routes:
-//   POST /api/frames            — live frame in, full insight out (sport-aware)
+//   POST /api/frames            — live frame in (sport-tagged); batched analysis
 //   POST /api/reset             — clear live session state
-//   GET  /api/health            — vision backend + buffer status
+//   GET  /api/health            — vision backend + buffer + quota status
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
 //   GET  /api/latest            — alias of /api/comparison
 //   GET  /api/sports            — sport selector data for the frontends
@@ -19,7 +19,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
-import { runFramePipeline, runPipeline, resetLivePipeline } from "./pipeline.js";
+import { runPipeline, resetLivePipeline } from "./pipeline.js";
+import { LiveEventAnalyzer } from "./live-event-analyzer.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
@@ -157,7 +158,9 @@ export function createBloomServer({
   gateway = new CaptureGateway(),
   selector = new FrameSelector({ minIntervalMs: 750 }),
   visionBackend = undefined,
+  liveAnalyzer = undefined,
 } = {}) {
+  const analyzer = liveAnalyzer ?? new LiveEventAnalyzer({ visionBackend });
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
   let latestInsight = null;
   let latestInsightAt = 0;
@@ -201,62 +204,41 @@ export function createBloomServer({
       return;
     }
 
-    // No live vision backend configured (no key, no injected backend): frame
-    // ingestion still works — buffered + counted honestly, just no insight.
-    if (visionBackend === undefined && visionStatus().selected === null) {
-      let dataset = null;
-      if (datasetWriter.enabled) {
-        try {
-          const files = await datasetWriter.record({
-            sport: sport.id,
-            frame: meta,
-            imageBase64: body.image_base64,
-            state: null,
-          });
-          dataset = { saved: true, labeled: files.label != null };
-        } catch (err) {
-          dataset = { saved: false, error: err.message };
-        }
+    // Training-data collector (§16): writes only when DATASET_DIR is set, and
+    // a dataset failure must never break frame ingestion. The label is the
+    // latest extracted observation for this sport, when one exists.
+    let dataset = null;
+    if (datasetWriter.enabled) {
+      try {
+        const files = await datasetWriter.record({
+          sport: sport.id,
+          frame: meta,
+          imageBase64: body.image_base64,
+          state:
+            latestInsight?.sport === sport.id
+              ? latestInsight?.state ?? latestInsight?.observation ?? null
+              : null,
+        });
+        dataset = { saved: true, labeled: files.label != null };
+      } catch (err) {
+        dataset = { saved: false, error: err.message };
       }
-      sendJson(res, 201, {
-        frame: meta,
-        sport: sport.id,
-        selection,
-        insight: null,
-        analysis: { status: "no_vision_backend", error: visionStatus().error },
-        ...(dataset ? { dataset } : {}),
-      });
-      return;
     }
 
     try {
       const frame = { ...gateway.frame(meta.frame_id), sport: sport.id };
-      const insight = await runFramePipeline(frame, { visionBackend, sportId: sport.id });
-      latestInsight = insight;
-      latestInsightAt = Date.now();
-
-      // Training-data collector (§16): writes only when DATASET_DIR is set.
-      // A dataset failure must never break frame ingestion.
-      let dataset = null;
-      if (datasetWriter.enabled) {
-        try {
-          const files = await datasetWriter.record({
-            sport: sport.id,
-            frame: meta,
-            imageBase64: body.image_base64,
-            state: insight.state ?? null,
-          });
-          dataset = { saved: true, labeled: files.label != null };
-        } catch (err) {
-          dataset = { saved: false, error: err.message };
-        }
+      const result = await analyzer.submit(frame, {
+        force: body.force_analysis === true || body.source === "phone_photo",
+      });
+      if (result.analysis_status === "analyzed") {
+        latestInsight = { ...result.insight, sport: result.insight.sport ?? sport.id };
+        latestInsightAt = Date.now();
       }
-
-      sendJson(res, 201, {
+      sendJson(res, result.analysis_status === "analyzed" ? 201 : 202, {
         frame: meta,
         sport: sport.id,
         selection,
-        insight,
+        ...result,
         ...(dataset ? { dataset } : {}),
       });
     } catch (err) {
@@ -270,6 +252,7 @@ export function createBloomServer({
           backend: visionStatus().selected,
           error: err.message,
         },
+        ...(dataset ? { dataset } : {}),
       });
     }
   }
@@ -350,6 +333,7 @@ export function createBloomServer({
         await handleFrameSubmission(req, res);
       } else if (req.method === "POST" && url.pathname === "/api/reset") {
         resetLivePipeline();
+        analyzer.reset();
         gateway.clear();
         selector.reset();
         latestInsight = null;
@@ -365,6 +349,7 @@ export function createBloomServer({
           },
           frame_buffer_size: gateway.size,
           has_live_insight: Boolean(latestInsight),
+          analysis_queue: analyzer.status(),
         });
       } else if (
         req.method === "GET" &&

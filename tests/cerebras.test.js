@@ -39,6 +39,45 @@ test("Gemma 4 backend sends a base64 phone image with strict scoreboard output",
   assert.equal(result.clock_text, "2:14");
 });
 
+test("Gemma 4 packs five ordered sports frames into one vision request", async () => {
+  let request;
+  const backend = createCerebrasBackend({
+    complete: async (args) => {
+      request = args;
+      return {
+        data: {
+          sport: "soccer",
+          competition: "FIFA World Cup",
+          event_name: "USA vs Brazil",
+          participant_a: "USA",
+          participant_b: "Brazil",
+          score_a: 1,
+          score_b: 1,
+          score_display: "1-1",
+          phase: "Second half",
+          clock: "72:14",
+          event_status: "live",
+          possession_or_control: "Brazil",
+          situation: "Open play",
+          visible_facts: ["Score tied"],
+          changes_across_frames: ["Clock advanced"],
+          confidence: 0.93,
+        },
+        meta: { model: CEREBRAS_VISION_MODEL },
+      };
+    },
+  });
+  const frames = Array.from({ length: 5 }, (_, index) => ({
+    mime_type: "image/jpeg",
+    image_base64: `ZnJhbWUt${index}`,
+  }));
+  const result = await backend.extractEventBatch(frames);
+  const imageParts = request.messages[1].content.filter((part) => part.type === "image_url");
+  assert.equal(request.schemaName, "multisport_live_event_window");
+  assert.equal(imageParts.length, 5);
+  assert.equal(result.sport, "soccer");
+});
+
 test("Cerebras client uses chat completions and parses strict JSON", async () => {
   const saved = process.env.CEREBRAS_API_KEY;
   process.env.CEREBRAS_API_KEY = "test-only-key";

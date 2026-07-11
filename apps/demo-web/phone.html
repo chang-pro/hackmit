@@ -46,7 +46,7 @@
   </header>
 
   <section class="camera">
-    <div class="empty" id="empty">Point your phone at a screen showing an NBA broadcast. Keep the full scoreboard visible.</div>
+    <div class="empty" id="empty">Point your phone at a live soccer, football, UFC, or NBA broadcast. Keep the event and scoreboard visible.</div>
     <video id="video" autoplay playsinline muted></video>
     <img id="preview" alt="Last captured frame" />
     <div class="target" id="target"></div>
@@ -59,16 +59,16 @@
     <button class="secondary" id="live">Start live feed</button>
   </div>
   <p class="note" id="camera-note">
-    “Take photo” works over local Wi-Fi. Continuous live camera requires HTTPS on most phones and analyzes one frame every three seconds.
+    Live mode collects five frames over twelve seconds, then analyzes the whole window in one request to preserve the model quota.
   </p>
 
   <section class="result" aria-live="polite">
     <div class="eyebrow" id="result-status">Ready</div>
     <div id="headline">Capture a scoreboard to begin.</div>
     <div class="metrics">
-      <div class="metric"><small>Game</small><strong id="game">—</strong></div>
-      <div class="metric"><small>Model</small><strong id="model">—</strong></div>
-      <div class="metric"><small>Market gap</small><strong id="gap">—</strong></div>
+      <div class="metric"><small>Event</small><strong id="game">—</strong></div>
+      <div class="metric"><small>Probability</small><strong id="model">—</strong></div>
+      <div class="metric"><small>Confidence</small><strong id="gap">—</strong></div>
     </div>
     <div id="detail">Frames remain in server memory only.</div>
   </section>
@@ -80,7 +80,7 @@
 </main>
 
 <script>
-const ANALYSIS_INTERVAL_MS = 3000;
+const ANALYSIS_INTERVAL_MS = 2400;
 const MAX_IMAGE_EDGE = 1600;
 const JPEG_QUALITY = 0.82;
 
@@ -151,7 +151,7 @@ function videoToCanvas() {
 async function analyzeCanvas(source) {
   if (processing) return;
   processing = true;
-  setStatus("Analyzing", "Reading the scoreboard…");
+  setStatus("Capturing", source === "phone_live" ? "Building a five-frame event window…" : "Analyzing the event…");
   const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   try {
     const response = await fetch("/api/frames", {
@@ -164,11 +164,19 @@ async function analyzeCanvas(source) {
         image_base64: dataUrl.slice(dataUrl.indexOf(",") + 1),
         width: canvas.width,
         height: canvas.height,
+        force_analysis: source === "phone_photo",
       }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.analysis?.error ?? data.error ?? `HTTP ${response.status}`);
-    renderInsight(data.insight);
+    if (data.insight) renderInsight(data.insight);
+    if (data.analysis_status === "queued" || data.analysis_status === "in_flight") {
+      const pending = data.queue?.pending_frames ?? 0;
+      const needed = data.queue?.frames_per_request ?? 5;
+      document.getElementById("result-status").textContent = `${data.analysis_status} · ${pending}/${needed} frames`;
+      if (!data.insight) document.getElementById("headline").textContent = "Collecting temporal context before the next model call.";
+      document.getElementById("detail").textContent = `Next model window in ${Math.ceil((data.queue?.next_analysis_ms ?? 0) / 1000)}s · quota ${data.queue?.calls_last_minute?.vision ?? 0}/5 vision calls this minute`;
+    }
   } catch (error) {
     setStatus("Error", error.message);
     document.getElementById("detail").textContent = "Keep the scoreboard large and unobstructed, then try again.";
@@ -180,6 +188,25 @@ async function analyzeCanvas(source) {
 function renderInsight(insight) {
   if (!insight) return;
   setStatus(insight.presentation?.status ?? "Unknown", insight.presentation?.short_text ?? "No result");
+  const observation = insight.observation;
+  const analysis = insight.analysis;
+  if (observation) {
+    document.getElementById("game").textContent = observation.event_name || `${observation.participant_a} vs ${observation.participant_b}`;
+    document.getElementById("model").textContent = analysis
+      ? `${Math.round(analysis.primary_probability * 100)}%`
+      : "Vision only";
+    document.getElementById("gap").textContent = `${Math.round((analysis?.confidence ?? observation.confidence) * 100)}%`;
+    document.getElementById("detail").textContent = [
+      observation.sport,
+      observation.competition,
+      observation.score_display,
+      observation.phase,
+      observation.clock,
+      `${insight.frame_window?.count ?? 1} frames packed`,
+      `extractor ${insight.extraction}`,
+    ].filter(Boolean).join(" · ");
+    return;
+  }
   const state = insight.state;
   if (state) {
     const away = state.away_team_id.slice(4).toUpperCase();
