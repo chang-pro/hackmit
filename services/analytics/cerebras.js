@@ -28,6 +28,76 @@ const ANALYTICS_SCHEMA = {
   ],
 };
 
+const MULTISPORT_ANALYTICS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    event_summary: { type: "string" },
+    primary_market_question: { type: "string" },
+    primary_outcome: { type: "string" },
+    primary_probability: { type: "number", minimum: 0, maximum: 1 },
+    confidence: { type: "number", minimum: 0, maximum: 1 },
+    alternate_markets: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          question: { type: "string" },
+          outcome: { type: "string" },
+          probability: { type: "number", minimum: 0, maximum: 1 },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        required: ["question", "outcome", "probability", "confidence"],
+      },
+    },
+    key_factors: { type: "array", items: { type: "string" } },
+    what_changed: { type: "string" },
+    next_probability_trigger: { type: "string" },
+    risk_note: { type: "string" },
+  },
+  required: [
+    "event_summary",
+    "primary_market_question",
+    "primary_outcome",
+    "primary_probability",
+    "confidence",
+    "alternate_markets",
+    "key_factors",
+    "what_changed",
+    "next_probability_trigger",
+    "risk_note",
+  ],
+};
+
+export async function analyzeUniversalEvent(context, { complete = cerebrasStructuredCompletion } = {}) {
+  if (!process.env.CEREBRAS_API_KEY || process.env.CEREBRAS_ANALYTICS_ENABLED === "false") {
+    return null;
+  }
+  const { data, meta } = await complete({
+    model: CEREBRAS_ANALYTICS_MODEL,
+    schema: MULTISPORT_ANALYTICS_SCHEMA,
+    schemaName: "multisport_prediction_analysis",
+    maxCompletionTokens: 1300,
+    messages: [
+      {
+        role: "system",
+        content: [
+          "You are a real-time prediction-market analyst for soccer, American football, MMA/UFC, and basketball.",
+          "Use only the supplied visual observation and previous analysis.",
+          "Prioritize markets viewers care about: match or fight winner, draw where applicable, qualification or advancement, totals, next scoring event, method of victory, and round or period outcomes.",
+          "Choose one primary market that is both important and supported by the visible evidence.",
+          "Probabilities are calibrated estimates, not guarantees or trading instructions.",
+          "Do not invent injuries, lineups, cards, possession, field position, fighter damage, or prior odds.",
+          "If the event is unidentified or the feed is a replay, lower confidence and say so.",
+        ].join(" "),
+      },
+      { role: "user", content: JSON.stringify(context) },
+    ],
+  });
+  return { ...data, model: meta?.model ?? CEREBRAS_ANALYTICS_MODEL };
+}
+
 export async function analyzeGameContext(context) {
   if (!process.env.CEREBRAS_API_KEY || process.env.CEREBRAS_ANALYTICS_ENABLED === "false") {
     return null;

@@ -7,9 +7,8 @@ This is the execution guide for the BloomKnights camera-to-insight backend. The 
 Our service owns everything after camera capture:
 
 ```text
-phone/app JPEG -> capture gateway -> frame selection -> scoreboard extraction
--> team/event resolution -> temporal reconciliation -> win probability
--> market lookup -> confidence/freshness gate -> presentation-ready JSON
+phone/app JPEG -> capture gateway -> five-frame window -> Gemma 4 event extraction
+-> GPT OSS/GLM prediction analysis -> confidence gate -> presentation-ready JSON
 ```
 
 The native app owns camera permissions and frame delivery. The Next.js frontend owns rendering. Neither client should implement OCR, game-state correction, probability calculation, or market comparison.
@@ -87,7 +86,7 @@ Content-Type: application/json
 }
 ```
 
-An accepted frame returns HTTP `201`:
+The first four live-feed frames normally return HTTP `202` with `analysis_status: "queued"`. The fifth frame triggers a packed request and returns HTTP `201`:
 
 ```json
 {
@@ -101,21 +100,32 @@ An accepted frame returns HTTP `201`:
     "height": 720
   },
   "selection": { "accepted": true, "reason": null },
+  "analysis_status": "analyzed",
   "insight": {
     "source": "live",
-    "extraction": "cerebras",
-    "event": {},
-    "parsed_scoreboard": {},
-    "state": {},
-    "estimate": {},
-    "market": {},
-    "comparison": {},
-    "presentation": {}
+    "extraction": "cerebras-batch",
+    "frame_window": { "count": 5, "frames": [] },
+    "observation": {
+      "sport": "soccer",
+      "competition": "FIFA World Cup 2026",
+      "event_name": "USA vs Brazil",
+      "score_display": "1-1",
+      "phase": "Second half",
+      "clock": "72:14"
+    },
+    "analysis": {
+      "primary_market_question": "Who will win the match?",
+      "primary_outcome": "Brazil",
+      "primary_probability": 0.42,
+      "alternate_markets": []
+    },
+    "presentation": {},
+    "rate_limit": {}
   }
 }
 ```
 
-Rate-limited or duplicate frames return HTTP `200` with `selection.accepted: false` and the latest insight when one exists. Extraction failures return HTTP `422` with an `analysis.error`; clients should show that message in debug mode and continue sending later frames.
+Queued frames return HTTP `202` with queue depth, time until the next eligible request, and the latest cached insight. Rate-limited or duplicate frames return HTTP `200` with `selection.accepted: false`. Extraction failures return HTTP `422` with an `analysis.error`; clients should show that message in debug mode and continue sending later frames.
 
 Other endpoints:
 
@@ -127,17 +137,16 @@ Other endpoints:
 
 ## Frame cadence
 
-Do not stream full video to the service. Send one compressed JPEG every 2-3 seconds and wait for the previous request to finish. Meaningful scoreboard changes matter more than raw frame rate. The phone page resizes images to a maximum 1600-pixel edge and serializes analysis requests to control cost and concurrency.
+Do not stream full video to the service. Send one compressed JPEG every 2.4 seconds and wait for the previous upload to finish. The backend collects five ordered frames and sends them to Gemma in one request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute while giving each call temporal context. The phone page resizes images to a maximum 1600-pixel edge and serializes uploads.
 
 ## Cerebras models
 
 The live provider is intentionally simple:
 
-1. `gemma-4-31b` receives the phone JPEG as a base64 image input and emits a strict scoreboard schema.
-2. The deterministic NBA probability model converts the reconciled score and clock into a numerical baseline.
-3. `gpt-oss-120b` receives the trusted state, baseline probability, and market context and emits concise structured analysis.
+1. `gemma-4-31b` receives up to five ordered JPEGs and emits a strict universal event schema for soccer, American football, MMA/UFC, basketball, or unknown content.
+2. `gpt-oss-120b` receives the trusted event observation plus the previous analysis and emits the primary prediction-market question, probability, alternate markets, key factors, changes, and the next probability-moving trigger.
 
-Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for the second pass. Set `CEREBRAS_ANALYTICS_ENABLED=false` to run only Gemma 4 plus the deterministic probability engine. The API key stays server-side and must never be sent by the phone or frontend.
+Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for the second pass. `CEREBRAS_MODEL_INTERVAL_MS` may be increased but is clamped to a minimum of 12,000 ms, and `CEREBRAS_FRAMES_PER_REQUEST` is capped at five. The API key stays server-side and must never be sent by the phone or frontend.
 
 ## Honest failure behavior
 
@@ -154,7 +163,7 @@ The app team only needs to reproduce the `/api/frames` request. Recommended app 
 
 1. Capture rear-camera JPEG at 720p or 1080p.
 2. Downscale so the longest edge is at most 1600 pixels.
-3. Send every 2-3 seconds while the user is analyzing a screen.
+3. Send every 2.4 seconds while the user is analyzing a screen; the server performs batching and quota enforcement.
 4. Never overlap analysis requests.
 5. Speak or render `insight.presentation`.
 6. Expose the remaining fields only in a developer/debug panel.
