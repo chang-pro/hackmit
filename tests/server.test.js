@@ -58,6 +58,8 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   const base = `http://127.0.0.1:${port}`;
 
   await fetch(`${base}/api/reset`, { method: "POST" });
+  const started = await fetch(`${base}/api/analysis/start`, { method: "POST" });
+  assert.equal(started.status, 200);
   const response = await fetch(`${base}/api/frames`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -90,4 +92,48 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   const latest = await (await fetch(`${base}/api/latest`)).json();
   assert.equal(latest.frame_window.frames[0].frame_id, body.frame.frame_id);
   assert.equal(latest.extraction, "test-phone-vision-batch");
+});
+
+test("continuous relay publishes camera frames without enabling analysis", async (t) => {
+  const server = createBloomServer({
+    liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+  const base = `http://127.0.0.1:${port}`;
+
+  const controller = new AbortController();
+  const mjpeg = await fetch(`${base}/api/live-stream`, { signal: controller.signal });
+  assert.match(mjpeg.headers.get("content-type"), /multipart\/x-mixed-replace/);
+
+  const upload = await fetch(`${base}/api/live-stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source: "phone_live",
+      captured_at: "2026-07-11T20:14:32.491Z",
+      mime_type: "image/png",
+      image_base64: "cGhvbmUtZnJhbWU=",
+      width: 1280,
+      height: 720,
+    }),
+  });
+  assert.equal(upload.status, 202);
+  assert.equal((await upload.json()).analysis_enabled, false);
+
+  const status = await (await fetch(`${base}/api/live-stream/status`)).json();
+  assert.equal(status.analysis_enabled, false);
+  assert.equal(status.stream.frame_id, "stream_00000001");
+  assert.equal(status.stream.width, 1280);
+
+  const reader = mjpeg.body.getReader();
+  const chunks = [];
+  while (Buffer.concat(chunks).indexOf(Buffer.from("phone-frame")) === -1) {
+    const { value, done } = await reader.read();
+    assert.equal(done, false);
+    chunks.push(Buffer.from(value));
+  }
+  assert.match(Buffer.concat(chunks).toString("latin1"), /--bloomknights-frame/);
+  controller.abort();
 });

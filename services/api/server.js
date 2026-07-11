@@ -9,6 +9,11 @@
 //   GET  /api/health            — vision backend + buffer + quota status
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
+//   POST /api/live-stream        — lightweight continuous camera frame relay
+//   GET  /api/live-stream        — MJPEG stream for the desktop viewer
+//   GET  /api/live-stream/status — relay and analysis status
+//   POST /api/analysis/start     — explicitly enable model analysis
+//   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
 //   GET  /api/latest            — alias of /api/comparison
 //   GET  /api/sports            — sport selector data for the frontends
@@ -37,6 +42,8 @@ const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
 const STATS_DIR = join(ROOT, "packages", "fixtures", "stats");
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const LIVE_SESSION_TTL_MS = 30_000;
+const STREAM_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
+const MJPEG_BOUNDARY = "bloomknights-frame";
 
 function readJsonBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -81,6 +88,24 @@ function sendJson(res, statusCode, payload) {
 function imageBytes(imageBase64) {
   const dataUrl = String(imageBase64).match(/^data:[^;]+;base64,(.+)$/s);
   return Buffer.from(dataUrl?.[1] ?? imageBase64, "base64");
+}
+
+function parseStreamFrame({ source, captured_at, image_base64, mime_type = "image/jpeg", width, height } = {}) {
+  if (typeof source !== "string" || source.trim() === "") throw new Error("source is required");
+  if (typeof image_base64 !== "string" || image_base64 === "") throw new Error("image_base64 is required");
+  if (!STREAM_MIME_TYPES.has(mime_type)) throw new Error(`unsupported mime_type: ${mime_type}`);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    throw new Error("width and height must be positive numbers");
+  }
+  const parsedAt = Date.parse(captured_at ?? "");
+  return {
+    source,
+    captured_at: Number.isNaN(parsedAt) ? new Date().toISOString() : new Date(parsedAt).toISOString(),
+    image_base64,
+    mime_type,
+    width,
+    height,
+  };
 }
 
 async function sendHtml(res, filename, appDir = "demo-web") {
@@ -171,6 +196,38 @@ export function createBloomServer({
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
   let latestInsight = null;
   let latestInsightAt = 0;
+  let analysisEnabled = false;
+  let latestStreamFrame = null;
+  let streamFrameCounter = 0;
+  const streamSubscribers = new Set();
+
+  function resetAnalysisState() {
+    analyzer.reset();
+    gateway.clear();
+    selector.reset();
+    latestInsight = null;
+    latestInsightAt = 0;
+  }
+
+  function writeMjpegFrame(res, frame) {
+    const bytes = imageBytes(frame.image_base64);
+    res.write(`--${MJPEG_BOUNDARY}\r\n`);
+    res.write(`Content-Type: ${frame.mime_type}\r\n`);
+    res.write(`Content-Length: ${bytes.length}\r\n`);
+    res.write(`X-BloomKnights-Frame-Id: ${frame.frame_id}\r\n\r\n`);
+    res.write(bytes);
+    res.write("\r\n");
+  }
+
+  function broadcastStreamFrame(frame) {
+    for (const res of streamSubscribers) {
+      try {
+        writeMjpegFrame(res, frame);
+      } catch {
+        streamSubscribers.delete(res);
+      }
+    }
+  }
 
   async function handleFrameSubmission(req, res) {
     let body;
@@ -183,6 +240,15 @@ export function createBloomServer({
 
     if (body === null || typeof body !== "object" || Array.isArray(body)) {
       sendJson(res, 400, { error: "request body must be a JSON object" });
+      return;
+    }
+
+    if (!analysisEnabled) {
+      sendJson(res, 202, {
+        analysis_status: "disabled",
+        analysis_enabled: false,
+        queue: analyzer.status(),
+      });
       return;
     }
 
@@ -344,6 +410,71 @@ export function createBloomServer({
     });
   }
 
+  async function handleStreamSubmission(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+      if (body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw Object.assign(new Error("request body must be a JSON object"), { statusCode: 400 });
+      }
+      const parsed = parseStreamFrame(body);
+      streamFrameCounter += 1;
+      latestStreamFrame = {
+        ...parsed,
+        frame_id: `stream_${String(streamFrameCounter).padStart(8, "0")}`,
+      };
+      broadcastStreamFrame(latestStreamFrame);
+      sendJson(res, 202, {
+        status: "streaming",
+        frame: {
+          frame_id: latestStreamFrame.frame_id,
+          captured_at: latestStreamFrame.captured_at,
+          source: latestStreamFrame.source,
+          mime_type: latestStreamFrame.mime_type,
+          width: latestStreamFrame.width,
+          height: latestStreamFrame.height,
+        },
+        analysis_enabled: analysisEnabled,
+      });
+    } catch (err) {
+      sendJson(res, err.statusCode ?? 400, { error: err.message });
+    }
+  }
+
+  function handleLiveStream(res, req) {
+    res.writeHead(200, {
+      ...responseHeaders(`multipart/x-mixed-replace; boundary=${MJPEG_BOUNDARY}`),
+      Connection: "keep-alive",
+    });
+    res.flushHeaders();
+    streamSubscribers.add(res);
+    if (latestStreamFrame) writeMjpegFrame(res, latestStreamFrame);
+    const close = () => streamSubscribers.delete(res);
+    req.on("close", close);
+    res.on("close", close);
+  }
+
+  function handleLiveStreamStatus(res) {
+    sendJson(res, 200, {
+      analysis_enabled: analysisEnabled,
+      stream: latestStreamFrame
+        ? {
+            frame_id: latestStreamFrame.frame_id,
+            captured_at: latestStreamFrame.captured_at,
+            age_ms: Math.max(0, Date.now() - Date.parse(latestStreamFrame.captured_at)),
+            width: latestStreamFrame.width,
+            height: latestStreamFrame.height,
+          }
+        : null,
+    });
+  }
+
+  function handleAnalysisControl(res, enabled) {
+    analysisEnabled = enabled;
+    resetAnalysisState();
+    sendJson(res, 200, { analysis_enabled: analysisEnabled, queue: analyzer.status() });
+  }
+
   function handleLatestFrameImage(res, url) {
     const frameId = url.searchParams.get("frame_id");
     const stored = frameId ? gateway.get(frameId) : gateway.latest();
@@ -379,13 +510,17 @@ export function createBloomServer({
         res.end();
       } else if (req.method === "POST" && url.pathname === "/api/frames") {
         await handleFrameSubmission(req, res);
+      } else if (req.method === "POST" && url.pathname === "/api/live-stream") {
+        await handleStreamSubmission(req, res);
+      } else if (req.method === "POST" && url.pathname === "/api/analysis/start") {
+        handleAnalysisControl(res, true);
+      } else if (req.method === "POST" && url.pathname === "/api/analysis/stop") {
+        handleAnalysisControl(res, false);
       } else if (req.method === "POST" && url.pathname === "/api/reset") {
+        analysisEnabled = false;
         resetLivePipeline();
-        analyzer.reset();
-        gateway.clear();
-        selector.reset();
-        latestInsight = null;
-        latestInsightAt = 0;
+        resetAnalysisState();
+        latestStreamFrame = null;
         sendJson(res, 200, { status: "reset" });
       } else if (req.method === "GET" && url.pathname === "/api/health") {
         sendJson(res, 200, {
@@ -397,12 +532,17 @@ export function createBloomServer({
           },
           frame_buffer_size: gateway.size,
           has_live_insight: Boolean(latestInsight),
+          analysis_enabled: analysisEnabled,
           analysis_queue: analyzer.status(),
         });
       } else if (req.method === "GET" && url.pathname === "/api/live-frame") {
         handleLatestFrame(res);
       } else if (req.method === "GET" && url.pathname === "/api/live-frame/image") {
         handleLatestFrameImage(res, url);
+      } else if (req.method === "GET" && url.pathname === "/api/live-stream") {
+        handleLiveStream(res, req);
+      } else if (req.method === "GET" && url.pathname === "/api/live-stream/status") {
+        handleLiveStreamStatus(res);
       } else if (
         req.method === "GET" &&
         (url.pathname === "/api/comparison" || url.pathname === "/api/latest")

@@ -7,9 +7,9 @@ This is the execution guide for the BloomKnights camera-to-insight backend. The 
 Our service owns everything after camera capture:
 
 ```text
-phone/app JPEG -> capture gateway -> five-frame window -> Gemma 4 event extraction
--> automatic event-switch check -> GPT OSS/GLM prediction analysis
--> confidence gate -> presentation-ready JSON
+phone/app video -> continuous JPEG relay -> desktop capture viewer
+phone/app analysis JPEGs (only after user action) -> five-frame window -> Gemma 4 event extraction
+-> automatic event-switch check -> GPT OSS/GLM prediction analysis -> presentation-ready JSON
 ```
 
 The native app owns camera permissions and frame delivery. The Next.js frontend owns rendering. Neither client should implement OCR, game-state correction, probability calculation, market comparison, or sport selection. The camera feed is the selector.
@@ -36,7 +36,7 @@ The server prints the exact phone URL. On the current machine it will resemble:
 http://10.32.242.101:3000/phone
 ```
 
-Open that URL on the phone and choose **Take photo**. This invokes the phone's rear camera through the file-capture control and works on an ordinary local HTTP connection. Fill most of the photo with the television or monitor, keep the scoreboard unobstructed, and avoid glare.
+Open that URL on the phone and choose **Start live feed**. Fill most of the view with the television or monitor, keep the scoreboard unobstructed, and avoid glare. Open `/capture` on a desktop browser to see the relayed feed; press **Analyze** there only when you are ready to spend model requests.
 
 Continuous **Start live feed** uses `getUserMedia`, which mobile browsers normally expose only in a secure HTTPS context. Use the photo flow until an HTTPS tunnel or the native app is available.
 
@@ -55,7 +55,7 @@ The command starts the analyzer and prints a random public URL similar to:
 https://random-words.trycloudflare.com
 ```
 
-Open `https://random-words.trycloudflare.com/phone` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. Open `/capture` on the desktop to view the incoming phone/glasses feed. The glasses/native app can use the same origin as its API base and send frames to `POST /api/frames`.
+Open `https://random-words.trycloudflare.com/phone` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. Open `/capture` on the desktop to view the incoming phone/glasses feed and press **Analyze** only when you want model calls to begin.
 
 Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
@@ -69,7 +69,16 @@ This validates phone connectivity, image upload, frame selection, UI rendering, 
 
 ## Client contract
 
-Submit a JPEG frame:
+The continuous relay accepts low-resolution JPEG frames without invoking a model:
+
+```http
+POST /api/live-stream
+Content-Type: application/json
+```
+
+`GET /api/live-stream` is the MJPEG endpoint rendered by the desktop capture page. It is intentionally separate from analysis.
+
+Analysis starts only after `POST /api/analysis/start`. At that point the phone also submits one high-quality JPEG every 2.4 seconds to the analysis endpoint:
 
 ```http
 POST /api/frames
@@ -143,10 +152,14 @@ Other endpoints:
 - `GET /phone` — phone-first camera capture page.
 - `GET /capture` — desktop viewer for the newest phone/glasses frame.
 - `GET /api/live-frame` — metadata for the newest inbound camera frame.
+- `GET /api/live-stream` — continuous MJPEG stream for the desktop viewer.
+- `GET /api/live-stream/status` — stream freshness and analysis-enabled state.
+- `POST /api/analysis/start` — begin quota-limited model analysis.
+- `POST /api/analysis/stop` — stop model analysis while video keeps streaming.
 
 ## Frame cadence
 
-Do not stream full video to the service. Send one compressed JPEG every 2.4 seconds and wait for the previous upload to finish. The backend collects five ordered frames and sends them to Gemma in one request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute while giving each call temporal context. The phone page resizes images to a maximum 1600-pixel edge and serializes uploads.
+The phone sends a 960-pixel JPEG to the relay about five times per second, so the desktop viewer looks like a continuous live feed. This relay never invokes a model. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
 
 ## Cerebras models
 
@@ -169,12 +182,13 @@ Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for the second pass. `
 
 ## Native app handoff
 
-The app team only needs to reproduce the `/api/frames` request. Recommended app behavior:
+The app team needs to send both the relay and the gated analysis requests. Recommended behavior:
 
 1. Capture rear-camera JPEG at 720p or 1080p.
 2. Downscale so the longest edge is at most 1600 pixels.
-3. Send every 2.4 seconds while the user is analyzing a screen; the server performs batching and quota enforcement.
-4. Do not send a sport selector value; detection and event switching are server-owned.
-5. Never overlap analysis requests.
-6. Speak or render `insight.presentation`.
-7. Expose the remaining fields only in a developer/debug panel.
+3. Send a 960-pixel JPEG to `POST /api/live-stream` about five times per second for the desktop live feed.
+4. Read `analysis_enabled` from the relay response. Send a 1600-pixel JPEG to `POST /api/frames` every 2.4 seconds only when it is `true`.
+5. Do not send a sport selector value; detection and event switching are server-owned.
+6. Never overlap analysis requests.
+7. Speak or render `insight.presentation`.
+8. Expose the remaining fields only in a developer/debug panel.
