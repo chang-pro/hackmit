@@ -109,6 +109,10 @@ test("WebRTC signaling relays setup messages without proxying media", async (t) 
   assert.match(session.session_id, /^[0-9a-f-]{36}$/);
   assert.match(session.pair_code, /^[0-9A-F]{10}$/);
 
+  const hint = await fetch(`${base}/api/webrtc/pair-hint`);
+  assert.equal(hint.status, 200);
+  assert.equal((await hint.json()).pair_code, session.pair_code);
+
   const joined = await fetch(`${base}/api/webrtc/join`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -116,6 +120,7 @@ test("WebRTC signaling relays setup messages without proxying media", async (t) 
   });
   assert.equal(joined.status, 200);
   assert.equal((await joined.json()).session_id, session.session_id);
+  assert.equal((await fetch(`${base}/api/webrtc/pair-hint`)).status, 404);
 
   const offer = { type: "offer", sdp: "v=0" };
   const sent = await fetch(`${base}/api/webrtc/signal`, {

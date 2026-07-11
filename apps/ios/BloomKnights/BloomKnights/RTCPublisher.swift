@@ -66,7 +66,17 @@ final class RTCPublisher: NSObject, ObservableObject {
 
     private func api(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> [String: Any] {
         guard let baseURL else { throw URLError(.badURL) }
-        var req = URLRequest(url: baseURL.appendingPathComponent(path))
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        var endpoint = baseURL.appendingPathComponent(String(parts[0]))
+        if parts.count == 2 {
+            guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+                throw URLError(.badURL)
+            }
+            components.percentEncodedQuery = String(parts[1])
+            guard let url = components.url else { throw URLError(.badURL) }
+            endpoint = url
+        }
+        var req = URLRequest(url: endpoint)
         req.httpMethod = method
         req.timeoutInterval = 15
         if let body {
