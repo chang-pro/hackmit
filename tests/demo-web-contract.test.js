@@ -24,7 +24,7 @@ test("capture viewer exposes quota-free rehearsal controls and explicit data pro
   assert.match(capture, /intelligence\.research/);
   assert.match(capture, /live prediction/i);
   assert.match(capture, /mock web (?:research|search)/i);
-  assert.match(capture, /get\("ops"\)\s*===\s*"1"/);
+  assert.match(capture, /get\("ops"\)\s*!==\s*"0"/);
   assert.match(capture, /body\.running\.ops-mode \.ops-bar/);
 });
 

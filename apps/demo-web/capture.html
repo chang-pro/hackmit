@@ -398,7 +398,7 @@
 <script>
 const SIGNAL_POLL_MS = 350;
 const INSIGHT_POLL_MS = 1_000;
-const OPS_MODE = new URLSearchParams(location.search).get("ops") === "1";
+const OPS_MODE = new URLSearchParams(location.search).get("ops") !== "0";
 document.body.classList.toggle("ops-mode", OPS_MODE);
 const $ = (id) => document.getElementById(id);
 const video = $("video");
