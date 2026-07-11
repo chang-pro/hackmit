@@ -37,8 +37,9 @@ fi
 
 echo
 echo "Creating public HTTPS phone/glasses endpoint..."
-echo "Open the printed URL with /capture on the desktop, then copy its generated phone pairing link."
-echo "Continuous camera video is direct WebRTC between the paired browsers."
+echo "Open /capture on the desktop and /phone on the camera device."
+echo "The most recently started camera feed automatically becomes the viewer feed."
+echo "Continuous camera video is direct WebRTC between the browser peers."
 echo "This public tunnel carries SDP/ICE signaling and user-gated analysis snapshots only."
 echo "Cloudflare provides HTTPS page delivery and signaling only; it never proxies WebRTC media."
 echo

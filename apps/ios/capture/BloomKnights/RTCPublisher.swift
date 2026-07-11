@@ -1,6 +1,6 @@
 // RTCPublisher.swift — publishes the glasses' decoded video frames to the
 // BloomKnights server's WebRTC signaling (the same contract phone.html uses):
-//   POST /api/webrtc/join   {pair_code}            -> {session_id}
+//   POST /api/webrtc/active                         -> {session_id}
 //   GET  /api/webrtc/config?session_id=            -> {ice_servers, ice_transport_policy}
 //   POST /api/webrtc/signal {session_id, from:"phone", kind, payload}
 //   GET  /api/webrtc/poll?session_id=&peer=phone   -> {signals:[{kind,payload}]}
@@ -96,25 +96,15 @@ final class RTCPublisher: NSObject, ObservableObject {
 
     // MARK: - Connect / disconnect
 
-    // Empty pairCode = one-button mode: ask the server for the newest open
-    // pairing session (created by the desktop /capture page) and join it.
-    func connect(baseURL: URL, pairCode: String) async {
+    // The newest publisher becomes the active feed for the single demo viewer.
+    func connect(baseURL: URL) async {
         disconnect()
         self.baseURL = baseURL
         state = .joining
         do {
-            var code = pairCode
-            if code.isEmpty {
-                let hint = try await api("api/webrtc/pair-hint")
-                guard let hinted = hint["pair_code"] as? String else {
-                    throw NSError(domain: "rtc", code: 3,
-                                  userInfo: [NSLocalizedDescriptionKey: "no open session — open /capture on the desktop"])
-                }
-                code = hinted
-            }
-            let joined = try await api("api/webrtc/join", method: "POST", body: ["pair_code": code])
+            let joined = try await api("api/webrtc/active", method: "POST")
             guard let sid = joined["session_id"] as? String else {
-                throw NSError(domain: "rtc", code: 1, userInfo: [NSLocalizedDescriptionKey: "join returned no session_id"])
+                throw NSError(domain: "rtc", code: 1, userInfo: [NSLocalizedDescriptionKey: "active feed returned no session_id"])
             }
             sessionId = sid
 

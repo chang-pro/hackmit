@@ -94,7 +94,7 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   assert.equal(latest.extraction, "test-phone-vision-batch");
 });
 
-test("WebRTC signaling relays setup messages without proxying media", async (t) => {
+test("WebRTC signaling follows the latest active camera without proxying media", async (t) => {
   const server = createBloomServer({
     liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),
   });
@@ -103,24 +103,17 @@ test("WebRTC signaling relays setup messages without proxying media", async (t) 
   const { port } = server.address();
   const base = `http://127.0.0.1:${port}`;
 
-  const created = await fetch(`${base}/api/webrtc/session`, { method: "POST" });
-  assert.equal(created.status, 201);
-  const session = await created.json();
+  const waiting = await fetch(`${base}/api/webrtc/active`);
+  assert.equal(waiting.status, 200);
+  const waitingSession = await waiting.json();
+  assert.equal(waitingSession.provider_active, false);
+
+  const claimed = await fetch(`${base}/api/webrtc/active`, { method: "POST" });
+  assert.equal(claimed.status, 200);
+  const session = await claimed.json();
   assert.match(session.session_id, /^[0-9a-f-]{36}$/);
-  assert.match(session.pair_code, /^[0-9A-F]{10}$/);
-
-  const hint = await fetch(`${base}/api/webrtc/pair-hint`);
-  assert.equal(hint.status, 200);
-  assert.equal((await hint.json()).pair_code, session.pair_code);
-
-  const joined = await fetch(`${base}/api/webrtc/join`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pair_code: session.pair_code }),
-  });
-  assert.equal(joined.status, 200);
-  assert.equal((await joined.json()).session_id, session.session_id);
-  assert.equal((await fetch(`${base}/api/webrtc/pair-hint`)).status, 404);
+  assert.equal(session.session_id, waitingSession.session_id);
+  assert.equal(session.provider_active, true);
 
   const offer = { type: "offer", sdp: "v=0" };
   const sent = await fetch(`${base}/api/webrtc/signal`, {
@@ -133,6 +126,16 @@ test("WebRTC signaling relays setup messages without proxying media", async (t) 
     await fetch(`${base}/api/webrtc/poll?session_id=${session.session_id}&peer=viewer`)
   ).json();
   assert.deepEqual(viewerSignals.signals, [{ kind: "offer", payload: offer }]);
+
+  const replacement = await fetch(`${base}/api/webrtc/active`, { method: "POST" });
+  assert.equal(replacement.status, 200);
+  const replacementSession = await replacement.json();
+  assert.notEqual(replacementSession.session_id, session.session_id);
+  assert.equal(replacementSession.provider_active, true);
+  const retiredViewerSignals = await (
+    await fetch(`${base}/api/webrtc/poll?session_id=${session.session_id}&peer=viewer`)
+  ).json();
+  assert.deepEqual(retiredViewerSignals.signals, [{ kind: "hangup", payload: null }]);
 
   const oversizedSignal = await fetch(`${base}/api/webrtc/signal`, {
     method: "POST",
@@ -147,7 +150,7 @@ test("WebRTC signaling relays setup messages without proxying media", async (t) 
   assert.equal(oversizedSignal.status, 413);
 
   assert.equal((await fetch(`${base}/api/webrtc/config`)).status, 404);
-  const config = await (await fetch(`${base}/api/webrtc/config?session_id=${session.session_id}`)).json();
+  const config = await (await fetch(`${base}/api/webrtc/config?session_id=${replacementSession.session_id}`)).json();
   assert.deepEqual(config.ice_servers, [{ urls: "stun:stun.l.google.com:19302" }]);
   assert.equal(config.ice_transport_policy, "all");
   const analysis = await (await fetch(`${base}/api/analysis/status`)).json();

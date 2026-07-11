@@ -56,19 +56,13 @@
   .idle-glyph.spin { animation: glyph-spin 0.6s var(--ease); }
   .idle-title { font-size: clamp(1.7rem, 4vw, 2.25rem); font-weight: 650; letter-spacing: -.055em; transition: opacity 0.4s var(--ease); }
   .idle-sub { max-width: 32ch; margin: .75rem auto 0; color: var(--ink-muted); font-size: .92rem; line-height: 1.55; }
-  .pairing { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .46rem; width: 100%; margin: 1.35rem auto 0; padding: .62rem .65rem .62rem .8rem; border: 1px solid rgba(255,255,255,.13); border-radius: 1.05rem; background: rgba(5,7,18,.26); text-align: left; }
-  .pairing-label { color: var(--ink-faint); font: .57rem var(--mono); letter-spacing: .16em; }.pairing-code { color: #e9e4ff; font: .78rem var(--mono); letter-spacing: .12em; }.pairing-copy { border: 1px solid rgba(255,255,255,.24); border-radius: .7rem; padding: .42rem .58rem; color: var(--ink); background: linear-gradient(135deg, rgba(255,255,255,.30), rgba(255,255,255,.08)), rgba(152,171,255,.16); box-shadow: inset 0 1px 0 rgba(255,255,255,.36), 0 6px 18px rgba(89,104,198,.16); backdrop-filter: blur(14px) saturate(170%); -webkit-backdrop-filter: blur(14px) saturate(170%); cursor: pointer; font: 700 .68rem "Outfit", sans-serif; transition: transform .25s var(--ease), background .25s var(--ease); }.pairing-copy:hover { transform: translateY(-1px); background: linear-gradient(135deg, rgba(255,255,255,.38), rgba(255,255,255,.12)), rgba(152,171,255,.22); }.pairing-link { grid-column: 1/-1; overflow: hidden; color: var(--ink-faint); font: .62rem var(--mono); text-overflow: ellipsis; white-space: nowrap; }
   .readout { position: absolute; left: 1.15rem; bottom: 6.45rem; width: min(365px, calc(100vw - 2.3rem)); padding: 1.2rem 1.25rem 1.1rem; border-radius: 1.55rem; opacity: 0; transform: translateY(16px) scale(.97); transition: opacity .5s var(--ease), transform .5s var(--ease); }
   body.has-read .readout { opacity: 1; transform: none; }.ro-game { color: var(--ink-muted); font: .64rem var(--mono); letter-spacing: .045em; line-height: 1.4; }.ro-prob { margin-top: .74rem; font: 600 clamp(3.2rem, 7vw, 4.25rem)/.86 var(--mono); letter-spacing: -.08em; font-variant-numeric: tabular-nums; background: var(--spectrum-bright); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 16px rgba(166,181,255,.36)); }.ro-cap { margin-top: .38rem; color: var(--ink-faint); font: .56rem var(--mono); letter-spacing: .16em; text-transform: uppercase; }.ro-cmp { display: flex; gap: .8rem; margin-top: .9rem; font: .74rem var(--mono); }.ro-cmp .mk { color: var(--ink-muted); }.ro-cmp .gp { color: var(--mint); font-weight: 700; }.ro-cmp .gp.neg { color: #ff92a4; }.ro-say { margin-top: .8rem; color: var(--ink); font-size: .88rem; line-height: 1.48; }.ro-speak { margin-top: .85rem; border: 1px solid var(--line); border-radius: .75rem; padding: .43rem .68rem; color: var(--ink); background: rgba(255,255,255,.07); font: .74rem "Outfit", sans-serif; cursor: pointer; }.ro-speak:hover { background: rgba(255,255,255,.14); }.gated .ro-prob, .gated .ro-cap, .gated .ro-cmp, .gated .ro-speak { display: none; }.gated .ro-say { color: #ffd89a; font-family: var(--mono); }
   .dock { position: absolute; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: .65rem; min-height: 3.7rem; padding: .46rem .52rem .46rem .78rem; border: 1px solid var(--line); border-radius: 1.35rem; background: linear-gradient(135deg, rgba(255,255,255,.18), rgba(255,255,255,.035)), var(--glass-deep); box-shadow: 0 20px 58px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.22); backdrop-filter: blur(28px) saturate(180%); -webkit-backdrop-filter: blur(28px) saturate(180%); transform: translateX(-50%); }
   .connect, .analyze { border: 1px solid transparent; cursor: pointer; transition: transform .25s var(--ease), filter .25s var(--ease), box-shadow .25s var(--ease), background .25s var(--ease); backdrop-filter: blur(18px) saturate(180%); -webkit-backdrop-filter: blur(18px) saturate(180%); }.connect { padding: .74rem 1.12rem; border-radius: 1rem; color: var(--ink); background: linear-gradient(135deg, rgba(255,255,255,.30), rgba(255,255,255,.08)) padding-box, var(--spectrum) border-box; box-shadow: inset 0 1px 0 rgba(255,255,255,.48), 0 10px 24px rgba(124,145,255,.18); text-shadow: 0 1px 8px rgba(0,0,0,.25); font: 700 .87rem "Outfit", sans-serif; }.connect:hover, .analyze:hover { transform: translateY(-2px); filter: brightness(1.08) saturate(1.1); box-shadow: inset 0 1px 0 rgba(255,255,255,.58), 0 14px 28px rgba(124,145,255,.27); }.connect:active, .analyze:active { transform: translateY(0); }.connect.stop { color: white; background: linear-gradient(135deg, rgba(255,170,181,.35), rgba(240,72,111,.12)) padding-box, linear-gradient(135deg, #ff9faf, #e45176) border-box; }.connect:disabled { cursor: default; opacity: .7; }.analyze { padding: .61rem .8rem; border-radius: .9rem; color: var(--ink); background: linear-gradient(135deg, rgba(255,255,255,.17), rgba(255,255,255,.045)) padding-box, linear-gradient(135deg, rgba(255,255,255,.42), rgba(187,202,255,.12)) border-box; font: 650 .75rem "Outfit", sans-serif; }.analyze.active { color: var(--ink); background: linear-gradient(135deg, rgba(200,255,239,.28), rgba(168,190,255,.12)) padding-box, linear-gradient(135deg, #b9ffe8, #a7dcff, #d6caff) border-box; }.stats { display: none; }
   .help { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; padding: 1.2rem; background: rgba(4,5,14,.48); backdrop-filter: blur(14px); }.help[open-panel] { display: flex; }.help-card { position: relative; width: min(560px,100%); max-height: 82vh; overflow: auto; padding: 1.55rem; border: 1px solid var(--line-strong); border-radius: 1.5rem; color: var(--ink); background: rgba(15,17,31,.82); box-shadow: 0 30px 90px rgba(0,0,0,.45); }.help-card h3 { margin: 0 0 .35rem; font-size: 1.1rem; }.help-sub,.help-note { color: var(--ink-muted); font-size: .8rem; line-height: 1.55; }.help-sub { margin: 0 0 1rem; }.help-close { position: absolute; top: .9rem; right: 1rem; border: 0; color: var(--ink-muted); background: transparent; font-size: 1.1rem; cursor: pointer; }.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }.steps li { position: relative; padding: .72rem 0 .72rem 2.3rem; color: var(--ink-muted); font-size: .86rem; line-height: 1.5; counter-increment: step; }.steps li + li { border-top: 1px solid rgba(255,255,255,.09); }.steps li::before { content: counter(step); position: absolute; top: .72rem; left: 0; display: grid; width: 1.45rem; height: 1.45rem; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 50%; color: var(--mint); background: rgba(120,243,209,.09); font: .65rem var(--mono); }.steps b { color: var(--ink); }.help-note { margin: 1rem 0 0; padding-top: .9rem; border-top: 1px solid rgba(255,255,255,.1); }
-  @media (max-width: 640px) { .readout { bottom: 5.75rem; left: .78rem; padding: 1rem; }.dock { bottom: max(.7rem, env(safe-area-inset-bottom)); gap: .42rem; max-width: calc(100vw - 1.15rem); }.stats { display: none; }.idle { padding: 1.55rem 1rem 1rem; }.idle-glyph { width: 4.3rem; height: 4.3rem; }.pairing { margin-top: 1rem; } }
+  @media (max-width: 640px) { .readout { bottom: 5.75rem; left: .78rem; padding: 1rem; }.dock { bottom: max(.7rem, env(safe-area-inset-bottom)); gap: .42rem; max-width: calc(100vw - 1.15rem); }.stats { display: none; }.idle { padding: 1.55rem 1rem 1rem; }.idle-glyph { width: 4.3rem; height: 4.3rem; } }
   /* Light-mode liquid controls: no opaque color blocks or off-center dock. */
-  .pairing { border-color: rgba(255,255,255,.66); background: rgba(255,255,255,.35); box-shadow: inset 0 1px 0 rgba(255,255,255,.72); }
-  .pairing-code { color: #303a58; }
-  .pairing-copy { border-color: rgba(255,255,255,.78); color: var(--ink); background: linear-gradient(135deg, rgba(255,255,255,.86), rgba(255,255,255,.35)) padding-box, var(--spectrum) border-box; box-shadow: inset 0 1px 0 rgba(255,255,255,.92), 0 6px 18px rgba(89,104,198,.12); }
-  .pairing-copy:hover { background: linear-gradient(135deg, rgba(255,255,255,.92), rgba(255,255,255,.44)) padding-box, var(--spectrum) border-box; filter: brightness(1.04); }
   .ro-prob { background: linear-gradient(120deg, #ff73b3, #8064e9 52%, #388fd9); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 4px 14px rgba(133,151,230,.22)); }
   .ro-cmp .gp { color: #1c9a77; }.ro-cmp .gp.neg { color: #dc5872; }.ro-speak { border-color: var(--line-strong); background: rgba(255,255,255,.42); }.ro-speak:hover { background: rgba(255,255,255,.68); }.gated .ro-say { color: #a16d22; }
   .dock { bottom: max(1.25rem, env(safe-area-inset-bottom)); justify-content: center; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
@@ -153,13 +147,7 @@
     <div class="idle glass-card" id="idle">
       <div class="idle-glyph" aria-hidden="true"></div>
       <div class="idle-title" id="idleTitle">Every game, quantified</div>
-      <div class="idle-sub" id="idleHint">Create a private WebRTC pairing link, then open it on the phone or glasses companion.</div>
-      <div class="pairing" id="pairing">
-        <span class="pairing-label">PAIR CODE</span>
-        <strong class="pairing-code" id="pairCode">creating…</strong>
-        <button class="pairing-copy" id="copyPhoneLink">Copy link</button>
-        <a class="pairing-link" id="phoneLink" href="#" hidden></a>
-      </div>
+      <div class="idle-sub" id="idleHint">Waiting for the latest phone or glasses live feed.</div>
     </div>
 
     <aside class="analysis-tiles" aria-label="Analysis workspace">
@@ -191,7 +179,7 @@
     </aside>
 
     <footer class="dock">
-      <button class="connect" id="toggle">New pairing</button>
+      <button class="connect" id="toggle">Refresh live feed</button>
       <span class="stats" id="stats" aria-hidden="true"></span>
     </footer>
 
@@ -229,6 +217,7 @@ let demoStream = null;
 let demoAnimation = null;
 let visualDetections = [];
 let visualDetectionSource = null;
+let activeSessionRefreshInFlight = false;
 
 const DETECTION_STYLES = {
   athlete: { stroke: "#83e9ff", fill: "rgba(87, 188, 255, .14)", glow: "rgba(87, 188, 255, .32)" },
@@ -242,8 +231,9 @@ const DETECTION_STYLES = {
 
 const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
 const STEPS = [
-  "Open the generated <b>phone pairing link</b> on the camera device.",
-  "Press <b>Start live feed</b> on the phone and allow camera access.",
+  "Open <b>/phone</b> or the glasses companion on the camera device.",
+  "Press <b>Start live feed</b> and allow camera access.",
+  "The most recently started camera becomes this viewer's source automatically.",
   "The camera video connects directly to this browser with WebRTC; the public tunnel carries signaling only.",
   "Press <b>Analyze</b> here only when you want to start model requests.",
 ];
@@ -579,7 +569,7 @@ async function getPeerConnection() {
   connection.onconnectionstatechange = () => {
     if (peerConnection !== connection) return;
     if (connection.connectionState === "failed") {
-      showWebRtcBlocked("This campus network blocked the direct video route. Add a TURN relay, then select New pairing and try again.");
+      showWebRtcBlocked("This campus network blocked the direct video route. Add a TURN relay, then restart the active camera feed.");
     } else if (connection.connectionState === "disconnected") {
       setStatusPill("low_confidence", "reconnecting…");
       $("stats").textContent = "WebRTC reconnecting";
@@ -625,30 +615,33 @@ async function pollSignals() {
     const data = await api(`/api/webrtc/poll?session_id=${encodeURIComponent(sessionId)}&peer=viewer`);
     for (const signal of data.signals) await handleSignal(signal);
   } catch (error) {
-    if (/expired|invalid/i.test(error.message)) createPairing().catch(() => {});
+    if (/expired|invalid/i.test(error.message)) followActiveFeed().catch(() => {});
   } finally {
     pollInFlight = false;
     if (sessionId) pollTimer = setTimeout(pollSignals, SIGNAL_POLL_MS);
   }
 }
 
-async function createPairing() {
-  clearTimeout(pollTimer);
-  stopDemoFeed({ resetUI: false });
-  peerConnection?.close();
-  peerConnection = null;
-  pendingIce = [];
-  setRemoteFeedUI(false);
-  const session = await api("/api/webrtc/session", { method: "POST" });
-  sessionId = session.session_id;
-  const phoneUrl = `${location.origin}/phone?pair=${encodeURIComponent(session.pair_code)}`;
-  $("pairCode").textContent = session.pair_code;
-  $("phoneLink").textContent = phoneUrl;
-  $("phoneLink").href = phoneUrl;
-  $("phoneLink").hidden = false;
-  $("idleHint").textContent = "Open the pairing link on the phone, then start its camera feed.";
-  $("stats").textContent = "WebRTC direct · waiting";
-  pollSignals();
+async function followActiveFeed() {
+  if (activeSessionRefreshInFlight) return;
+  activeSessionRefreshInFlight = true;
+  try {
+    const active = await api("/api/webrtc/active");
+    if (active.session_id === sessionId) return;
+    clearTimeout(pollTimer);
+    stopDemoFeed({ resetUI: false });
+    peerConnection?.close();
+    peerConnection = null;
+    pendingIce = [];
+    setRemoteFeedUI(false);
+    sessionId = active.session_id;
+    $("idleHint").textContent = active.provider_active
+      ? "A live provider is active. Connecting to its direct WebRTC stream…"
+      : "Waiting for the latest phone or glasses live feed.";
+    pollSignals();
+  } finally {
+    activeSessionRefreshInFlight = false;
+  }
 }
 
 function renderInsight(insight) {
@@ -688,23 +681,7 @@ async function refreshAnalysis() {
   }
 }
 
-$("toggle").addEventListener("click", () => createPairing().catch(() => setStatusPill("error", "pairing error")));
-$("copyPhoneLink").addEventListener("click", async () => {
-  const glyph = document.querySelector(".idle-glyph");
-  if (glyph) {
-    glyph.classList.remove("spin");
-    void glyph.offsetWidth; // restart the animation on repeat clicks
-    glyph.classList.add("spin");
-    glyph.addEventListener("animationend", () => glyph.classList.remove("spin"), { once: true });
-  }
-  try {
-    await navigator.clipboard.writeText($("phoneLink").href);
-    $("copyPhoneLink").textContent = "Copied";
-    setTimeout(() => { $("copyPhoneLink").textContent = "Copy link"; }, 1_200);
-  } catch {
-    $("phoneLink").hidden = false;
-  }
-});
+$("toggle").addEventListener("click", () => followActiveFeed().catch(() => setStatusPill("error", "live feed error")));
 analyzeButton.addEventListener("click", async () => {
   const enable = !remoteAnalysisEnabled;
   analyzeButton.disabled = true;
@@ -745,7 +722,8 @@ renderResearchPlan();
 if (new URLSearchParams(location.search).get("demo") === "1") setTimeout(startDemoFeed, 0);
 setInterval(refreshAnalysis, INSIGHT_POLL_MS);
 setInterval(refreshVideoStats, INSIGHT_POLL_MS);
-createPairing().catch(() => setStatusPill("error", "pairing error"));
+followActiveFeed().catch(() => setStatusPill("error", "live feed error"));
+setInterval(() => followActiveFeed().catch(() => {}), INSIGHT_POLL_MS);
 // Rotate the idle headline through the calm/confident lines with a 2.5s fade-out.
 const IDLE_TITLES = [
   "Every game, quantified",

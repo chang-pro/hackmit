@@ -613,10 +613,10 @@ final class GlassesStreamer: ObservableObject {
                 // gates on the first keyframe anyway).
                 recorder.start(); recorder.setRecording(true)
                 uplink.setStreaming(true)
-                // One-button publish: join the newest open pairing session the
-                // desktop /capture page created and go live to its viewer.
+                // One-button publish: this feed becomes the desktop viewer's
+                // active feed as soon as it starts.
                 Task { [weak self] in
-                    await self?.rtc.connect(baseURL: Self.backendBase, pairCode: "")
+                    await self?.rtc.connect(baseURL: Self.backendBase)
                 }
                 self.isRecording = true
                 self.lastRestartAt = .distantPast   // fresh session: clear stale debounce
@@ -655,7 +655,7 @@ final class GlassesStreamer: ObservableObject {
                 // quietly retry every 8s while we're still streaming.
                 if s % 8 == 0, self.isRecording, case .failed = self.rtc.state {
                     Task { [weak self] in
-                        await self?.rtc.connect(baseURL: Self.backendBase, pairCode: "")
+                        await self?.rtc.connect(baseURL: Self.backendBase)
                     }
                 }
             }

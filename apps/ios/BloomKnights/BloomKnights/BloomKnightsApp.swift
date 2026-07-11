@@ -1,6 +1,7 @@
 // BloomKnightsApp.swift — BARE-BONES glasses connector.
 // One full-screen job: Meta Ray-Ban stream in -> WebRTC out to the desktop
-// viewer (pair code from the /capture page). No tabs, no dashboard.
+// viewer. The most recently started feed is shown automatically. No tabs,
+// no dashboard.
 
 import AVFoundation
 import SwiftUI
@@ -24,9 +25,7 @@ struct ConnectorView: View {
     #if canImport(WebRTC)
     @StateObject private var rtc = RTCPublisher()
     #endif
-    // Public tunnel URLs are temporary, so never ship a stale endpoint here.
-    @AppStorage("apiBaseURL") private var apiBaseURL = ""
-    @AppStorage("pairCode") private var pairCode = ""
+    private let backendBase = URL(string: "https://capture.saicharanramineni.com")!
     @State private var showControls = true
     @State private var connectionError = ""
     @Environment(\.scenePhase) private var scenePhase
@@ -54,11 +53,7 @@ struct ConnectorView: View {
             if showControls { controls }
         }
         .background(Color.black)
-        .task {
-            // Clear the hard-coded pre-Metered tunnel retained by older app installs.
-            if apiBaseURL.contains(".trycloudflare.com") { apiBaseURL = "" }
-            glasses.monitor()
-        }
+        .task { glasses.monitor() }
         .onChange(of: scenePhase) { _, phase in
             // Locking / backgrounding kills the SDK capture — tear down honestly.
             if phase == .background && glasses.isBusy { stopEverything() }
@@ -86,21 +81,9 @@ struct ConnectorView: View {
 
             // Bottom control card
             VStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    TextField("PUBLIC TUNNEL URL", text: $apiBaseURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    TextField("AUTO", text: $pairCode)   // pair code optional — auto-pairs when empty
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .frame(width: 80)
-                        .font(.system(.body, design: .monospaced).weight(.bold))
-                }
-                .textFieldStyle(.plain)
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.08)))
-                .foregroundStyle(.white)
+                Text("Feeds the active BloomKnights viewer automatically")
+                    .font(.system(.caption, design: .rounded).weight(.medium))
+                    .foregroundStyle(.white.opacity(0.72))
 
                 Button(action: toggle) {
                     Text(glasses.isBusy ? "STOP" : "CONNECT")
@@ -145,22 +128,16 @@ struct ConnectorView: View {
 
     private func toggle() {
         if glasses.isBusy { stopEverything(); return }
-        let address = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let base = URL(string: address), base.scheme != nil, base.host != nil else {
-            connectionError = "Paste the current public tunnel URL from the desktop before connecting."
-            return
-        }
         connectionError = ""
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
         glasses.start()
         #if canImport(WebRTC)
-        // Every decoded frame -> WebRTC track. Pair code empty = auto-pair
-        // with the newest open session from the desktop /capture page.
+        // Every decoded frame -> WebRTC track. This publisher automatically
+        // becomes the viewer's active source.
         let publisher = rtc
         glasses.setFrameTap { buffer in publisher.push(buffer) }
-        let code = pairCode.trimmingCharacters(in: .whitespaces).uppercased()
-        Task { await rtc.connect(baseURL: base, pairCode: code) }
+        Task { await rtc.connect(baseURL: backendBase) }
         #endif
     }
 
