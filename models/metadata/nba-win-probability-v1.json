@@ -1,0 +1,76 @@
+{
+  "model_version": "nba-win-probability-v1",
+  "model_family": "Brownian-motion win probability (Stern, 1994)",
+  "implementation": "services/probability/index.js",
+  "description": "Deterministic, closed-form baseline. The remaining scoring margin is modeled as normal with standard deviation proportional to sqrt(seconds remaining), plus a drift term for pregame strength that decays linearly with time remaining. P(win) = Phi((margin + drift) / sigma), clamped to (0.001, 0.999).",
+  "inputs": "CanonicalGameState (README §7.5). The model never consumes image pixels.",
+  "features": [
+    "score differential (team score minus opponent score)",
+    "seconds remaining (derived from period and clock_seconds)",
+    "home-court indicator (default drift when no pregame prior is supplied)"
+  ],
+  "optional_features": [
+    {
+      "name": "pregame prior",
+      "parameter": "options.pregameProbability",
+      "default": "not used (neutral; home edge applies instead)",
+      "mechanism": "The team's pregame win probability p in (0,1) is converted to an equivalent full-game point spread, probit(p) * full_game_margin_sd, and applied as drift scaled by the fraction of the game remaining — the same mechanism as the home edge, which it replaces (a market- or rating-derived prior already prices in the venue). The effect decays to zero as time expires."
+    },
+    {
+      "name": "possession",
+      "parameter": "options.includePossession",
+      "default": false,
+      "mechanism": "Only when the flag is true AND state.possession_team_id is non-null: the team with the ball gets +0.6 points of effective margin (its opponent -0.6). OFF by default per README §7.6 — add possession only if it is reliably extracted from the broadcast."
+    }
+  ],
+  "constants": {
+    "full_game_margin_sd_points": 11.5,
+    "sigma_per_sqrt_second": "11.5 / sqrt(2880) ≈ 0.2143 points per sqrt(second)",
+    "home_edge_points": 2.5,
+    "possession_points": 0.6,
+    "regulation_seconds": 2880,
+    "period_seconds": 720,
+    "overtime_period_seconds": 300,
+    "probability_floor": 0.001,
+    "probability_ceiling": 0.999
+  },
+  "overtime_handling": {
+    "seconds_remaining": "For period >= 5, only the current 5-minute overtime period counts: seconds remaining = clock_seconds, clamped to [0, 300]. A tie at 0:00 of any period (regulation or OT) returns roughly the pregame prior, shrunk to a small edge, because another period follows.",
+    "invalid_clocks": "clock_seconds outside [0, period length] (e.g. OCR noise reporting 6:12 during OT) is clamped rather than rejected. Plausibility enforcement belongs to the game-state reconciler (README §7.5); the engine stays total and deterministic."
+  },
+  "assumptions": [
+    "Scoring margin evolves like Brownian motion: independent increments, variance linear in elapsed time, no clustering by possession or foul-game dynamics.",
+    "One volatility constant (11.5 points full-game margin sd) fits all NBA matchups, eras, and pace profiles.",
+    "Home-court advantage is a constant 2.5 points over a full game, decaying linearly with time remaining.",
+    "A supplied pregame prior fully subsumes home-court advantage.",
+    "Overtime play has the same per-second scoring volatility as regulation."
+  ],
+  "known_limitations": [
+    "Uncalibrated: no historical evaluation has been run. Mid-range probabilities (55-85%) are the most likely to be miscalibrated.",
+    "End-game tactics (intentional fouling, clock management, garbage time) violate the Brownian assumption, so very-late-game probabilities for 4-8 point leads are approximate.",
+    "The flat +0.6-point possession adjustment is amplified as sigma shrinks near 0:00; with the flag on, a tied game with seconds left and the ball reads stronger than reality.",
+    "No inputs for team strength beyond the optional scalar prior: injuries, rest, lineups, and fouls are unmodeled.",
+    "The clamp to (0.001, 0.999) means the model never expresses certainty, even for decided games."
+  ],
+  "calibration": {
+    "status": "not_calibrated",
+    "note": "No calibration results exist for this model version. Do not present calibration claims until scripts/evaluate-model.js has been run against real historical play-by-play data and the results are recorded here.",
+    "how_to_run": "node scripts/evaluate-model.js path/to/history.csv",
+    "procedure": "The harness computes the model's home-win probability for every historical state snapshot, buckets predictions into deciles, and reports predicted vs. observed home-win frequency per bucket plus Brier score and log loss. Well-calibrated buckets sit near the diagonal. If systematic bias appears, adjust full_game_margin_sd_points (spread of the predictions) or home_edge_points (level), re-run, and record the results and data provenance in this file under a new model_version.",
+    "csv_format": {
+      "description": "UTF-8 CSV with a header row; one row per sampled game-state snapshot from a completed NBA game. Snapshots from the same game share the same outcome label.",
+      "required_columns": {
+        "period": "integer >= 1 (5+ = overtime)",
+        "clock_seconds": "number, seconds remaining in the period",
+        "away_score": "integer",
+        "home_score": "integer",
+        "home_won": "1 if the home team won the game, else 0"
+      },
+      "optional_columns": {
+        "home_pregame_prob": "home team's pregame win probability in (0,1); when present it is passed as the pregame prior",
+        "possession": "'home', 'away', or empty; when present the harness also scores the possession-adjusted variant"
+      },
+      "example_row": "4,134,104,101,0"
+    }
+  }
+}
