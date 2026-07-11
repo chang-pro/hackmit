@@ -30,6 +30,9 @@ const testVision = {
       situation: "Open play",
       visible_facts: ["Score tied"],
       changes_across_frames: [],
+      visual_detections: [
+        { label: "PLAYER", kind: "player", bbox: { x: 110, y: 210, width: 85, height: 190 }, confidence: 0.91 },
+      ],
       confidence: 0.94,
     };
   },
@@ -78,6 +81,7 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   assert.equal(body.insight.source, "live");
   assert.equal(body.insight.extraction, "test-phone-vision-batch");
   assert.equal(body.insight.observation.sport, "soccer");
+  assert.equal(body.insight.observation.visual_detections[0].bbox.width, 85);
   assert.equal(body.insight.analysis.primary_probability, 0.42);
   assert.equal(body.insight.presentation.status, "ready");
 
