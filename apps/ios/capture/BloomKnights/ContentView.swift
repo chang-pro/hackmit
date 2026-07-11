@@ -74,6 +74,12 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                         .foregroundColor(streamer.uplinkStatus.contains("fail 0") ? .green : .orange)
                 }
+                if !streamer.rtcStatus.isEmpty {
+                    Text(streamer.rtcStatus)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(streamer.rtcStatus.contains("LIVE") ? .green : .orange)
+                }
                 if !streamer.lastError.isEmpty {
                     Text(streamer.lastError)
                         .font(.caption)
