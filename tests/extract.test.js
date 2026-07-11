@@ -34,23 +34,23 @@ test("unknown backend name throws", async () => {
   );
 });
 
-test("gemini backend without GEMINI_API_KEY throws backend unavailable, not a crash", async () => {
-  const saved = process.env.GEMINI_API_KEY;
-  delete process.env.GEMINI_API_KEY;
+test("cerebras backend without CEREBRAS_API_KEY fails with an actionable message", async () => {
+  const saved = process.env.CEREBRAS_API_KEY;
+  delete process.env.CEREBRAS_API_KEY;
   try {
     await assert.rejects(
-      () => extractScoreboard({ image_uri: "packages/fixtures/frames/frame_000184.png" }, "gemini"),
-      /backend unavailable.*GEMINI_API_KEY/
+      () => extractScoreboard({ image_base64: "dGVzdA==", mime_type: "image/jpeg" }, "cerebras"),
+      /CEREBRAS_API_KEY is not set/
     );
   } finally {
-    if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+    if (saved !== undefined) process.env.CEREBRAS_API_KEY = saved;
   }
 });
 
-test("both named backends are registered", () => {
+test("all named backends are registered", () => {
   assert.ok(BACKENDS.fixture, "fixture backend registered");
-  assert.ok(BACKENDS.gemini, "gemini backend registered");
-  assert.equal(typeof BACKENDS.gemini.extract, "function");
+  assert.ok(BACKENDS.cerebras, "cerebras backend registered");
+  assert.equal(typeof BACKENDS.cerebras.extract, "function");
 });
 
 test("a custom backend object is accepted and its noisy output is normalized", async () => {

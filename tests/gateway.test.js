@@ -20,6 +20,7 @@ test("ingest returns the §7.1 frame metadata contract", () => {
     "frame_id",
     "height",
     "image_uri",
+    "mime_type",
     "source",
     "width",
   ]);
@@ -28,7 +29,17 @@ test("ingest returns the §7.1 frame metadata contract", () => {
   assert.equal(meta.source, "webcam");
   assert.equal(meta.width, 1920);
   assert.equal(meta.height, 1080);
+  assert.equal(meta.mime_type, "image/jpeg");
   assert.match(meta.image_uri, /^memory:\/\//, "no raw footage on disk (§16)");
+});
+
+test("frame exposes buffered image bytes to the vision pipeline", () => {
+  const gw = new CaptureGateway();
+  const meta = gw.ingest(submission());
+  const frame = gw.frame(meta.frame_id);
+  assert.equal(frame.image_base64, submission().image_base64);
+  assert.equal(frame.mime_type, "image/jpeg");
+  assert.equal(frame.image_uri, meta.image_uri);
 });
 
 test("frame_ids are sequential and zero-padded", () => {
