@@ -95,7 +95,7 @@ test("GET /api/comparison validates sport and per-sport fixture allowlists", asy
   });
 });
 
-test("POST /api/frames auto-detects by default and treats sport only as an optional hint", async () => {
+test("POST /api/frames stays disabled until the viewer explicitly starts analysis", async () => {
   await withServer(async (base) => {
     const submit = (body) =>
       fetch(`${base}/api/frames`, {
@@ -109,6 +109,16 @@ test("POST /api/frames auto-detects by default and treats sport only as an optio
       width: 1280,
       height: 720,
     };
+
+    const disabled = await submit(frame);
+    assert.equal(disabled.status, 202);
+    const disabledBody = await disabled.json();
+    assert.equal(disabledBody.analysis_status, "disabled");
+    assert.equal(disabledBody.analysis_enabled, false);
+
+    const started = await fetch(`${base}/api/analysis/start`, { method: "POST" });
+    assert.equal(started.status, 200);
+    assert.equal((await started.json()).analysis_enabled, true);
 
     const noSport = await submit(frame);
     // Accepted frames enter the quota-aware analyzer batch: 202 while queued,

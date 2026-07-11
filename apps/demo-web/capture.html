@@ -112,6 +112,9 @@
     border-radius: 999px; padding: 0.6rem 1.5rem; cursor: pointer; transition: filter 0.2s var(--ease); }
   .connect:hover { filter: brightness(1.08); } .connect:active { transform: translateY(1px); }
   .connect:disabled { cursor: default; filter: none; opacity: 0.8; }
+  .analyze { font: inherit; font-size: 0.78rem; font-weight: 600; color: var(--accent); background: transparent;
+    border: 1px solid rgba(62,207,142,0.58); border-radius: 999px; padding: 0.52rem 0.86rem; cursor: pointer; }
+  .analyze:hover { background: var(--accent-dim); } .analyze.active { color: var(--text); border-color: var(--line-strong); }
   .connect.stop { background: var(--neg); color: #fff; }
   .stats { font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint); white-space: nowrap; }
 
@@ -179,6 +182,7 @@
     </div>
 
     <footer class="dock">
+      <button class="analyze" id="analyze" hidden>Analyze</button>
       <button class="connect" id="toggle">Connect glasses</button>
       <span class="stats" id="stats">0 sent · 0 ok</span>
     </footer>
@@ -225,6 +229,7 @@ let displayClock = null;   // locally-ticked game clock, for a live broadcast fe
 let liveTimer = null;
 let remoteFrameId = null;
 let remoteFeedActive = false;
+let remoteAnalysisEnabled = false;
 
 const SPORT_LABEL = { nba:"NBA", basketball:"NBA", soccer:"Soccer", "association-football":"Soccer", ufc:"UFC", mma:"UFC", football:"Football", "american-football":"Football", golf:"Golf" };
 
@@ -266,6 +271,8 @@ function setRemoteFeedUI(active) {
     $("idleHint").textContent = "Receiving the live phone/glasses camera feed.";
     toggle.textContent = "Phone feed live";
     toggle.disabled = true;
+    $("analyze").hidden = false;
+    updateAnalyzeButton();
     return;
   }
   document.body.classList.remove("remote-feed");
@@ -273,30 +280,46 @@ function setRemoteFeedUI(active) {
   remotePreview.style.display = "none";
   if (!stream) setRunningUI(false);
   toggle.disabled = false;
+  $("analyze").hidden = true;
+  remoteAnalysisEnabled = false;
+}
+
+function updateAnalyzeButton() {
+  const button = $("analyze");
+  button.textContent = remoteAnalysisEnabled ? "Stop analysis" : "Analyze";
+  button.classList.toggle("active", remoteAnalysisEnabled);
 }
 
 async function syncPhoneFeed() {
   if (stream) return;
   try {
-    const response = await fetch("/api/live-frame", { cache: "no-store" });
+    const response = await fetch("/api/live-stream/status", { cache: "no-store" });
     if (response.status === 404) {
       if (remoteFeedActive) setRemoteFeedUI(false);
       return;
     }
     if (!response.ok) return;
     const data = await response.json();
-    if ((data.age_ms ?? Infinity) > 10_000) {
+    if (!data.stream || (data.stream.age_ms ?? Infinity) > 10_000) {
       if (remoteFeedActive) setRemoteFeedUI(false);
       return;
     }
-    if (!remoteFeedActive) setRemoteFeedUI(true);
-    if (data.frame?.frame_id && data.frame.frame_id !== remoteFrameId) {
-      remoteFrameId = data.frame.frame_id;
-      remotePreview.src = `${data.image_url}&v=${encodeURIComponent(remoteFrameId)}`;
+    remoteAnalysisEnabled = data.analysis_enabled === true;
+    if (!remoteFeedActive) {
+      setRemoteFeedUI(true);
+      remoteFrameId = data.stream.frame_id;
+      remotePreview.src = "/api/live-stream";
       remotePreview.style.display = "block";
       video.style.display = "none";
     }
-    if (data.insight) renderInsight(data.insight);
+    updateAnalyzeButton();
+    if (remoteAnalysisEnabled) {
+      const insightResponse = await fetch("/api/latest", { cache: "no-store" });
+      if (insightResponse.ok) {
+        const insight = await insightResponse.json();
+        if (insight?.observation) renderInsight(insight);
+      }
+    }
   } catch {
     // Keep the last frame visible through short tunnel/network interruptions.
   }
@@ -457,6 +480,26 @@ function stop() {
 $("toggle").addEventListener("click", async () => {
   try { if (timer) stop(); else await start(); }
   catch (err) { setStatusPill("error", "source error"); setRunningUI(false); }
+});
+
+$("analyze").addEventListener("click", async () => {
+  const shouldEnable = !remoteAnalysisEnabled;
+  const button = $("analyze");
+  button.disabled = true;
+  try {
+    const response = await fetch(shouldEnable ? "/api/analysis/start" : "/api/analysis/stop", {
+      method: "POST",
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    remoteAnalysisEnabled = data.analysis_enabled === true;
+    updateAnalyzeButton();
+    setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : "phone feed");
+  } catch {
+    setStatusPill("error", "analysis error");
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("speak").addEventListener("click", () => {

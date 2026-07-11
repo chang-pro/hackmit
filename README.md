@@ -36,12 +36,13 @@ node scripts/pull-stats.js   # pull live stats snapshots
 Pages served by `npm start` (see `services/api/server.js`):
 
 - `/` — judge-facing dashboard
-- `/capture` — phone/Ray-Ban camera capture client
+- `/phone` — phone/Ray-Ban camera sender
+- `/capture` — desktop live-feed viewer and Analyze control
 - `/data` — data dashboard
 - `/landing` — marketing landing page
 - `/pitch` — pitch deck
 
-API routes: `POST /api/frames`, `GET /api/comparison`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
+API routes: `POST /api/live-stream`, `GET /api/live-stream`, `POST /api/analysis/start`, `POST /api/frames`, `GET /api/comparison`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
 
 The iOS companion app lives at `apps/ios/` — see its README for build and glasses-streaming instructions. The rendered 60-second demo video is at `apps/demo-video/out/`.
 
@@ -648,9 +649,9 @@ This proves the interfaces and product loop.
 - **Teammate 1:** owns the Next.js frontend and renders backend results. The frontend should not duplicate vision or probability logic.
 - **Teammate 2:** owns the native app, camera permissions, frame capture, and delivery to the backend. The app should treat the backend response as the source of truth.
 
-Until the native app is ready, `/capture` is the canonical phone-camera test client. See [`docs/VISION_PIPELINE.md`](docs/VISION_PIPELINE.md) for the live contract and operating instructions.
+Until the native app is ready, `/phone` is the canonical phone-camera sender and `/capture` is the desktop viewer. Video begins immediately; model analysis begins only after the user presses **Analyze** on `/capture`. See [`docs/VISION_PIPELINE.md`](docs/VISION_PIPELINE.md) for the live contract and operating instructions.
 
-On university networks with client isolation, run `npm run phone:tunnel` and open the generated public HTTPS URL with `/capture`; do not use the laptop's LAN IP.
+On university networks with client isolation, run `npm run phone:tunnel`, open the generated public HTTPS URL with `/phone` on the camera device and `/capture` on the desktop viewer; do not use the laptop's LAN IP.
 
 These tracks can progress in parallel once shared contracts are agreed upon.
 

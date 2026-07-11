@@ -59,7 +59,7 @@
     <button class="secondary" id="live">Start live feed</button>
   </div>
   <p class="note" id="camera-note">
-    Live mode collects five frames over twelve seconds, then analyzes the whole window in one request to preserve the model quota.
+    Live mode streams the camera feed continuously. Analysis stays off until it is started from the desktop capture page.
   </p>
 
   <section class="result" aria-live="polite">
@@ -80,9 +80,12 @@
 </main>
 
 <script>
+const STREAM_INTERVAL_MS = 200;
 const ANALYSIS_INTERVAL_MS = 2400;
 const MAX_IMAGE_EDGE = 1600;
+const STREAM_IMAGE_EDGE = 960;
 const JPEG_QUALITY = 0.82;
+const STREAM_JPEG_QUALITY = 0.6;
 
 const video = document.getElementById("video");
 const preview = document.getElementById("preview");
@@ -94,6 +97,9 @@ const photoInput = document.getElementById("photo");
 let stream = null;
 let liveTimer = null;
 let processing = false;
+let streamUploadInFlight = false;
+let analysisEnabled = false;
+let lastAnalysisFrameAt = 0;
 
 function setStatus(label, headline) {
   document.getElementById("result-status").textContent = label;
@@ -108,6 +114,7 @@ async function health() {
     if (data.vision.selected) {
       backend.textContent = `${data.vision.selected} vision`;
       backend.classList.add("good");
+      analysisEnabled = data.analysis_enabled === true;
     } else {
       backend.textContent = "vision key needed";
       document.getElementById("detail").textContent = data.vision.error;
@@ -117,8 +124,8 @@ async function health() {
   }
 }
 
-function drawImageToCanvas(image, width, height) {
-  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(width, height));
+function drawImageToCanvas(image, width, height, maxImageEdge = MAX_IMAGE_EDGE) {
+  const scale = Math.min(1, maxImageEdge / Math.max(width, height));
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
   canvas.getContext("2d", { alpha: false }).drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -143,9 +150,44 @@ async function fileToCanvas(file) {
   }
 }
 
-function videoToCanvas() {
+function videoToCanvas(maxImageEdge = MAX_IMAGE_EDGE) {
   if (!video.videoWidth) throw new Error("camera is not ready");
-  drawImageToCanvas(video, video.videoWidth, video.videoHeight);
+  drawImageToCanvas(video, video.videoWidth, video.videoHeight, maxImageEdge);
+}
+
+function renderAnalysisState() {
+  document.getElementById("camera-note").textContent = analysisEnabled
+    ? "Live video is streaming. Analysis is enabled and collects five frames over twelve seconds before each model request."
+    : "Live video is streaming. Analysis is off until you press Analyze on the desktop capture page.";
+}
+
+async function streamCanvas() {
+  if (streamUploadInFlight) return;
+  streamUploadInFlight = true;
+  const dataUrl = canvas.toDataURL("image/jpeg", STREAM_JPEG_QUALITY);
+  try {
+    const response = await fetch("/api/live-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "phone_live",
+        captured_at: new Date().toISOString(),
+        mime_type: "image/jpeg",
+        image_base64: dataUrl.slice(dataUrl.indexOf(",") + 1),
+        width: canvas.width,
+        height: canvas.height,
+      }),
+    });
+    if (!response.ok) throw new Error(`stream upload failed (${response.status})`);
+    const data = await response.json();
+    const wasEnabled = analysisEnabled;
+    analysisEnabled = data.analysis_enabled === true;
+    if (wasEnabled !== analysisEnabled) renderAnalysisState();
+  } catch (error) {
+    document.getElementById("detail").textContent = `live-feed error: ${error.message}`;
+  } finally {
+    streamUploadInFlight = false;
+  }
 }
 
 async function analyzeCanvas(source) {
@@ -237,7 +279,12 @@ photoInput.addEventListener("change", async () => {
   if (!file) return;
   try {
     await fileToCanvas(file);
-    await analyzeCanvas("phone_photo");
+    if (!analysisEnabled) {
+      setStatus("Analysis off", "Start analysis from the desktop capture page first.");
+      document.getElementById("detail").textContent = "The photo stayed on this phone; no model request was made.";
+    } else {
+      await analyzeCanvas("phone_photo");
+    }
   } catch (error) {
     setStatus("Error", error.message);
   } finally {
@@ -247,11 +294,17 @@ photoInput.addEventListener("change", async () => {
 
 async function liveTick() {
   if (!stream) return;
-  if (!processing && video.videoWidth) {
-    videoToCanvas();
-    await analyzeCanvas("phone_live");
+  if (video.videoWidth) {
+    videoToCanvas(STREAM_IMAGE_EDGE);
+    await streamCanvas();
+    const now = Date.now();
+    if (analysisEnabled && !processing && now - lastAnalysisFrameAt >= ANALYSIS_INTERVAL_MS) {
+      videoToCanvas(MAX_IMAGE_EDGE);
+      lastAnalysisFrameAt = now;
+      await analyzeCanvas("phone_live");
+    }
   }
-  if (stream) liveTimer = setTimeout(liveTick, ANALYSIS_INTERVAL_MS);
+  if (stream) liveTimer = setTimeout(liveTick, STREAM_INTERVAL_MS);
 }
 
 async function startLive() {
@@ -269,6 +322,8 @@ async function startLive() {
   target.style.display = "block";
   liveButton.textContent = "Stop live feed";
   liveButton.classList.add("primary");
+  lastAnalysisFrameAt = 0;
+  renderAnalysisState();
   await video.play();
   liveTimer = setTimeout(liveTick, 500);
 }
@@ -278,6 +333,8 @@ function stopLive() {
   liveTimer = null;
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
+  analysisEnabled = false;
+  streamUploadInFlight = false;
   video.srcObject = null;
   video.style.display = "none";
   target.style.display = "none";
@@ -307,6 +364,7 @@ document.getElementById("reset").addEventListener("click", async () => {
   document.getElementById("gap").textContent = "—";
   setStatus("Ready", "Capture a scoreboard to begin.");
   document.getElementById("detail").textContent = "Frames remain in server memory only.";
+  analysisEnabled = false;
 });
 
 health();
