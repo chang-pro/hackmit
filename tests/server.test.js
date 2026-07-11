@@ -79,6 +79,14 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   assert.equal(body.insight.analysis.primary_probability, 0.42);
   assert.equal(body.insight.presentation.status, "ready");
 
+  const latestFrame = await (await fetch(`${base}/api/live-frame`)).json();
+  assert.equal(latestFrame.frame.frame_id, body.frame.frame_id);
+  assert.equal(latestFrame.insight.observation.sport, "soccer");
+  const image = await fetch(`${base}${latestFrame.image_url}`);
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get("content-type"), "image/jpeg");
+  assert.deepEqual([...new Uint8Array(await image.arrayBuffer())], [...Buffer.from("phone-frame")]);
+
   const latest = await (await fetch(`${base}/api/latest`)).json();
   assert.equal(latest.frame_window.frames[0].frame_id, body.frame.frame_id);
   assert.equal(latest.extraction, "test-phone-vision-batch");

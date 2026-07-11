@@ -7,12 +7,14 @@
 //   POST /api/frames            — live frame in (sport-tagged); batched analysis
 //   POST /api/reset             — clear live session state
 //   GET  /api/health            — vision backend + buffer + quota status
+//   GET  /api/live-frame        — metadata for the newest inbound camera frame
+//   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
 //   GET  /api/latest            — alias of /api/comparison
 //   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
-//   GET  /, /capture, /phone, /desktop-capture, /data, /landing, /pitch — pages
+//   GET  /, /capture, /phone, /data, /landing, /pitch — pages
 
 import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
@@ -74,6 +76,11 @@ function responseHeaders(contentType = "application/json") {
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, responseHeaders());
   res.end(JSON.stringify(payload, null, 2));
+}
+
+function imageBytes(imageBase64) {
+  const dataUrl = String(imageBase64).match(/^data:[^;]+;base64,(.+)$/s);
+  return Buffer.from(dataUrl?.[1] ?? imageBase64, "base64");
 }
 
 async function sendHtml(res, filename, appDir = "demo-web") {
@@ -323,6 +330,31 @@ export function createBloomServer({
     );
   }
 
+  function handleLatestFrame(res) {
+    const latest = gateway.latest();
+    if (!latest) {
+      sendJson(res, 404, { error: "no live camera frame received yet" });
+      return;
+    }
+    sendJson(res, 200, {
+      frame: latest.meta,
+      age_ms: Math.max(0, Date.now() - Date.parse(latest.meta.captured_at)),
+      image_url: `/api/live-frame/image?frame_id=${encodeURIComponent(latest.meta.frame_id)}`,
+      insight: latestInsight,
+    });
+  }
+
+  function handleLatestFrameImage(res, url) {
+    const frameId = url.searchParams.get("frame_id");
+    const stored = frameId ? gateway.get(frameId) : gateway.latest();
+    if (!stored) {
+      sendJson(res, 404, { error: "live camera frame is unavailable" });
+      return;
+    }
+    res.writeHead(200, responseHeaders(stored.mime_type));
+    res.end(imageBytes(stored.image_base64));
+  }
+
   function handleSports(res) {
     sendJson(
       res,
@@ -367,6 +399,10 @@ export function createBloomServer({
           has_live_insight: Boolean(latestInsight),
           analysis_queue: analyzer.status(),
         });
+      } else if (req.method === "GET" && url.pathname === "/api/live-frame") {
+        handleLatestFrame(res);
+      } else if (req.method === "GET" && url.pathname === "/api/live-frame/image") {
+        handleLatestFrameImage(res, url);
       } else if (
         req.method === "GET" &&
         (url.pathname === "/api/comparison" || url.pathname === "/api/latest")
@@ -387,17 +423,12 @@ export function createBloomServer({
         req.method === "GET" &&
         (url.pathname === "/capture" || url.pathname === "/capture.html")
       ) {
-        await sendHtml(res, "phone.html");
+        await sendHtml(res, "capture.html");
       } else if (
         req.method === "GET" &&
         (url.pathname === "/phone" || url.pathname === "/phone.html")
       ) {
         await sendHtml(res, "phone.html");
-      } else if (
-        req.method === "GET" &&
-        (url.pathname === "/desktop-capture" || url.pathname === "/desktop-capture.html")
-      ) {
-        await sendHtml(res, "capture.html");
       } else if (req.method === "GET" && (url.pathname === "/data" || url.pathname === "/data.html")) {
         await sendHtml(res, "data.html");
       } else if (req.method === "GET" && url.pathname === "/landing") {

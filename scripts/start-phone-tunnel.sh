@@ -43,7 +43,8 @@ fi
 
 echo
 echo "Creating public HTTPS phone/glasses endpoint..."
-echo "Open the printed trycloudflare.com URL with /capture appended."
+echo "On the phone, open the printed trycloudflare.com URL with /phone appended."
+echo "On a desktop browser, open the same URL with /capture appended to view the phone/glasses feed."
 echo "Use the same public URL as the app's API base; POST frames to /api/frames."
 echo
 

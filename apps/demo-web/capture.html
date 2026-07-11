@@ -28,7 +28,8 @@
 
   /* The camera feed fills everything */
   .stage { position: fixed; inset: 0; }
-  #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+  #video, #remotePreview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+  #remotePreview { display: none; }
   .scrim { position: absolute; inset: 0; pointer-events: none;
     background: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, transparent 22%, transparent 60%, rgba(0,0,0,0.72) 100%); }
   .overlay { position: absolute; inset: 0; pointer-events: none; }
@@ -110,6 +111,7 @@
   .connect { font: inherit; font-size: 0.9rem; font-weight: 600; color: #08110c; background: var(--accent); border: 0;
     border-radius: 999px; padding: 0.6rem 1.5rem; cursor: pointer; transition: filter 0.2s var(--ease); }
   .connect:hover { filter: brightness(1.08); } .connect:active { transform: translateY(1px); }
+  .connect:disabled { cursor: default; filter: none; opacity: 0.8; }
   .connect.stop { background: var(--neg); color: #fff; }
   .stats { font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint); white-space: nowrap; }
 
@@ -134,6 +136,7 @@
 <body>
 <div class="stage">
   <video id="video" autoplay playsinline muted></video>
+  <img id="remotePreview" alt="Live phone or glasses camera feed" />
   <div class="scrim"></div>
 
   <div class="overlay">
@@ -210,6 +213,7 @@ const NOTE = "No SDK or developer account needed — a video call carries the gl
 
 const $ = (id) => document.getElementById(id);
 const video = $("video");
+const remotePreview = $("remotePreview");
 const canvas = $("canvas");
 const counts = { sent: 0, accepted: 0, skipped: 0, errors: 0 };
 
@@ -219,6 +223,8 @@ let lastSpoken = "";
 let lastInsight = null;
 let displayClock = null;   // locally-ticked game clock, for a live broadcast feel
 let liveTimer = null;
+let remoteFrameId = null;
+let remoteFeedActive = false;
 
 const SPORT_LABEL = { nba:"NBA", basketball:"NBA", soccer:"Soccer", "association-football":"Soccer", ufc:"UFC", mma:"UFC", football:"Football", "american-football":"Football", golf:"Golf" };
 
@@ -251,6 +257,51 @@ function setRunningUI(running) {
   else { setStatusPill("idle", "idle"); document.body.classList.remove("ready", "gated", "has-read"); }
 }
 
+function setRemoteFeedUI(active) {
+  remoteFeedActive = active;
+  const toggle = $("toggle");
+  if (active) {
+    document.body.classList.add("running", "remote-feed");
+    setStatusPill("capturing", "phone feed");
+    $("idleHint").textContent = "Receiving the live phone/glasses camera feed.";
+    toggle.textContent = "Phone feed live";
+    toggle.disabled = true;
+    return;
+  }
+  document.body.classList.remove("remote-feed");
+  remotePreview.removeAttribute("src");
+  remotePreview.style.display = "none";
+  if (!stream) setRunningUI(false);
+  toggle.disabled = false;
+}
+
+async function syncPhoneFeed() {
+  if (stream) return;
+  try {
+    const response = await fetch("/api/live-frame", { cache: "no-store" });
+    if (response.status === 404) {
+      if (remoteFeedActive) setRemoteFeedUI(false);
+      return;
+    }
+    if (!response.ok) return;
+    const data = await response.json();
+    if ((data.age_ms ?? Infinity) > 10_000) {
+      if (remoteFeedActive) setRemoteFeedUI(false);
+      return;
+    }
+    if (!remoteFeedActive) setRemoteFeedUI(true);
+    if (data.frame?.frame_id && data.frame.frame_id !== remoteFrameId) {
+      remoteFrameId = data.frame.frame_id;
+      remotePreview.src = `${data.image_url}&v=${encodeURIComponent(remoteFrameId)}`;
+      remotePreview.style.display = "block";
+      video.style.display = "none";
+    }
+    if (data.insight) renderInsight(data.insight);
+  } catch {
+    // Keep the last frame visible through short tunnel/network interruptions.
+  }
+}
+
 // Format the identified game state per sport (mirrors index.html).
 // clockOverride lets the local live ticker show a counting-down clock.
 function formatState(d, clockOverride) {
@@ -281,6 +332,34 @@ function renderInsight(d) {
   // Detected sport → pill (recognized by the vision backend, not chosen).
   const sportVal = d.sport || (d.observation && d.observation.sport) || "";
   if (sportVal) { $("sportText").textContent = SPORT_LABEL[String(sportVal).toLowerCase()] || String(sportVal).toUpperCase(); $("sportPill").hidden = false; }
+
+  if (d.observation) {
+    const observation = d.observation;
+    const analysis = d.analysis;
+    const gameLine = [
+      observation.event_name || `${observation.participant_a || "UNKNOWN"} vs ${observation.participant_b || "UNKNOWN"}`,
+      observation.score_display,
+      observation.phase,
+      observation.clock,
+    ].filter(Boolean).join(" · ");
+    lastInsight = d;
+    $("roGame").textContent = gameLine || "Reading the live event";
+    $("roSay").textContent = pres.short_text || "Reading the scoreboard…";
+    lastSpoken = pres.spoken_text || pres.short_text || "";
+    if (!analysis) {
+      document.body.classList.add("gated");
+      setStatusPill("capturing", "reading…");
+      return;
+    }
+    document.body.classList.remove("gated");
+    document.body.classList.add("ready");
+    setStatusPill("ready", status === "event_switched" ? "new event" : "live");
+    tweenNum($("roModel"), analysis.primary_probability * 100, (v) => v.toFixed(0) + "%");
+    $("roMarket").textContent = analysis.primary_outcome || "MODEL";
+    $("roGap").textContent = `CONF ${Math.round((analysis.confidence ?? observation.confidence ?? 0) * 100)}%`;
+    $("roGap").className = "gp";
+    return;
+  }
 
   // Re-seed the local clock only on a genuinely new/changed reading; otherwise
   // let it keep ticking so a steady feed doesn't freeze the countdown.
@@ -360,6 +439,8 @@ async function start() {
   stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   stream.getVideoTracks()[0].addEventListener("ended", stop);
   video.srcObject = stream;
+  video.style.display = "block";
+  remotePreview.style.display = "none";
   timer = setInterval(sendFrame, SAMPLE_INTERVAL_MS);
   liveTimer = setInterval(liveTick, 1000);
   setRunningUI(true);
@@ -395,6 +476,8 @@ $("help").addEventListener("click", (e) => { if (e.target === $("help")) $("help
 $("steps").innerHTML = STEPS.map((s) => "<li>" + s + "</li>").join("");
 $("helpNote").innerHTML = NOTE;
 setRunningUI(false);
+setInterval(syncPhoneFeed, 750);
+syncPhoneFeed();
 </script>
 </body>
 </html>

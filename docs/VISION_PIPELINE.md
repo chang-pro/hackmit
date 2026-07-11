@@ -33,7 +33,7 @@ npm start
 The server prints the exact phone URL. On the current machine it will resemble:
 
 ```text
-http://10.32.242.101:3000/capture
+http://10.32.242.101:3000/phone
 ```
 
 Open that URL on the phone and choose **Take photo**. This invokes the phone's rear camera through the file-capture control and works on an ordinary local HTTP connection. Fill most of the photo with the television or monitor, keep the scoreboard unobstructed, and avoid glare.
@@ -55,7 +55,7 @@ The command starts the analyzer and prints a random public URL similar to:
 https://random-words.trycloudflare.com
 ```
 
-Open `https://random-words.trycloudflare.com/capture` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. The glasses/native app can use the same origin as its API base and send frames to `POST /api/frames`.
+Open `https://random-words.trycloudflare.com/phone` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. Open `/capture` on the desktop to view the incoming phone/glasses feed. The glasses/native app can use the same origin as its API base and send frames to `POST /api/frames`.
 
 Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
@@ -140,8 +140,9 @@ Other endpoints:
 - `GET /api/latest` — most recent live insight, with fixture fallback after the live TTL.
 - `GET /api/comparison` — compatibility alias for `/api/latest`.
 - `POST /api/reset` — clears buffered frames and canonical game state.
-- `GET /capture` — phone-first capture and result page.
-- `GET /desktop-capture` — desktop/glasses-window capture page.
+- `GET /phone` — phone-first camera capture page.
+- `GET /capture` — desktop viewer for the newest phone/glasses frame.
+- `GET /api/live-frame` — metadata for the newest inbound camera frame.
 
 ## Frame cadence
 
