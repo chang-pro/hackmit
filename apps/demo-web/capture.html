@@ -3,66 +3,392 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>BloomKnights — Webcam Capture</title>
+<title>BloomKnights — Connect Your Stream</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 2rem; }
-  h1 { font-size: 1.2rem; letter-spacing: 0.04em; }
-  a { color: #58a6ff; }
-  video { width: 100%; max-width: 640px; border: 1px solid #30363d; border-radius: 10px; background: #000; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; max-width: 640px; margin-top: 1rem; }
-  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem; }
-  .card h2 { font-size: 0.75rem; text-transform: uppercase; color: #8b949e; margin: 0 0 0.5rem; }
-  .big { font-size: 1.8rem; font-weight: 700; }
-  .status { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; background: #1f6feb33; border: 1px solid #1f6feb; }
-  .status.rec { background: #f8514933; border-color: #f85149; }
-  button { font: inherit; background: #238636; color: #fff; border: 0; border-radius: 8px; padding: 0.5rem 1.2rem; cursor: pointer; margin-top: 1rem; }
-  button.stop { background: #da3633; }
-  .note { color: #8b949e; font-size: 0.8rem; max-width: 640px; }
-  #detail { color: #8b949e; font-size: 0.8rem; margin-top: 0.5rem; }
+  /* ── BloomKnights design language (shared with index.html) ───────────── */
+  :root {
+    color-scheme: dark;
+    --bg: #0b0c0e;
+    --bg-raised: #101216;
+    --bg-inset: #0d0f12;
+    --line: #1f232b;
+    --line-strong: #2c313b;
+    --text: #e8eaee;
+    --text-dim: #9aa1ad;
+    --text-faint: #5c6470;
+    --accent: #3ecf8e;
+    --accent-dim: #3ecf8e22;
+    --neg: #e5484d;
+    --neg-dim: #e5484d1f;
+    --warn: #d6a243;
+    --warn-dim: #d6a24320;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Outfit", ui-sans-serif, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(1200px 500px at 85% -10%, #16221c 0%, transparent 60%),
+      radial-gradient(900px 400px at -10% 110%, #131720 0%, transparent 55%);
+    background-attachment: fixed;
+  }
+  .shell { max-width: 1180px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 1.1rem 0; border-bottom: 1px solid var(--line);
+  }
+  .brandmark { width: 26px; height: 26px; flex: none; }
+  .brand { font-weight: 600; letter-spacing: 0.01em; font-size: 1rem; }
+  .brand span { color: var(--text-faint); font-weight: 400; }
+  .topbar nav { margin-left: auto; display: flex; align-items: center; gap: 1.25rem; }
+  .topbar a { color: var(--text-dim); text-decoration: none; font-size: 0.85rem; transition: color 0.25s var(--ease); }
+  .topbar a:hover { color: var(--text); }
+
+  .hero { padding: 2.4rem 0 1.6rem; max-width: 640px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 0.9rem;
+  }
+  .hero h1 { font-size: clamp(1.7rem, 3.6vw, 2.4rem); font-weight: 600; letter-spacing: -0.03em; line-height: 1.08; margin: 0; }
+  .hero p { color: var(--text-dim); font-size: 0.95rem; line-height: 1.6; max-width: 56ch; margin: 0.9rem 0 0; }
+
+  /* Source mode selector — Ray-Bans featured as the hero option */
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin: 1.4rem 0 1.6rem; }
+  @media (max-width: 760px) { .modes { grid-template-columns: 1fr; } }
+  .mode {
+    text-align: left; font: inherit; color: var(--text-dim); cursor: pointer; position: relative; overflow: hidden;
+    background: var(--bg-raised); border: 1px solid var(--line); border-radius: 14px;
+    padding: 0.95rem 1.05rem;
+    transition: border-color 0.3s var(--ease), background 0.3s var(--ease), color 0.3s var(--ease), transform 0.25s var(--ease), box-shadow 0.3s var(--ease);
+  }
+  .mode:hover { border-color: var(--line-strong); color: var(--text); transform: translateY(-2px); }
+  .mode:active { transform: translateY(0); }
+  .mode.active { border-color: var(--accent); background: var(--accent-dim); color: var(--text); box-shadow: 0 10px 32px -14px rgba(62,207,142,0.35), inset 0 1px 0 rgba(255,255,255,0.05); }
+  .mode .m-title { display: flex; align-items: center; gap: 0.55rem; font-weight: 600; font-size: 0.92rem; margin-bottom: 0.3rem; }
+  .mode.active .m-title { color: var(--accent); }
+  .mode .m-sub { font-size: 0.76rem; line-height: 1.45; color: var(--text-faint); }
+  .mode svg { flex: none; }
+  .mode.featured { grid-column: 1 / -1; padding: 1.25rem 1.35rem; }
+  .mode.featured .m-title { font-size: 1.12rem; gap: 0.7rem; }
+  .mode.featured .m-sub { font-size: 0.84rem; max-width: 62ch; }
+  .mode.featured.active::before {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+    background: linear-gradient(180deg, var(--accent), transparent);
+  }
+  .m-tag {
+    margin-left: auto; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-dim); border: 1px solid #3ecf8e55;
+    border-radius: 999px; padding: 0.2rem 0.6rem; font-weight: 500;
+  }
+
+  /* Layout: preview | side column */
+  .main { display: grid; grid-template-columns: 2fr 1fr; gap: 1.4rem; align-items: start; }
+  @media (max-width: 860px) { .main { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--bg-raised); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: 0.7rem; padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--line); }
+  .panel-head h2 { font-size: 0.68rem; font-family: var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); margin: 0; font-weight: 500; }
+
+  .status {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.22rem 0.7rem; border-radius: 999px;
+    font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em;
+    border: 1px solid var(--line-strong); color: var(--text-dim); background: var(--bg-inset);
+    transition: all 0.3s var(--ease);
+  }
+  .status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status.rec { border-color: var(--neg); color: var(--neg); background: var(--neg-dim); }
+  .status.rec i { animation: breathe 1.6s var(--ease) infinite; }
+  @keyframes breathe { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.8); } }
+
+  .preview { position: relative; background: #000; aspect-ratio: 16 / 9; }
+  .preview video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .preview .empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 0.7rem;
+    color: var(--text-faint); font-size: 0.85rem; text-align: center; padding: 1.5rem;
+  }
+  .preview .empty svg { opacity: 0.6; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; padding: 0.9rem 1.25rem; border-top: 1px solid var(--line); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--bg);
+    background: var(--accent); border: 1px solid var(--accent);
+    border-radius: 9px; padding: 0.52rem 1.2rem; cursor: pointer;
+    transition: filter 0.25s var(--ease);
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px); }
+  .btn.stop { background: var(--neg); border-color: var(--neg); color: #fff; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .file-label {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-size: 0.84rem; font-weight: 500; color: var(--text);
+    background: var(--bg-inset); border: 1px solid var(--line-strong);
+    border-radius: 9px; padding: 0.5rem 1rem; cursor: pointer;
+    transition: border-color 0.25s var(--ease);
+  }
+  .file-label:hover { border-color: var(--text-faint); }
+  .file-label[hidden] { display: none; }
+  #detail { font-family: var(--mono); font-size: 0.72rem; color: var(--text-faint); padding: 0 1.25rem 1rem; min-height: 1.2em; word-break: break-all; }
+
+  /* Side column */
+  .side { display: flex; flex-direction: column; gap: 1.4rem; position: sticky; top: 1.4rem; }
+  .field { padding: 1rem 1.25rem 1.15rem; }
+  .field label { display: block; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 0.5rem; }
+  select {
+    width: 100%; font: inherit; font-size: 0.88rem; color: var(--text);
+    background: var(--bg-inset); border: 1px solid var(--line-strong);
+    border-radius: 9px; padding: 0.5rem 0.7rem; cursor: pointer;
+  }
+  .field .hint { font-size: 0.72rem; color: var(--text-faint); margin-top: 0.45rem; line-height: 1.45; }
+
+  /* Counters — dividers, not boxes */
+  .counters { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .counters > div { padding: 1rem 0.5rem 0.95rem; text-align: center; }
+  .counters > div + div { border-left: 1px solid var(--line); }
+  .counters .c-label { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 0.4rem; }
+  .counters .c-value { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; transition: color 0.3s var(--ease); }
+  .counters .ok { color: var(--accent); }
+  .counters .bad { color: var(--neg); }
+
+  /* Instructions */
+  .steps { padding: 0.4rem 1.25rem 1.2rem; }
+  .steps ol { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .steps li {
+    counter-increment: step; position: relative;
+    padding: 0.7rem 0 0.7rem 2.3rem; font-size: 0.83rem; line-height: 1.55; color: var(--text-dim);
+  }
+  .steps li + li { border-top: 1px solid var(--line); }
+  .steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 0.72rem;
+    width: 1.55rem; height: 1.55rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 0.7rem; font-weight: 600;
+    color: var(--accent); background: var(--accent-dim); border: 1px solid var(--accent);
+  }
+  .steps b { color: var(--text); font-weight: 600; }
+  .steps .note { font-size: 0.74rem; color: var(--text-faint); line-height: 1.5; margin: 0.8rem 0 0; padding-top: 0.8rem; border-top: 1px solid var(--line); }
+
+  .footnote { margin-top: 1.2rem; font-size: 0.74rem; color: var(--text-faint); max-width: 68ch; line-height: 1.55; }
 </style>
 </head>
 <body>
-  <h1>BloomKnights webcam capture <span class="status" id="status">idle</span></h1>
-  <p class="note">
-    Samples the camera at about 1 fps and POSTs base64 JPEG frames to
-    <code>/api/frames</code>. Frames are held only in server memory — nothing
-    is written to disk. Capture status is always visible below (README §16).
-    Debug view: <a href="/">/</a>
-  </p>
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="canvas" hidden></canvas>
-  <div>
-    <button id="toggle">Start capture</button>
+<div class="shell">
+
+  <header class="topbar">
+    <svg class="brandmark" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="24" height="24" rx="7" stroke="#3ecf8e" stroke-width="1.4"/>
+      <path d="M13 5.5 C15.4 8.3 15.4 10.7 13 13 C10.6 10.7 10.6 8.3 13 5.5 Z M20.5 13 C17.7 15.4 15.3 15.4 13 13 C15.3 10.6 17.7 10.6 20.5 13 Z M13 20.5 C10.6 17.7 10.6 15.3 13 13 C15.4 15.3 15.4 17.7 13 20.5 Z M5.5 13 C8.3 10.6 10.7 10.6 13 13 C10.7 15.4 8.3 15.4 5.5 13 Z" stroke="#e8eaee" stroke-width="1.3" stroke-linejoin="round"/>
+    </svg>
+    <div class="brand">BloomKnights <span>/ connect your stream</span></div>
+    <nav><a href="/">Live dashboard</a></nav>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">Capture gateway</div>
+    <h1>Connect your stream.</h1>
+    <p>Pick a source below. Frames are sampled at about 1 fps, posted to the pipeline, and held only in server memory — nothing is written to disk, and capture status is always visible.</p>
+  </section>
+
+  <div class="modes" role="tablist" aria-label="Capture source">
+    <button class="mode featured active" id="mode-rayban" role="tab">
+      <div class="m-title">
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 6 h13 M2.5 6 l0.6 3.2 a1.8 1.8 0 0 0 1.8 1.5 h1 a1.8 1.8 0 0 0 1.8 -1.5 L8 7.6 l0.3 1.6 a1.8 1.8 0 0 0 1.8 1.5 h1 a1.8 1.8 0 0 0 1.8 -1.5 L13.5 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Meta Ray-Bans
+        <span class="m-tag">Glasses-native</span>
+      </div>
+      <div class="m-sub">Share the glasses' view into a WhatsApp or Messenger video call, answer the call on this computer, and share that window here. What the glasses see becomes the pipeline's camera feed — no SDK, no developer account.</div>
+    </button>
+    <button class="mode" id="mode-webcam" role="tab">
+      <div class="m-title">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.5" y="3.5" width="9" height="9" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 7 L14.5 4.5 v7 L10.5 9" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Webcam
+      </div>
+      <div class="m-sub">Point a laptop or USB camera at the broadcast screen. Fastest way to test.</div>
+    </button>
+    <button class="mode" id="mode-clip" role="tab">
+      <div class="m-title">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 5.8 v4.4 L10.5 8 Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Upload a clip
+      </div>
+      <div class="m-sub">Replay a recorded broadcast clip. Deterministic fallback for the demo.</div>
+    </button>
   </div>
-  <div class="grid">
-    <div class="card"><h2>Sent</h2><div class="big" id="sent">0</div></div>
-    <div class="card"><h2>Accepted</h2><div class="big" id="accepted">0</div></div>
-    <div class="card"><h2>Skipped</h2><div class="big" id="skipped">0</div></div>
-    <div class="card"><h2>Errors</h2><div class="big" id="errors">0</div></div>
+
+  <div class="main">
+    <section class="panel">
+      <div class="panel-head">
+        <h2 id="previewTitle">Webcam preview</h2>
+        <span class="status" id="status"><i></i><span id="statusText">idle</span></span>
+      </div>
+      <div class="preview">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="empty" id="previewEmpty">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="5" width="14" height="14" rx="3" stroke="#5c6470" stroke-width="1.4"/><path d="M16 10.5 L22 7 v10 L16 13.5" stroke="#5c6470" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <span id="emptyText">No source connected. Press Connect to begin.</span>
+        </div>
+      </div>
+      <canvas id="canvas" hidden></canvas>
+      <div class="controls">
+        <button class="btn" id="toggle">Connect</button>
+        <label class="file-label" id="fileLabel" hidden>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 11 V2.5 M4.8 5.5 L8 2.3 l3.2 3.2 M2.5 10.5 v2 a1.5 1.5 0 0 0 1.5 1.5 h8 a1.5 1.5 0 0 0 1.5 -1.5 v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Choose video file
+          <input type="file" id="fileInput" accept="video/*" hidden />
+        </label>
+      </div>
+      <div id="detail">&nbsp;</div>
+    </section>
+
+    <aside class="side">
+      <div class="panel">
+        <div class="field">
+          <label for="sport">Sport</label>
+          <select id="sport">
+            <option value="nba">NBA</option>
+            <option value="soccer">Soccer</option>
+            <option value="ufc">UFC</option>
+            <option value="football">Football</option>
+            <option value="golf">Golf</option>
+          </select>
+          <div class="hint">Included with every frame so the pipeline picks the right scoreboard parser.</div>
+        </div>
+        <div class="counters">
+          <div><div class="c-label">Sent</div><div class="c-value" id="sent">0</div></div>
+          <div><div class="c-label">Accepted</div><div class="c-value ok" id="accepted">0</div></div>
+          <div><div class="c-label">Skipped</div><div class="c-value" id="skipped">0</div></div>
+          <div><div class="c-label">Errors</div><div class="c-value bad" id="errors">0</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2 id="stepsTitle">How this mode works</h2></div>
+        <div class="steps" id="steps"></div>
+      </div>
+    </aside>
   </div>
-  <div id="detail">—</div>
+
+  <p class="footnote">Frames sample at ~1 fps and POST to <span style="font-family:var(--mono)">/api/frames</span>. The selector may skip near-duplicate frames — skips are normal, not failures. Watch the result on the <a href="/" style="color:var(--accent)">live dashboard</a>.</p>
+</div>
+
 <script>
 const SAMPLE_INTERVAL_MS = 1000; // ~1 fps (README §7.2 target: 1-2 fps)
 const JPEG_QUALITY = 0.7;
 
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const statusEl = document.getElementById("status");
-const toggleBtn = document.getElementById("toggle");
-const detail = document.getElementById("detail");
+// mode -> capture config
+const MODES = {
+  webcam: {
+    source: "webcam",
+    previewTitle: "Webcam preview",
+    connectLabel: "Connect webcam",
+    empty: "No camera connected. Press Connect and allow camera access.",
+    steps: [
+      "Put the live broadcast on a TV or a second screen.",
+      "Point this device's camera at that screen — fill the frame with the broadcast, scoreboard visible.",
+      "Press <b>Connect webcam</b> and allow camera access.",
+      "Open the <b>live dashboard</b> in another tab to watch the comparison update.",
+    ],
+    note: "Avoid glare and keep the camera steady; the frame selector skips blurry or duplicate frames automatically.",
+  },
+  rayban_stream: {
+    source: "rayban_stream",
+    previewTitle: "Ray-Ban stream preview",
+    connectLabel: "Connect glasses stream",
+    empty: "No stream window shared yet. Press Connect and pick the window showing your glasses' view.",
+    steps: [
+      "Start a <b>WhatsApp or Messenger video call</b> from your phone and share the glasses' view into it (tap the Glasses option, or double-press the capture button). Works on all current Meta glasses. <i>Gen 1 Ray-Ban Meta only:</i> going live on Instagram also works (5–30 s delay).",
+      "Answer that call <b>on this computer</b> — WhatsApp Desktop or messenger.com — so the glasses' view is in a window here.",
+      "Press <b>Connect glasses stream</b> below and pick <b>that call window</b> in the share dialog.",
+      "Look at the broadcast through the glasses. BloomKnights samples what the glasses see at ~1 fps.",
+    ],
+    note: "No SDK or developer account needed — a video call carries the glasses' camera feed with sub-second latency, and this page screen-captures the call window.",
+  },
+  clip_replay: {
+    source: "clip_replay",
+    previewTitle: "Clip replay preview",
+    connectLabel: "Start replay",
+    empty: "No clip loaded. Choose a recorded broadcast video file first.",
+    steps: [
+      "Record or download a broadcast clip with the scoreboard visible (mp4 / webm / mov).",
+      "Press <b>Choose video file</b> and pick the clip. It stays on this machine — only sampled frames are posted.",
+      "Press <b>Start replay</b>. The clip plays here and frames flow into the pipeline at ~1 fps.",
+      "Watch the dashboard update exactly as it would from live glasses.",
+    ],
+    note: "This is the deterministic demo fallback — same pipeline, reproducible input.",
+  },
+};
+
+const $ = (id) => document.getElementById(id);
+const video = $("video");
+const canvas = $("canvas");
 const counts = { sent: 0, accepted: 0, skipped: 0, errors: 0 };
 
-let stream = null;
+let mode = "rayban_stream"; // glasses-native path is the hero option
+let stream = null;      // MediaStream for webcam / display capture
 let timer = null;
+let clipUrl = null;     // object URL for uploaded clip
+let clipLoaded = false;
 
 function bump(key) {
   counts[key] += 1;
-  document.getElementById(key).textContent = counts[key];
+  $(key).textContent = counts[key];
+}
+
+function setRunningUI(running) {
+  const cfg = MODES[mode];
+  $("statusText").textContent = running ? "capturing" : "idle";
+  $("status").classList.toggle("rec", running);
+  const btn = $("toggle");
+  btn.textContent = running ? "Stop" : cfg.connectLabel;
+  btn.classList.toggle("stop", running);
+  $("previewEmpty").style.display = running || (mode === "clip_replay" && clipLoaded) ? "none" : "flex";
+}
+
+function renderMode() {
+  const cfg = MODES[mode];
+  $("previewTitle").textContent = cfg.previewTitle;
+  $("emptyText").textContent = cfg.empty;
+  $("fileLabel").hidden = mode !== "clip_replay";
+  $("toggle").disabled = mode === "clip_replay" && !clipLoaded;
+  const steps = $("steps");
+  steps.innerHTML =
+    "<ol>" + cfg.steps.map((s) => "<li>" + s + "</li>").join("") + "</ol>" +
+    "<p class=\"note\">" + cfg.note + "</p>";
+  for (const [id, m] of [["mode-webcam", "webcam"], ["mode-rayban", "rayban_stream"], ["mode-clip", "clip_replay"]]) {
+    $(id).classList.toggle("active", m === mode);
+  }
+  setRunningUI(false);
+}
+
+function switchMode(next) {
+  if (timer) stop();
+  if (mode === "clip_replay" && next !== "clip_replay") {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    if (clipUrl) { URL.revokeObjectURL(clipUrl); clipUrl = null; }
+    clipLoaded = false;
+  }
+  mode = next;
+  $("detail").innerHTML = "&nbsp;";
+  renderMode();
 }
 
 async function sendFrame() {
-  if (!video.videoWidth) return; // camera not ready yet
+  if (!video.videoWidth) return; // source not ready yet
+  if (mode === "clip_replay" && video.paused) return; // clip ended
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   canvas.getContext("2d").drawImage(video, 0, 0);
@@ -75,60 +401,115 @@ async function sendFrame() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        source: "webcam",
+        source: MODES[mode].source,
         captured_at: new Date().toISOString(),
         image_base64,
         width: canvas.width,
         height: canvas.height,
+        sport: $("sport").value,
       }),
     });
     const d = await r.json();
     if (!r.ok || d.error) {
       bump("errors");
-      detail.textContent = `error: ${d.error || r.status}`;
+      $("detail").textContent = "error: " + (d.error || r.status);
     } else if (d.selection.accepted) {
       bump("accepted");
-      detail.textContent = `last accepted: ${d.frame.frame_id} (${d.frame.width}×${d.frame.height})`;
+      $("detail").textContent = "last accepted: " + d.frame.frame_id + " (" + d.frame.width + "×" + d.frame.height + ")";
     } else {
       bump("skipped");
-      detail.textContent = `last skipped: ${d.frame.frame_id} — ${d.selection.reason}`;
+      $("detail").textContent = "last skipped: " + d.frame.frame_id + " — " + d.selection.reason;
     }
   } catch (err) {
     bump("errors");
-    detail.textContent = `network error: ${err.message}`;
+    $("detail").textContent = "network error: " + err.message;
   }
 }
 
 async function start() {
-  stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-  video.srcObject = stream;
+  if (mode === "webcam") {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = stream;
+  } else if (mode === "rayban_stream") {
+    // The wearer livestreams from the glasses (Meta AI app, WhatsApp/Messenger
+    // call, or Instagram Live), opens that stream on this computer, and shares
+    // that window here. Screen capture of the stream = the glasses' camera feed.
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    stream.getVideoTracks()[0].addEventListener("ended", stop); // user hit browser "Stop sharing"
+    video.srcObject = stream;
+  } else {
+    if (!clipLoaded) throw new Error("choose a video file first");
+    video.currentTime = 0;
+    await video.play();
+  }
   timer = setInterval(sendFrame, SAMPLE_INTERVAL_MS);
-  statusEl.textContent = "capturing";
-  statusEl.classList.add("rec");
-  toggleBtn.textContent = "Stop capture";
-  toggleBtn.classList.add("stop");
+  setRunningUI(true);
 }
 
 function stop() {
   clearInterval(timer);
   timer = null;
-  if (stream) stream.getTracks().forEach((t) => t.stop());
-  stream = null;
-  video.srcObject = null;
-  statusEl.textContent = "idle";
-  statusEl.classList.remove("rec");
-  toggleBtn.textContent = "Start capture";
-  toggleBtn.classList.remove("stop");
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
+  if (mode === "clip_replay") video.pause();
+  setRunningUI(false);
 }
 
-toggleBtn.addEventListener("click", async () => {
+$("toggle").addEventListener("click", async () => {
   try {
     if (timer) stop();
     else await start();
   } catch (err) {
-    detail.textContent = `camera error: ${err.message}`;
+    $("detail").textContent = "source error: " + err.message;
+    setRunningUI(false);
   }
 });
+
+$("fileInput").addEventListener("change", () => {
+  const file = $("fileInput").files[0];
+  if (!file) return;
+  if (timer) stop();
+  if (clipUrl) URL.revokeObjectURL(clipUrl);
+  clipUrl = URL.createObjectURL(file);
+  video.srcObject = null;
+  video.src = clipUrl;
+  video.loop = false;
+  video.muted = true;
+  clipLoaded = true;
+  $("toggle").disabled = false;
+  $("previewEmpty").style.display = "none";
+  $("detail").textContent = "loaded: " + file.name + " (" + (file.size / 1048576).toFixed(1) + " MB)";
+});
+
+video.addEventListener("ended", () => {
+  if (mode === "clip_replay" && timer) {
+    stop();
+    $("detail").textContent = "clip finished — replay done";
+  }
+});
+
+for (const [id, m] of [["mode-webcam", "webcam"], ["mode-rayban", "rayban_stream"], ["mode-clip", "clip_replay"]]) {
+  $(id).addEventListener("click", () => switchMode(m));
+}
+
+// Sport dropdown from /api/sports, NBA fallback if the endpoint isn't wired yet
+(async () => {
+  try {
+    const r = await fetch("/api/sports");
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!Array.isArray(d) || !d.length) return;
+    const sel = $("sport");
+    sel.textContent = "";
+    for (const s of d) {
+      const o = document.createElement("option");
+      o.value = s.id;
+      o.textContent = s.label || s.id.toUpperCase();
+      sel.appendChild(o);
+    }
+  } catch { /* keep NBA fallback */ }
+})();
+
+renderMode();
 </script>
 </body>
 </html>

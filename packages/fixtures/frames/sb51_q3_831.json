@@ -1,0 +1,29 @@
+{
+  "sport": "football",
+  "frame": {
+    "frame_id": "sb51_q3_831",
+    "captured_at": "2017-02-06T01:07:12.000Z",
+    "source": "fixture",
+    "image_uri": "packages/fixtures/frames/sb51_q3_831.png",
+    "width": 1920,
+    "height": 1080
+  },
+  "parsed_scoreboard": {
+    "sport": "football",
+    "league": "NFL",
+    "away_team_text": "NE",
+    "home_team_text": "ATL",
+    "away_score": 3,
+    "home_score": 28,
+    "period_text": "3rd",
+    "clock_text": "8:31",
+    "possession_team_text": "NE",
+    "field_confidences": {
+      "teams": 0.98,
+      "scores": 0.97,
+      "period": 0.98,
+      "clock": 0.95,
+      "possession": 0.62
+    }
+  }
+}

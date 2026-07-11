@@ -21,7 +21,9 @@ const MIME_TYPES = {
   ".webp": "image/webp",
 };
 
-const PROMPT = [
+// NBA defaults — exported so the sports registry's NBA config references the
+// exact prompt/schema this backend has always used (default behavior).
+export const NBA_PROMPT = [
   "You are reading a broadcast scoreboard from a live NBA basketball game.",
   "Extract exactly what is visible on the scoreboard in this frame.",
   "Report the game clock and period exactly as displayed (e.g. clock \"2:14\" or \"14.5\", period \"4th\", \"Q4\", or \"OT\").",
@@ -31,7 +33,7 @@ const PROMPT = [
 
 // Schema mirrors ParsedScoreboard (README §7.3), with clock/period as display
 // text — normalize.js converts them to clock_seconds / numeric period.
-const RESPONSE_SCHEMA = {
+export const NBA_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     sport: { type: "STRING" },
@@ -70,7 +72,13 @@ const RESPONSE_SCHEMA = {
 export const geminiBackend = {
   name: "gemini",
 
-  async extract(frame) {
+  // Sport-aware: `options.sport` (a sports-registry config) supplies the
+  // prompt and response schema; without it the NBA defaults apply, keeping
+  // the original single-sport behavior byte-for-byte.
+  async extract(frame, options = {}) {
+    const sportVision = options.sport?.vision ?? null;
+    const prompt = sportVision?.prompt ?? NBA_PROMPT;
+    const responseSchema = sportVision?.responseSchema ?? NBA_RESPONSE_SCHEMA;
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error(
@@ -99,13 +107,13 @@ export const geminiBackend = {
           {
             parts: [
               { inline_data: { mime_type: mimeType, data: imageBase64 } },
-              { text: PROMPT },
+              { text: prompt },
             ],
           },
         ],
         generationConfig: {
           responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
+          responseSchema,
           temperature: 0,
         },
       }),

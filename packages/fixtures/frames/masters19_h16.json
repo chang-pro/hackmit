@@ -1,0 +1,24 @@
+{
+  "sport": "golf",
+  "frame": {
+    "frame_id": "masters19_h16",
+    "captured_at": "2019-04-14T18:41:50.000Z",
+    "source": "fixture",
+    "image_uri": "packages/fixtures/frames/masters19_h16.png",
+    "width": 1920,
+    "height": 1080
+  },
+  "parsed_scoreboard": {
+    "sport": "golf",
+    "league": "PGA",
+    "players": [
+      { "name_text": "TIGER WOODS", "score_to_par_text": "-14", "thru_text": "16" },
+      { "name_text": "BROOKS KOEPKA", "score_to_par_text": "-12", "thru_text": "16" }
+    ],
+    "field_confidences": {
+      "players": 0.96,
+      "scores": 0.96,
+      "holes": 0.95
+    }
+  }
+}

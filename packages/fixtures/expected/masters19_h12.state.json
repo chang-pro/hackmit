@@ -1,0 +1,10 @@
+{
+  "event_id": "golf_2019_04_14_tiger_molinari",
+  "away_team_id": "pga_tiger",
+  "home_team_id": "pga_molinari",
+  "away_score": -11,
+  "home_score": -11,
+  "period": null,
+  "clock_seconds": null,
+  "extras": { "holes_remaining": 6, "leader_thru": 12, "chaser_thru": 12 }
+}

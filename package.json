@@ -6,7 +6,7 @@
   "description": "Wearable visual intelligence for live sports prediction markets — camera frame -> scoreboard state -> win probability -> market comparison",
   "scripts": {
     "start": "node services/api/server.js",
-    "test": "node --test 'tests/*.test.js'",
+    "test": "node --test \"tests/*.test.js\"",
     "evaluate": "node scripts/evaluate-fixtures.js"
   }
 }
