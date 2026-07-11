@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   analysisFromDemoIntelligence,
+  getDemoRehearsalInsight,
   listDemoIntelligencePacks,
   selectDemoIntelligence,
 } from "../services/demo/intelligence.js";
@@ -97,6 +98,21 @@ const TARGETS = [
   ],
 ];
 
+const REHEARSAL_CHECKPOINTS = [
+  ["world-cup-2022-final", "argentina-two-goal-lead"],
+  ["world-cup-2022-final", "france-equalizer"],
+  ["world-cup-2022-final", "extra-time-level"],
+  ["nba-finals-2016-game-7", "halftime-deficit"],
+  ["nba-finals-2016-game-7", "late-tie"],
+  ["nba-finals-2016-game-7", "irving-three"],
+  ["super-bowl-li", "twenty-eight-three"],
+  ["super-bowl-li", "one-score-game"],
+  ["super-bowl-li", "game-tied"],
+  ["ufc-229", "round-two-control"],
+  ["ufc-229", "round-three-reset"],
+  ["ufc-229", "round-four-finish-window"],
+];
+
 test("all four funding-demo intelligence packs are published", () => {
   const packs = listDemoIntelligencePacks();
   assert.equal(packs.length, 4);
@@ -109,6 +125,59 @@ test("all four funding-demo intelligence packs are published", () => {
   for (const pack of packs) {
     assert.ok(pack.moments >= 3, `${pack.id} has a real timeline`);
     assert.match(pack.disclosure, /illustrative|historical/i);
+  }
+});
+
+test("all twelve rehearsal checkpoints resolve exactly without model calls", () => {
+  assert.equal(REHEARSAL_CHECKPOINTS.length, 12);
+  const catalog = new Map(
+    listDemoIntelligencePacks().map((pack) => [
+      pack.id,
+      new Set(pack.checkpoints.map((checkpoint) => checkpoint.id)),
+    ])
+  );
+
+  for (const [packId, momentId] of REHEARSAL_CHECKPOINTS) {
+    assert.ok(catalog.get(packId)?.has(momentId), `${packId}/${momentId} is published`);
+    const insight = getDemoRehearsalInsight(packId, momentId);
+    assert.equal(insight.source, "demo_rehearsal");
+    assert.equal(insight.extraction, "precollected-rehearsal");
+    assert.equal(insight.rehearsal.is_rehearsal, true);
+    assert.equal(insight.rehearsal.no_model_calls, true);
+    assert.equal(insight.demo_intelligence.pack_id, packId);
+    assert.equal(insight.demo_intelligence.moment_id, momentId);
+    assert.equal(insight.market.is_mock, true);
+    assert.equal(insight.demo_intelligence.market.is_mock, true);
+    assert.equal(insight.analysis.model, "bloom-demo-intelligence-v1");
+    assert.match(insight.presentation.short_text, /^Rehearsal only\./);
+  }
+});
+
+test("every rehearsal pack exposes at least four explicitly mocked research categories", () => {
+  for (const pack of listDemoIntelligencePacks()) {
+    assert.ok(Array.isArray(pack.research_categories), `${pack.id} publishes research categories`);
+    assert.ok(pack.research_categories.length >= 4, `${pack.id} has at least four research categories`);
+    assert.equal(
+      new Set(pack.research_categories).size,
+      pack.research_categories.length,
+      `${pack.id} research categories are unique`
+    );
+
+    const insight = getDemoRehearsalInsight(pack.id, pack.checkpoints[0].id);
+    const research = insight.demo_intelligence.research;
+    assert.ok(research.length >= 4, `${pack.id} returns at least four research results`);
+    assert.deepEqual(
+      new Set(research.map((item) => item.category)),
+      new Set(pack.research_categories),
+      `${pack.id} rehearsal result covers its published categories`
+    );
+    for (const item of research) {
+      assert.equal(item.is_mock, true, `${pack.id}/${item.category} is explicitly mock`);
+      assert.equal(item.status, "ready");
+      assert.ok(item.query?.trim(), `${pack.id}/${item.category} has a query`);
+      assert.match(item.source, /mock/i, `${pack.id}/${item.category} labels its source as mock`);
+      assert.ok(item.result?.trim(), `${pack.id}/${item.category} has a result`);
+    }
   }
 });
 

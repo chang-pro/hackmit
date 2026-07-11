@@ -196,6 +196,13 @@ It renders a local animated synthetic broadcast through a canvas `MediaStream` a
 
 For a shareable UI-review link, open `/capture?demo=1` instead.
 
+To rehearse the full prediction workspace without a camera or Cerebras quota, use
+`/capture?demo=1&cycle=1`. The page cycles through explicitly labeled historical
+checkpoints and renders them through the same live-prediction and mock-research
+components used by real camera analysis. A single checkpoint can be pinned with
+`/capture?demo=1&pack=<pack-id>&moment=<checkpoint-id>`. These rehearsal URLs do
+not claim camera detection, live web access, or model calls.
+
 ### Continuous player overlay
 
 The capture page runs bundled YOLO11s directly in the desktop browser against the received WebRTC video. Chrome and Edge use ONNX Runtime WebGPU for a four-update-per-second target; browsers without WebGPU fall back to a conservative WASM cadence. To detect distant broadcast players, it analyzes three overlapping 640px field tiles rather than shrinking the whole 16:9 frame into one small detector input. It recognizes COCO `person` and `sports ball` classes, merges tile results with local NMS, and maps normalized boxes over the cover-cropped video. The first live stream downloads the bundled 36 MB ONNX model to the viewer; after that, tracking creates no Cerebras call, backend frame upload, or tunnel media traffic. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.

@@ -14,6 +14,20 @@ test("capture viewer presents detected evidence and an honest model-market compa
   assert.match(capture, /object-fit: contain/);
 });
 
+test("capture viewer exposes quota-free rehearsal controls and explicit data provenance", () => {
+  assert.match(capture, /\/api\/demo\/replay/);
+  assert.match(capture, /show:\s*showDemoRehearsal/);
+  assert.match(capture, /cycle:\s*cycleDemoRehearsal/);
+  assert.match(capture, /stopCycle:/);
+  assert.match(capture, /DEMO_REHEARSAL_SEQUENCE/);
+  assert.match(capture, /rehearsal[^\n]*no model calls/i);
+  assert.match(capture, /intelligence\.research/);
+  assert.match(capture, /live prediction/i);
+  assert.match(capture, /mock web (?:research|search)/i);
+  assert.match(capture, /get\("ops"\)\s*===\s*"1"/);
+  assert.match(capture, /body\.running\.ops-mode \.ops-bar/);
+});
+
 test("first live analysis uses a fast five-frame burst before quota cadence", () => {
   assert.match(phone, /INITIAL_ANALYSIS_INTERVAL_MS = 800/);
   assert.match(phone, /INITIAL_ANALYSIS_FRAMES = 5/);

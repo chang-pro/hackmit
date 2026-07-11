@@ -8,6 +8,36 @@
   "focus_aliases": ["patriots", "new england", "ne"],
   "focus_label": "New England",
   "disclosure": "Historical evidence pack with illustrative replay-market prices; this is a funding-demo estimate, not a live quote or trading advice.",
+  "research": [
+    {
+      "category": "players",
+      "query": "Tom Brady Matt Ryan Julio Jones player context before Super Bowl LI",
+      "source": "Mock historical research cache · NFL season archive",
+      "result": "Ryan entered as the league MVP, Jones as Atlanta's primary explosive target, and Brady was seeking a fifth championship.",
+      "is_mock": true
+    },
+    {
+      "category": "teams",
+      "query": "Patriots Falcons team profiles entering Super Bowl LI",
+      "source": "Mock historical research cache · 2016 team recap",
+      "result": "Atlanta brought the league's highest-scoring offense, while New England allowed the fewest regular-season points.",
+      "is_mock": true
+    },
+    {
+      "category": "strategy/tactics",
+      "query": "Patriots Falcons Super Bowl LI tactical matchup",
+      "source": "Mock historical research cache · game-plan preview",
+      "result": "Atlanta leaned on outside-zone runs and play action; New England could answer with quick underneath throws and matchup-driven tempo.",
+      "is_mock": true
+    },
+    {
+      "category": "news/context",
+      "query": "Historical stakes before Super Bowl LI",
+      "source": "Mock historical research cache · pregame context",
+      "result": "New England was making its ninth Super Bowl appearance, while Atlanta was seeking the franchise's first championship.",
+      "is_mock": true
+    }
+  ],
   "moments": [
     {
       "id": "twenty-eight-three",

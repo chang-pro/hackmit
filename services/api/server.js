@@ -19,6 +19,7 @@
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
 //   GET  /api/latest            — latest live insight only (never fixture fallback)
 //   GET  /api/demo/intelligence — precollected four-event demo pack catalog
+//   GET  /api/demo/replay       — quota-free, explicitly labeled UI rehearsal insight
 //   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
@@ -40,7 +41,10 @@ import { CEREBRAS_ANALYTICS_MODEL } from "../analytics/cerebras.js";
 import { CEREBRAS_VISION_MODEL } from "../vision/backends/cerebras.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { getSport, listSports, DEFAULT_SPORT_ID } from "../sports/index.js";
-import { listDemoIntelligencePacks } from "../demo/intelligence.js";
+import {
+  getDemoRehearsalInsight,
+  listDemoIntelligencePacks,
+} from "../demo/intelligence.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
@@ -679,6 +683,19 @@ export function createBloomServer({
         handleLatestInsight(res);
       } else if (req.method === "GET" && url.pathname === "/api/demo/intelligence") {
         sendJson(res, 200, { packs: listDemoIntelligencePacks() });
+      } else if (req.method === "GET" && url.pathname === "/api/demo/replay") {
+        try {
+          sendJson(
+            res,
+            200,
+            getDemoRehearsalInsight(
+              url.searchParams.get("pack"),
+              url.searchParams.get("moment")
+            )
+          );
+        } catch (err) {
+          sendJson(res, 400, { error: err.message });
+        }
       } else if (req.method === "GET" && url.pathname === "/api/sports") {
         handleSports(res);
       } else if (req.method === "GET" && url.pathname === "/api/stats/raw") {

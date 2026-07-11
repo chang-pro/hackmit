@@ -39,6 +39,27 @@ Every moment must contain:
 
 For UFC, store the broadcast countdown clock. UFC 229 ended at 3:03 elapsed in round four, which is 1:57 remaining.
 
+## Mock research schema
+
+Each pack carries a top-level `research` array representing the precollected web-research experience shown during the funding demo. These entries are deterministic historical fixtures, not results fetched from the web during the presentation. The UI and API must preserve their mock labeling and must never describe them as current or live research.
+
+Every pack must include at least one entry in each category:
+
+- `players`
+- `teams` (teams, camps, or corners as appropriate to the sport)
+- `strategy/tactics`
+- `news/context`
+
+Every research entry has exactly these public fields:
+
+- `category`: one of the categories above.
+- `query`: the historical lookup the demo is simulating.
+- `source`: a clearly labeled mock historical research cache.
+- `result`: a concise, historically plausible cached finding.
+- `is_mock`: always `true`.
+
+Research text must be event-specific, use past-tense historical framing, and avoid implying that the app performed current or live web access.
+
 ## Verification
 
 Run:

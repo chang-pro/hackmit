@@ -124,7 +124,10 @@ Say:
 1. Meta glasses → native companion → viewer.
 2. Phone browser → viewer.
 3. Prerecorded clip displayed to either camera source.
-4. `/capture?demo=1` for UI/video proof only; it intentionally does not fake Cerebras analysis.
-5. Dashboard deterministic fixture moments for Q&A.
+4. `/capture?demo=1&cycle=1` for a quota-free, explicitly labeled rehearsal of the
+   prediction, market, evidence, and mock-web-research UI. It does not claim
+   camera detection or model calls.
+5. `/capture?demo=1` for local video/UI proof only.
+6. Dashboard deterministic fixture moments for Q&A.
 
-The first three paths prove automatic event detection. The last two are honest recovery tools, not substitutes for the primary demo.
+The first three paths prove automatic event detection. The remaining paths are honest recovery tools, not substitutes for the primary demo.
