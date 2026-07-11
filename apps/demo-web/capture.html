@@ -102,6 +102,13 @@
   .idle-glyph { width: 54px; height: 54px; margin: 0 auto 1rem; opacity: 0.85; }
   .idle-title { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
   .idle-sub { font-size: 0.9rem; color: var(--text-dim); line-height: 1.55; margin-top: 0.7rem; }
+  .pairing { margin: 1rem auto 0; width: min(330px, 88vw); display: grid; grid-template-columns: auto 1fr auto; gap: 0.45rem;
+    align-items: center; padding: 0.55rem 0.65rem 0.55rem 0.8rem; border: 1px solid var(--line-strong); border-radius: 12px;
+    background: var(--panel); backdrop-filter: blur(10px); text-align: left; }
+  .pairing-label { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.13em; color: var(--text-faint); }
+  .pairing-code { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); letter-spacing: 0.08em; }
+  .pairing-copy { border: 0; border-radius: 8px; background: var(--accent-dim); color: var(--accent); padding: 0.36rem 0.55rem; font: inherit; font-size: 0.72rem; cursor: pointer; }
+  .pairing-link { grid-column: 1 / -1; color: var(--text-dim); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* Bottom dock — the only chrome */
   .dock { position: absolute; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -139,7 +146,7 @@
 <body>
 <div class="stage">
   <video id="video" autoplay playsinline muted></video>
-  <img id="remotePreview" alt="Live phone or glasses camera feed" />
+  <video id="remotePreview" autoplay playsinline muted></video>
   <div class="scrim"></div>
 
   <div class="overlay">
@@ -169,7 +176,13 @@
         <path d="M2 11 h20 M4 11 l1 5 a3 3 0 0 0 3 2.4 h1.6 a3 3 0 0 0 3 -2.4 L12 12.6 l0.4 2.4 a3 3 0 0 0 3 2.4 h1.6 a3 3 0 0 0 3 -2.4 L20 11" stroke="#3ecf8e" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <div class="idle-title">Look at the game</div>
-      <div class="idle-sub" id="idleHint">Share your Meta Ray-Bans' view here, then Connect. BloomKnights recognizes which game you're watching and shows the win probability right on the feed.</div>
+      <div class="idle-sub" id="idleHint">Create a private WebRTC pairing link, then open it on the phone or glasses companion.</div>
+      <div class="pairing" id="pairing">
+        <span class="pairing-label">PAIR CODE</span>
+        <strong class="pairing-code" id="pairCode">creating…</strong>
+        <button class="pairing-copy" id="copyPhoneLink">Copy link</button>
+        <a class="pairing-link" id="phoneLink" href="#" hidden></a>
+      </div>
     </div>
 
     <div class="readout" id="readout" aria-live="polite">
@@ -183,15 +196,15 @@
 
     <footer class="dock">
       <button class="analyze" id="analyze" hidden>Analyze</button>
-      <button class="connect" id="toggle">Connect glasses</button>
+      <button class="connect" id="toggle">New pairing</button>
       <span class="stats" id="stats">0 sent · 0 ok</span>
     </footer>
 
     <div class="help" id="help">
       <div class="help-card">
         <button class="help-close" id="helpClose" aria-label="Close">✕</button>
-        <h3>Connect your Meta Ray-Bans</h3>
-        <p class="help-sub">Frames sample at ~1 fps → <span style="font-family:var(--mono)">/api/frames</span>. Held in server memory only; never written to disk.</p>
+        <h3>Pair a phone or glasses camera</h3>
+        <p class="help-sub">WebRTC carries the continuous video directly between the paired devices. <span style="font-family:var(--mono)">/api/frames</span> is used only for the gated analysis snapshots.</p>
         <ol class="steps" id="steps"></ol>
         <p class="help-note" id="helpNote"></p>
       </div>
@@ -202,325 +215,242 @@
 </div>
 
 <script>
-const SAMPLE_INTERVAL_MS = 1000; // ~1 fps (README §7.2)
-const JPEG_QUALITY = 0.7;
-
-// Single capture source: the Meta Ray-Bans stream (screen-captured call window).
-const SOURCE = "rayban_stream";
-const STEPS = [
-  "Start a <b>WhatsApp or Messenger video call</b> from your phone and share the glasses' view into it (tap the Glasses option, or double-press capture). Works on all current Meta glasses. <i>Gen 1 Ray-Ban Meta only:</i> Instagram Live also works (5–30 s delay).",
-  "Answer that call <b>on this computer</b> — WhatsApp Desktop or messenger.com — so the glasses' view is in a window here.",
-  "Press <b>Connect glasses</b> and pick <b>that call window</b> in the share dialog.",
-  "Look at the broadcast through the glasses. BloomKnights reads what they see at ~1 fps.",
-];
-const NOTE = "No SDK or developer account needed — a video call carries the glasses' camera feed with sub-second latency, and this page screen-captures the call window.";
-
+const SIGNAL_POLL_MS = 350;
+const INSIGHT_POLL_MS = 1_000;
 const $ = (id) => document.getElementById(id);
 const video = $("video");
 const remotePreview = $("remotePreview");
-const canvas = $("canvas");
-const counts = { sent: 0, accepted: 0, skipped: 0, errors: 0 };
-
-let stream = null;
-let timer = null;
-let lastSpoken = "";
-let lastInsight = null;
-let displayClock = null;   // locally-ticked game clock, for a live broadcast feel
-let liveTimer = null;
-let remoteFrameId = null;
+const analyzeButton = $("analyze");
+let sessionId = null;
+let peerConnection = null;
+let pendingIce = [];
+let pollTimer = null;
+let pollInFlight = false;
 let remoteFeedActive = false;
 let remoteAnalysisEnabled = false;
+let lastSpoken = "";
 
-const SPORT_LABEL = { nba:"NBA", basketball:"NBA", soccer:"Soccer", "association-football":"Soccer", ufc:"UFC", mma:"UFC", football:"Football", "american-football":"Football", golf:"Golf" };
+const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
+const STEPS = [
+  "Open the generated <b>phone pairing link</b> on the camera device.",
+  "Press <b>Start live feed</b> on the phone and allow camera access.",
+  "The camera video connects directly to this browser with WebRTC; the public tunnel carries signaling only.",
+  "Press <b>Analyze</b> here only when you want to start model requests.",
+];
+const NOTE = "If this campus network blocks a direct peer connection, configure a TURN server with WEBRTC_ICE_SERVERS_JSON. Video will never be relayed through the Quick Tunnel.";
 
-function bump(key) { counts[key] += 1; $("stats").textContent = counts.sent + " sent · " + counts.accepted + " ok" + (counts.errors ? " · " + counts.errors + " err" : ""); }
+function setStatusPill(kind, label) {
+  $("statusPill").className = "pill s-" + kind;
+  $("statusText").textContent = label;
+}
 
-// Ease a displayed number toward a target so updates feel live, not jumpy.
-function tweenNum(el, to, fmt) {
+function tweenNum(el, to, format) {
   const from = parseFloat(el.dataset.v);
   const start = Number.isFinite(from) ? from : to;
   el.dataset.v = to;
-  if (start === to) { el.textContent = fmt(to); return; }
-  const t0 = performance.now(), dur = 550;
-  (function step(now) {
-    const p = Math.min((now - t0) / dur, 1), e = 1 - Math.pow(1 - p, 3);
-    el.textContent = fmt(start + (to - start) * e);
-    if (p < 1) requestAnimationFrame(step);
-  })(t0);
+  if (start === to) { el.textContent = format(to); return; }
+  const startedAt = performance.now();
+  (function tick(now) {
+    const progress = Math.min((now - startedAt) / 550, 1);
+    el.textContent = format(start + (to - start) * (1 - Math.pow(1 - progress, 3)));
+    if (progress < 1) requestAnimationFrame(tick);
+  })(startedAt);
 }
 
-const eventId = (d) => (d && d.event ? (d.event.event_id || "") : "");
-
-function setStatusPill(kind, label) { $("statusPill").className = "pill s-" + kind; $("statusText").textContent = label; }
-
-function setRunningUI(running) {
-  document.body.classList.toggle("running", running);
-  const btn = $("toggle");
-  btn.textContent = running ? "Stop" : "Connect glasses";
-  btn.classList.toggle("stop", running);
-  if (running) setStatusPill("capturing", "reading…");
-  else { setStatusPill("idle", "idle"); document.body.classList.remove("ready", "gated", "has-read"); }
+function updateAnalyzeButton() {
+  analyzeButton.textContent = remoteAnalysisEnabled ? "Stop analysis" : "Analyze";
+  analyzeButton.classList.toggle("active", remoteAnalysisEnabled);
 }
 
 function setRemoteFeedUI(active) {
   remoteFeedActive = active;
-  const toggle = $("toggle");
   if (active) {
     document.body.classList.add("running", "remote-feed");
-    setStatusPill("capturing", "phone feed");
-    $("idleHint").textContent = "Receiving the live phone/glasses camera feed.";
-    toggle.textContent = "Phone feed live";
-    toggle.disabled = true;
-    $("analyze").hidden = false;
+    setStatusPill("capturing", "WebRTC live");
+    $("idleHint").textContent = "Direct camera connection established. Analysis remains off until you choose it.";
+    analyzeButton.hidden = false;
     updateAnalyzeButton();
     return;
   }
-  document.body.classList.remove("remote-feed");
-  remotePreview.removeAttribute("src");
+  document.body.classList.remove("running", "remote-feed");
+  remotePreview.srcObject = null;
   remotePreview.style.display = "none";
-  if (!stream) setRunningUI(false);
-  toggle.disabled = false;
-  $("analyze").hidden = true;
-  remoteAnalysisEnabled = false;
+  analyzeButton.hidden = true;
+  setStatusPill("idle", "waiting for phone");
 }
 
-function updateAnalyzeButton() {
-  const button = $("analyze");
-  button.textContent = remoteAnalysisEnabled ? "Stop analysis" : "Analyze";
-  button.classList.toggle("active", remoteAnalysisEnabled);
+async function api(path, options = {}) {
+  const response = await fetch(path, { cache: "no-store", ...options });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
 }
 
-async function syncPhoneFeed() {
-  if (stream) return;
+async function sendSignal(kind, payload) {
+  if (!sessionId) return;
+  await api("/api/webrtc/signal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, from: "viewer", kind, payload }),
+  });
+}
+
+async function getPeerConnection() {
+  if (peerConnection) return peerConnection;
+  const config = await api("/api/webrtc/config");
+  peerConnection = new RTCPeerConnection({ iceServers: config.ice_servers });
+  peerConnection.onicecandidate = ({ candidate }) => {
+    if (candidate) sendSignal("ice", candidate.toJSON()).catch(() => {});
+  };
+  peerConnection.ontrack = ({ streams }) => {
+    remotePreview.srcObject = streams[0];
+    remotePreview.style.display = "block";
+    video.style.display = "none";
+    remotePreview.play().catch(() => {});
+    setRemoteFeedUI(true);
+  };
+  peerConnection.onconnectionstatechange = () => {
+    if (["failed", "closed"].includes(peerConnection?.connectionState)) setRemoteFeedUI(false);
+  };
+  return peerConnection;
+}
+
+async function flushIce() {
+  if (!peerConnection?.remoteDescription) return;
+  for (const candidate of pendingIce.splice(0)) await peerConnection.addIceCandidate(candidate);
+}
+
+async function handleSignal(signal) {
+  if (signal.kind === "hangup") {
+    peerConnection?.close();
+    peerConnection = null;
+    pendingIce = [];
+    setRemoteFeedUI(false);
+    return;
+  }
+  if (signal.kind === "ice") {
+    if (peerConnection?.remoteDescription) await peerConnection.addIceCandidate(signal.payload);
+    else pendingIce.push(signal.payload);
+    return;
+  }
+  if (signal.kind === "offer") {
+    const connection = await getPeerConnection();
+    await connection.setRemoteDescription(signal.payload);
+    await flushIce();
+    const answer = await connection.createAnswer();
+    await connection.setLocalDescription(answer);
+    await sendSignal("answer", connection.localDescription);
+  }
+}
+
+async function pollSignals() {
+  if (!sessionId || pollInFlight) return;
+  pollInFlight = true;
   try {
-    const response = await fetch("/api/live-stream/status", { cache: "no-store" });
-    if (response.status === 404) {
-      if (remoteFeedActive) setRemoteFeedUI(false);
-      return;
-    }
-    if (!response.ok) return;
-    const data = await response.json();
-    if (!data.stream || (data.stream.age_ms ?? Infinity) > 10_000) {
-      if (remoteFeedActive) setRemoteFeedUI(false);
-      return;
-    }
-    remoteAnalysisEnabled = data.analysis_enabled === true;
-    if (!remoteFeedActive) {
-      setRemoteFeedUI(true);
-      remoteFrameId = data.stream.frame_id;
-      remotePreview.src = "/api/live-stream";
-      remotePreview.style.display = "block";
-      video.style.display = "none";
-    }
-    updateAnalyzeButton();
-    if (remoteAnalysisEnabled) {
-      const insightResponse = await fetch("/api/latest", { cache: "no-store" });
-      if (insightResponse.ok) {
-        const insight = await insightResponse.json();
-        if (insight?.observation) renderInsight(insight);
-      }
-    }
-  } catch {
-    // Keep the last frame visible through short tunnel/network interruptions.
+    const data = await api(`/api/webrtc/poll?session_id=${encodeURIComponent(sessionId)}&peer=viewer`);
+    for (const signal of data.signals) await handleSignal(signal);
+  } catch (error) {
+    if (/expired|invalid/i.test(error.message)) createPairing().catch(() => {});
+  } finally {
+    pollInFlight = false;
+    if (sessionId) pollTimer = setTimeout(pollSignals, SIGNAL_POLL_MS);
   }
 }
 
-// Format the identified game state per sport (mirrors index.html).
-// clockOverride lets the local live ticker show a counting-down clock.
-function formatState(d, clockOverride) {
-  const st = d.state || {}, x = st.extras || {};
-  const cs = clockOverride != null ? clockOverride : st.clock_seconds;
-  const hasClock = cs != null;
-  const mm = hasClock ? Math.floor(cs / 60) : 0;
-  const ss = hasClock ? String(cs % 60).padStart(2, "0") : "00";
-  if (d.sport === "soccer") return x.minute != null ? x.minute + "'" : "H" + st.period;
-  if (d.sport === "ufc") return "R" + st.period + (hasClock ? " " + mm + ":" + ss : "");
-  if (d.sport === "golf") return x.leader_thru != null ? "Thru " + x.leader_thru : "Leaderboard";
-  return "Q" + st.period + (hasClock ? " " + mm + ":" + ss : "");
+async function createPairing() {
+  clearTimeout(pollTimer);
+  peerConnection?.close();
+  peerConnection = null;
+  pendingIce = [];
+  setRemoteFeedUI(false);
+  const session = await api("/api/webrtc/session", { method: "POST" });
+  sessionId = session.session_id;
+  const phoneUrl = `${location.origin}/phone?pair=${encodeURIComponent(session.pair_code)}`;
+  $("pairCode").textContent = session.pair_code;
+  $("phoneLink").textContent = phoneUrl;
+  $("phoneLink").href = phoneUrl;
+  $("phoneLink").hidden = false;
+  $("idleHint").textContent = "Open the pairing link on the phone, then start its camera feed.";
+  $("stats").textContent = "WebRTC direct · waiting";
+  pollSignals();
 }
 
-function buildGameLine(d, clockOverride) {
-  const away = ((d.event && d.event.away_team_id) || "").split("_").pop().toUpperCase();
-  const home = ((d.event && d.event.home_team_id) || "").split("_").pop().toUpperCase();
-  return (away && home ? away + " @ " + home + " · " : "") + formatState(d, clockOverride);
-}
-
-// Paint the read-out HUD from a pipeline insight — the whole point of the page
-function renderInsight(d) {
-  if (!d) return;
+function renderInsight(insight) {
+  if (!insight?.observation) return;
+  const observation = insight.observation;
+  const analysis = insight.analysis;
+  const presentation = insight.presentation || {};
   document.body.classList.add("has-read");
-  const pres = d.presentation || {};
-  const status = pres.status || (d.comparison ? "ready" : "no_state");
-
-  // Detected sport → pill (recognized by the vision backend, not chosen).
-  const sportVal = d.sport || (d.observation && d.observation.sport) || "";
-  if (sportVal) { $("sportText").textContent = SPORT_LABEL[String(sportVal).toLowerCase()] || String(sportVal).toUpperCase(); $("sportPill").hidden = false; }
-
-  if (d.observation) {
-    const observation = d.observation;
-    const analysis = d.analysis;
-    const gameLine = [
-      observation.event_name || `${observation.participant_a || "UNKNOWN"} vs ${observation.participant_b || "UNKNOWN"}`,
-      observation.score_display,
-      observation.phase,
-      observation.clock,
-    ].filter(Boolean).join(" · ");
-    lastInsight = d;
-    $("roGame").textContent = gameLine || "Reading the live event";
-    $("roSay").textContent = pres.short_text || "Reading the scoreboard…";
-    lastSpoken = pres.spoken_text || pres.short_text || "";
-    if (!analysis) {
-      document.body.classList.add("gated");
-      setStatusPill("capturing", "reading…");
-      return;
-    }
-    document.body.classList.remove("gated");
-    document.body.classList.add("ready");
-    setStatusPill("ready", status === "event_switched" ? "new event" : "live");
-    tweenNum($("roModel"), analysis.primary_probability * 100, (v) => v.toFixed(0) + "%");
-    $("roMarket").textContent = analysis.primary_outcome || "MODEL";
-    $("roGap").textContent = `CONF ${Math.round((analysis.confidence ?? observation.confidence ?? 0) * 100)}%`;
-    $("roGap").className = "gp";
-    return;
+  if (observation.sport) {
+    $("sportText").textContent = SPORT_LABEL[observation.sport] || observation.sport.toUpperCase();
+    $("sportPill").hidden = false;
   }
-
-  // Re-seed the local clock only on a genuinely new/changed reading; otherwise
-  // let it keep ticking so a steady feed doesn't freeze the countdown.
-  const newClock = d.state ? d.state.clock_seconds : null;
-  if (displayClock == null || eventId(d) !== eventId(lastInsight) || (newClock != null && Math.abs(newClock - displayClock) > 3)) {
-    displayClock = newClock;
-  }
-  lastInsight = d;
-  const gameLine = buildGameLine(d, displayClock);
-
-  if (status !== "ready" || !d.comparison) {
+  $("roGame").textContent = [observation.event_name, observation.score_display, observation.phase, observation.clock].filter(Boolean).join(" · ");
+  $("roSay").textContent = presentation.short_text || "Reading the event…";
+  lastSpoken = presentation.spoken_text || presentation.short_text || "";
+  if (!analysis) {
     document.body.classList.add("gated");
-    setStatusPill(status === "ready" ? "capturing" : status, status === "ready" ? "reading…" : status.replace(/_/g, " "));
-    $("roGame").textContent = (d.event && d.event.away_team_id) ? gameLine : "BloomKnights";
-    $("roSay").textContent = pres.short_text || "Reading the scoreboard…";
-    lastSpoken = pres.spoken_text || pres.short_text || "";
     return;
   }
-
   document.body.classList.remove("gated");
   document.body.classList.add("ready");
-  setStatusPill("ready", "live");
-  const c = d.comparison;
-  const gap = c.gap_percentage_points;
-  $("roGame").textContent = gameLine;
-  tweenNum($("roModel"), c.model_probability * 100, (v) => v.toFixed(0) + "%");
-  tweenNum($("roMarket"), c.market_probability * 100, (v) => "MKT " + v.toFixed(0) + "%");
-  const g = $("roGap");
-  g.textContent = (gap > 0 ? "+" : "") + gap + " pts";
-  g.className = "gp" + (gap >= 0 ? "" : " neg");
-  $("roSay").textContent = pres.short_text || "";
-  lastSpoken = pres.spoken_text || pres.short_text || "";
+  tweenNum($("roModel"), analysis.primary_probability * 100, (value) => value.toFixed(0) + "%");
+  $("roMarket").textContent = analysis.primary_outcome || "MODEL";
+  $("roGap").textContent = `CONF ${Math.round((analysis.confidence ?? observation.confidence ?? 0) * 100)}%`;
+  $("roGap").className = "gp";
 }
 
-async function sendFrame() {
-  if (!video.videoWidth) return;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
-  const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-  const image_base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-
-  bump("sent");
+async function refreshAnalysis() {
   try {
-    const r = await fetch("/api/frames", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: SOURCE, captured_at: new Date().toISOString(),
-        image_base64, width: canvas.width, height: canvas.height,
-        // No sport field — the vision backend identifies the sport/event from
-        // the glasses' view and auto-switches when the game changes.
-      }),
-    });
-    const d = await r.json();
-    if (!r.ok || d.error) { bump("errors"); return; }
-    if (d.selection && d.selection.accepted) bump("accepted"); else bump("skipped");
-    if (d.insight) renderInsight(d.insight);
-  } catch (err) {
-    bump("errors");
+    const status = await api("/api/analysis/status");
+    remoteAnalysisEnabled = status.analysis_enabled === true;
+    if (remoteFeedActive) updateAnalyzeButton();
+    if (!remoteAnalysisEnabled) return;
+    renderInsight(await api("/api/latest"));
+  } catch {
+    // Direct WebRTC video stays up through temporary signaling failures.
   }
 }
 
-// Between backend frames, keep the broadcast clock ticking so the feed always
-// reads as a live game.
-function liveTick() {
-  if (!lastInsight || !document.body.classList.contains("ready")) return;
-  if (displayClock != null && displayClock > 0) {
-    displayClock -= 1;
-    $("roGame").textContent = buildGameLine(lastInsight, displayClock);
+$("toggle").addEventListener("click", () => createPairing().catch(() => setStatusPill("error", "pairing error")));
+$("copyPhoneLink").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("phoneLink").href);
+    $("copyPhoneLink").textContent = "Copied";
+    setTimeout(() => { $("copyPhoneLink").textContent = "Copy link"; }, 1_200);
+  } catch {
+    $("phoneLink").hidden = false;
   }
-}
-
-async function start() {
-  // The wearer livestreams from the glasses (WhatsApp/Messenger call), opens
-  // that stream on this computer, and shares that window here. Screen capture
-  // of the call window = the glasses' camera feed.
-  stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  stream.getVideoTracks()[0].addEventListener("ended", stop);
-  video.srcObject = stream;
-  video.style.display = "block";
-  remotePreview.style.display = "none";
-  timer = setInterval(sendFrame, SAMPLE_INTERVAL_MS);
-  liveTimer = setInterval(liveTick, 1000);
-  setRunningUI(true);
-}
-
-function stop() {
-  clearInterval(timer); timer = null;
-  clearInterval(liveTimer); liveTimer = null;
-  displayClock = null; lastInsight = null;
-  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
-  setRunningUI(false);
-}
-
-$("toggle").addEventListener("click", async () => {
-  try { if (timer) stop(); else await start(); }
-  catch (err) { setStatusPill("error", "source error"); setRunningUI(false); }
 });
-
-$("analyze").addEventListener("click", async () => {
-  const shouldEnable = !remoteAnalysisEnabled;
-  const button = $("analyze");
-  button.disabled = true;
+analyzeButton.addEventListener("click", async () => {
+  const enable = !remoteAnalysisEnabled;
+  analyzeButton.disabled = true;
   try {
-    const response = await fetch(shouldEnable ? "/api/analysis/start" : "/api/analysis/stop", {
-      method: "POST",
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    const data = await api(enable ? "/api/analysis/start" : "/api/analysis/stop", { method: "POST" });
     remoteAnalysisEnabled = data.analysis_enabled === true;
     updateAnalyzeButton();
-    setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : "phone feed");
+    setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : "WebRTC live");
   } catch {
     setStatusPill("error", "analysis error");
   } finally {
-    button.disabled = false;
+    analyzeButton.disabled = false;
   }
 });
-
 $("speak").addEventListener("click", () => {
   if (!lastSpoken || !("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(lastSpoken); u.rate = 1.05;
-  speechSynthesis.speak(u);
+  const utterance = new SpeechSynthesisUtterance(lastSpoken);
+  utterance.rate = 1.05;
+  speechSynthesis.speak(utterance);
 });
-
 $("helpBtn").addEventListener("click", () => $("help").setAttribute("open-panel", ""));
 $("helpClose").addEventListener("click", () => $("help").removeAttribute("open-panel"));
-$("help").addEventListener("click", (e) => { if (e.target === $("help")) $("help").removeAttribute("open-panel"); });
-
-// No sport selector — the sport is recognized by the vision backend from the
-// glasses' view and reported back on each insight (shown in the sport pill).
-
-$("steps").innerHTML = STEPS.map((s) => "<li>" + s + "</li>").join("");
-$("helpNote").innerHTML = NOTE;
-setRunningUI(false);
-setInterval(syncPhoneFeed, 750);
-syncPhoneFeed();
+$("help").addEventListener("click", (event) => { if (event.target === $("help")) $("help").removeAttribute("open-panel"); });
+window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch(() => {}));
+$("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
+$("helpNote").textContent = NOTE;
+setInterval(refreshAnalysis, INSIGHT_POLL_MS);
+createPairing().catch(() => setStatusPill("error", "pairing error"));
 </script>
 </body>
 </html>

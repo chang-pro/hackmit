@@ -9,9 +9,11 @@
 //   GET  /api/health            — vision backend + buffer + quota status
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
-//   POST /api/live-stream        — lightweight continuous camera frame relay
-//   GET  /api/live-stream        — MJPEG stream for the desktop viewer
-//   GET  /api/live-stream/status — relay and analysis status
+//   POST /api/webrtc/session     — create a short-lived viewer pairing session
+//   POST /api/webrtc/join        — exchange a pairing code for a session id
+//   POST /api/webrtc/signal      — relay SDP/ICE signaling (never media)
+//   GET  /api/webrtc/poll        — poll pending SDP/ICE signaling messages
+//   GET  /api/webrtc/config      — browser-safe ICE server configuration
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
@@ -26,6 +28,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
+import { randomBytes, randomUUID } from "node:crypto";
 import { runPipeline, resetLivePipeline } from "./pipeline.js";
 import { LiveEventAnalyzer } from "./live-event-analyzer.js";
 import { CaptureGateway } from "../capture/gateway.js";
@@ -42,8 +45,12 @@ const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
 const STATS_DIR = join(ROOT, "packages", "fixtures", "stats");
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const LIVE_SESSION_TTL_MS = 30_000;
-const STREAM_MIME_TYPES = new Set(["image/jpeg", "image/png"]);
-const MJPEG_BOUNDARY = "bloomknights-frame";
+const WEBRTC_SESSION_TTL_MS = 10 * 60_000;
+const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
+// SDP and ICE are compact setup metadata. This bound makes the tunnel unable
+// to become a substitute media relay even if a client is modified.
+const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
+const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
 function readJsonBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -90,22 +97,17 @@ function imageBytes(imageBase64) {
   return Buffer.from(dataUrl?.[1] ?? imageBase64, "base64");
 }
 
-function parseStreamFrame({ source, captured_at, image_base64, mime_type = "image/jpeg", width, height } = {}) {
-  if (typeof source !== "string" || source.trim() === "") throw new Error("source is required");
-  if (typeof image_base64 !== "string" || image_base64 === "") throw new Error("image_base64 is required");
-  if (!STREAM_MIME_TYPES.has(mime_type)) throw new Error(`unsupported mime_type: ${mime_type}`);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    throw new Error("width and height must be positive numbers");
+function configuredIceServers() {
+  if (!process.env.WEBRTC_ICE_SERVERS_JSON) return DEFAULT_ICE_SERVERS;
+  try {
+    const configured = JSON.parse(process.env.WEBRTC_ICE_SERVERS_JSON);
+    if (Array.isArray(configured) && configured.every((server) => server && server.urls)) {
+      return configured;
+    }
+  } catch {
+    // The public STUN default keeps the hackathon demo usable if an env value is malformed.
   }
-  const parsedAt = Date.parse(captured_at ?? "");
-  return {
-    source,
-    captured_at: Number.isNaN(parsedAt) ? new Date().toISOString() : new Date(parsedAt).toISOString(),
-    image_base64,
-    mime_type,
-    width,
-    height,
-  };
+  return DEFAULT_ICE_SERVERS;
 }
 
 async function sendHtml(res, filename, appDir = "demo-web") {
@@ -197,9 +199,7 @@ export function createBloomServer({
   let latestInsight = null;
   let latestInsightAt = 0;
   let analysisEnabled = false;
-  let latestStreamFrame = null;
-  let streamFrameCounter = 0;
-  const streamSubscribers = new Set();
+  const webrtcSessions = new Map();
 
   function resetAnalysisState() {
     analyzer.reset();
@@ -209,23 +209,10 @@ export function createBloomServer({
     latestInsightAt = 0;
   }
 
-  function writeMjpegFrame(res, frame) {
-    const bytes = imageBytes(frame.image_base64);
-    res.write(`--${MJPEG_BOUNDARY}\r\n`);
-    res.write(`Content-Type: ${frame.mime_type}\r\n`);
-    res.write(`Content-Length: ${bytes.length}\r\n`);
-    res.write(`X-BloomKnights-Frame-Id: ${frame.frame_id}\r\n\r\n`);
-    res.write(bytes);
-    res.write("\r\n");
-  }
-
-  function broadcastStreamFrame(frame) {
-    for (const res of streamSubscribers) {
-      try {
-        writeMjpegFrame(res, frame);
-      } catch {
-        streamSubscribers.delete(res);
-      }
+  function pruneWebRtcSessions() {
+    const now = Date.now();
+    for (const [sessionId, session] of webrtcSessions) {
+      if (session.expires_at <= now) webrtcSessions.delete(sessionId);
     }
   }
 
@@ -410,63 +397,102 @@ export function createBloomServer({
     });
   }
 
-  async function handleStreamSubmission(req, res) {
-    let body;
+  function createWebRtcSession(res) {
+    pruneWebRtcSessions();
+    let pairCode;
+    do {
+      pairCode = randomBytes(5).toString("hex").toUpperCase();
+    } while ([...webrtcSessions.values()].some((session) => session.pair_code === pairCode));
+    const session = {
+      session_id: randomUUID(),
+      pair_code: pairCode,
+      created_at: Date.now(),
+      expires_at: Date.now() + WEBRTC_SESSION_TTL_MS,
+      signals: { phone: [], viewer: [] },
+    };
+    webrtcSessions.set(session.session_id, session);
+    sendJson(res, 201, {
+      session_id: session.session_id,
+      pair_code: session.pair_code,
+      expires_at: new Date(session.expires_at).toISOString(),
+    });
+  }
+
+  async function joinWebRtcSession(req, res) {
     try {
-      body = await readJsonBody(req);
-      if (body === null || typeof body !== "object" || Array.isArray(body)) {
-        throw Object.assign(new Error("request body must be a JSON object"), { statusCode: 400 });
+      const body = await readJsonBody(req);
+      const pairCode = String(body?.pair_code ?? "").trim().toUpperCase();
+      pruneWebRtcSessions();
+      const session = [...webrtcSessions.values()].find((entry) => entry.pair_code === pairCode);
+      if (!session) {
+        sendJson(res, 404, { error: "pairing code is invalid or expired" });
+        return;
       }
-      const parsed = parseStreamFrame(body);
-      streamFrameCounter += 1;
-      latestStreamFrame = {
-        ...parsed,
-        frame_id: `stream_${String(streamFrameCounter).padStart(8, "0")}`,
-      };
-      broadcastStreamFrame(latestStreamFrame);
-      sendJson(res, 202, {
-        status: "streaming",
-        frame: {
-          frame_id: latestStreamFrame.frame_id,
-          captured_at: latestStreamFrame.captured_at,
-          source: latestStreamFrame.source,
-          mime_type: latestStreamFrame.mime_type,
-          width: latestStreamFrame.width,
-          height: latestStreamFrame.height,
-        },
-        analysis_enabled: analysisEnabled,
+      sendJson(res, 200, {
+        session_id: session.session_id,
+        expires_at: new Date(session.expires_at).toISOString(),
       });
     } catch (err) {
       sendJson(res, err.statusCode ?? 400, { error: err.message });
     }
   }
 
-  function handleLiveStream(res, req) {
-    res.writeHead(200, {
-      ...responseHeaders(`multipart/x-mixed-replace; boundary=${MJPEG_BOUNDARY}`),
-      Connection: "keep-alive",
-    });
-    res.flushHeaders();
-    streamSubscribers.add(res);
-    if (latestStreamFrame) writeMjpegFrame(res, latestStreamFrame);
-    const close = () => streamSubscribers.delete(res);
-    req.on("close", close);
-    res.on("close", close);
+  async function relayWebRtcSignal(req, res) {
+    try {
+      const body = await readJsonBody(req);
+      const session = webrtcSessions.get(body?.session_id);
+      const from = body?.from;
+      const kind = body?.kind;
+      if (!session || session.expires_at <= Date.now()) {
+        if (session) webrtcSessions.delete(session.session_id);
+        sendJson(res, 404, { error: "WebRTC session is invalid or expired" });
+        return;
+      }
+      if (!["phone", "viewer"].includes(from)) {
+        sendJson(res, 400, { error: "from must be phone or viewer" });
+        return;
+      }
+      if (!["offer", "answer", "ice", "hangup"].includes(kind)) {
+        sendJson(res, 400, { error: "invalid WebRTC signal kind" });
+        return;
+      }
+      const payload = body?.payload ?? null;
+      if (Buffer.byteLength(JSON.stringify(payload)) > MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES) {
+        sendJson(res, 413, { error: "WebRTC signaling payload is too large" });
+        return;
+      }
+      const target = from === "phone" ? "viewer" : "phone";
+      const queue = session.signals[target];
+      if (queue.length >= MAX_WEBRTC_SIGNALS_PER_PEER) queue.shift();
+      queue.push({ kind, payload });
+      sendJson(res, 202, { status: "queued" });
+    } catch (err) {
+      sendJson(res, err.statusCode ?? 400, { error: err.message });
+    }
   }
 
-  function handleLiveStreamStatus(res) {
-    sendJson(res, 200, {
-      analysis_enabled: analysisEnabled,
-      stream: latestStreamFrame
-        ? {
-            frame_id: latestStreamFrame.frame_id,
-            captured_at: latestStreamFrame.captured_at,
-            age_ms: Math.max(0, Date.now() - Date.parse(latestStreamFrame.captured_at)),
-            width: latestStreamFrame.width,
-            height: latestStreamFrame.height,
-          }
-        : null,
-    });
+  function pollWebRtcSignals(res, url) {
+    pruneWebRtcSessions();
+    const session = webrtcSessions.get(url.searchParams.get("session_id"));
+    const peer = url.searchParams.get("peer");
+    if (!session) {
+      sendJson(res, 404, { error: "WebRTC session is invalid or expired" });
+      return;
+    }
+    if (!["phone", "viewer"].includes(peer)) {
+      sendJson(res, 400, { error: "peer must be phone or viewer" });
+      return;
+    }
+    const signals = session.signals[peer].splice(0);
+    sendJson(res, 200, { signals, expires_at: new Date(session.expires_at).toISOString() });
+  }
+
+  function handleWebRtcConfig(res) {
+    sendJson(res, 200, { ice_servers: configuredIceServers() });
+  }
+
+  function handleAnalysisStatus(res) {
+    sendJson(res, 200, { analysis_enabled: analysisEnabled, queue: analyzer.status() });
   }
 
   function handleAnalysisControl(res, enabled) {
@@ -510,8 +536,12 @@ export function createBloomServer({
         res.end();
       } else if (req.method === "POST" && url.pathname === "/api/frames") {
         await handleFrameSubmission(req, res);
-      } else if (req.method === "POST" && url.pathname === "/api/live-stream") {
-        await handleStreamSubmission(req, res);
+      } else if (req.method === "POST" && url.pathname === "/api/webrtc/session") {
+        createWebRtcSession(res);
+      } else if (req.method === "POST" && url.pathname === "/api/webrtc/join") {
+        await joinWebRtcSession(req, res);
+      } else if (req.method === "POST" && url.pathname === "/api/webrtc/signal") {
+        await relayWebRtcSignal(req, res);
       } else if (req.method === "POST" && url.pathname === "/api/analysis/start") {
         handleAnalysisControl(res, true);
       } else if (req.method === "POST" && url.pathname === "/api/analysis/stop") {
@@ -520,7 +550,7 @@ export function createBloomServer({
         analysisEnabled = false;
         resetLivePipeline();
         resetAnalysisState();
-        latestStreamFrame = null;
+        webrtcSessions.clear();
         sendJson(res, 200, { status: "reset" });
       } else if (req.method === "GET" && url.pathname === "/api/health") {
         sendJson(res, 200, {
@@ -533,16 +563,19 @@ export function createBloomServer({
           frame_buffer_size: gateway.size,
           has_live_insight: Boolean(latestInsight),
           analysis_enabled: analysisEnabled,
+          webrtc_sessions: webrtcSessions.size,
           analysis_queue: analyzer.status(),
         });
       } else if (req.method === "GET" && url.pathname === "/api/live-frame") {
         handleLatestFrame(res);
       } else if (req.method === "GET" && url.pathname === "/api/live-frame/image") {
         handleLatestFrameImage(res, url);
-      } else if (req.method === "GET" && url.pathname === "/api/live-stream") {
-        handleLiveStream(res, req);
-      } else if (req.method === "GET" && url.pathname === "/api/live-stream/status") {
-        handleLiveStreamStatus(res);
+      } else if (req.method === "GET" && url.pathname === "/api/webrtc/poll") {
+        pollWebRtcSignals(res, url);
+      } else if (req.method === "GET" && url.pathname === "/api/webrtc/config") {
+        handleWebRtcConfig(res);
+      } else if (req.method === "GET" && url.pathname === "/api/analysis/status") {
+        handleAnalysisStatus(res);
       } else if (
         req.method === "GET" &&
         (url.pathname === "/api/comparison" || url.pathname === "/api/latest")
