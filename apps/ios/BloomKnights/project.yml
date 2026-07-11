@@ -13,6 +13,9 @@ packages:
   meta-wearables-dat-ios:
     url: https://github.com/facebook/meta-wearables-dat-ios
     from: 0.8.0
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    from: 120.0.0
 targets:
   BloomKnights:
     type: application
@@ -47,6 +50,8 @@ targets:
         product: MWDATCore
       - package: meta-wearables-dat-ios
         product: MWDATCamera
+      - package: WebRTC
+        product: WebRTC
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.bloomknights.app
-      DEVELOPMENT_TEAM: M6CFFPMGT6
+      DEVELOPMENT_TEAM: A39763Q74K

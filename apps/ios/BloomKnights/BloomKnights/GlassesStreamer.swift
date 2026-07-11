@@ -119,6 +119,12 @@ final class FrameUplink: @unchecked Sendable {
     private var failed = 0
     var onCounters: @Sendable (Int, Int, Int, Int) -> Void = { _, _, _, _ in }
     var sportProvider: @Sendable () -> String = { Sport.nba.rawValue }
+    // EVERY decoded frame (full rate) — feeds the WebRTC publisher. Set from
+    // the streamer; called on the VT decode callback thread.
+    var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
+    // The 1 fps JPEG POST to /api/frames is legacy telemetry now that the
+    // desktop viewer samples the WebRTC stream itself. Off by default.
+    var httpUploadEnabled = false
 
     // Diagnostics throttle (1-in-3), same trick as PokerAI: doing per-frame
     // work on the SDK's delivery thread can choke it and freeze the stream.
@@ -183,18 +189,20 @@ final class FrameUplink: @unchecked Sendable {
         }
         guard let session = decodeSession else { lock.unlock(); return }
         let now = Date()
-        let wantUpload = now.timeIntervalSince(lastUploadAt) >= uploadInterval
+        let wantUpload = httpUploadEnabled && now.timeIntervalSince(lastUploadAt) >= uploadInterval
         if wantUpload { lastUploadAt = now }
         lock.unlock()
 
-        // Decode every frame (required for P-frame continuity); only the
-        // ~1/second "wantUpload" frames get encoded and shipped.
+        // Decode every frame (required for P-frame continuity). Every decoded
+        // frame goes to the WebRTC publisher; the ~1/second "wantUpload"
+        // frames additionally get JPEG-encoded and POSTed when enabled.
         VTDecompressionSessionDecodeFrame(session,
                                           sampleBuffer: sb,
                                           flags: [],
                                           infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
-            guard wantUpload, status == noErr, let imageBuffer else { return }
-            self?.encodeAndPost(imageBuffer)
+            guard status == noErr, let imageBuffer, let self else { return }
+            self.onDecodedFrame?(imageBuffer)
+            if wantUpload { self.encodeAndPost(imageBuffer) }
         }
     }
 
@@ -294,6 +302,11 @@ final class GlassesStreamer: ObservableObject {
 
     func updateSport(_ sportId: String) {
         uplink.sportProvider = { sportId }
+    }
+
+    // Route every decoded frame (full rate) to a consumer — the RTC publisher.
+    func setFrameTap(_ tap: (@Sendable (CVImageBuffer) -> Void)?) {
+        uplink.onDecodedFrame = tap
     }
 
     // Start all the live monitors so the screen always shows current state.
