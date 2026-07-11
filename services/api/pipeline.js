@@ -12,8 +12,22 @@ const MAX_MARKET_AGE_MS = 30_000;
 
 const reconciler = new Reconciler();
 
-export async function runPipeline(fixturePath, adapter = mockAdapter) {
+// ── Extraction seam ─────────────────────────────────────────────────────────
+// Slice 2 (real OCR, in progress on a parallel branch) replaces the body of
+// this function only: given a live frame it should run scoreboard detection +
+// parsing on that frame's image instead of reading the fixture. Nothing
+// outside this function changes when it lands.
+// Until then, live frames flow through the gateway/selector (Slice 4) but the
+// parsed scoreboard still comes from the committed fixture, and the returned
+// payload marks extraction as "fixture_parse" so nobody mistakes it for OCR.
+async function extractState(fixturePath, liveFrame) {
   const { frame, parsed } = await parseFrame(fixturePath);
+  if (!liveFrame) return { frame, parsed, extraction: "fixture_parse" };
+  return { frame: liveFrame, parsed, extraction: "fixture_parse" };
+}
+
+export async function runPipeline(fixturePath, adapter = mockAdapter, liveFrame = null) {
+  const { frame, parsed, extraction } = await extractState(fixturePath, liveFrame);
   const event = resolveEvent(parsed);
   const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
 
@@ -72,6 +86,8 @@ export async function runPipeline(fixturePath, adapter = mockAdapter) {
   // One complete update through the system (README §8).
   return {
     session_id: "session_slice1",
+    source: liveFrame ? "live" : "fixture",
+    extraction, // "fixture_parse" until Slice 2's real OCR replaces the seam
     event,
     state: {
       away_score: state.away_score,
