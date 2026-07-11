@@ -1,26 +1,51 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBloomServer } from "../services/api/server.js";
+import { LiveEventAnalyzer } from "../services/api/live-event-analyzer.js";
 
 const testVision = {
   name: "test-phone-vision",
-  async extract(frame) {
-    assert.equal(frame.mime_type, "image/jpeg");
-    assert.equal(frame.image_base64, "cGhvbmUtZnJhbWU=");
+  async extractEventBatch(frames) {
+    assert.equal(frames[0].mime_type, "image/jpeg");
+    assert.equal(frames[0].image_base64, "cGhvbmUtZnJhbWU=");
     return {
-      away_team_text: "BOS",
-      home_team_text: "NYK",
-      away_score: 104,
-      home_score: 101,
-      period_text: "Q4",
-      clock_text: "2:14",
-      field_confidences: { teams: 0.98, scores: 0.96, period: 0.99, clock: 0.94 },
+      sport: "soccer",
+      competition: "FIFA World Cup",
+      event_name: "USA vs Brazil",
+      participant_a: "USA",
+      participant_b: "Brazil",
+      score_a: 1,
+      score_b: 1,
+      score_display: "1-1",
+      phase: "Second half",
+      clock: "72:14",
+      event_status: "live",
+      possession_or_control: "Brazil",
+      situation: "Open play",
+      visible_facts: ["Score tied"],
+      changes_across_frames: [],
+      confidence: 0.94,
     };
   },
 };
 
-test("phone frame upload returns a complete live insight", async (t) => {
-  const server = createBloomServer({ visionBackend: testVision });
+test("phone photo returns a complete multisport live insight", async (t) => {
+  const liveAnalyzer = new LiveEventAnalyzer({
+    visionBackend: testVision,
+    analyze: async () => ({
+      event_summary: "USA and Brazil are tied late in the second half.",
+      primary_market_question: "Will Brazil win?",
+      primary_outcome: "Brazil wins",
+      primary_probability: 0.42,
+      confidence: 0.7,
+      alternate_markets: [],
+      key_factors: ["Tied at 72 minutes"],
+      what_changed: "No prior window",
+      next_probability_trigger: "A goal",
+      risk_note: "Visual estimate",
+    }),
+  });
+  const server = createBloomServer({ liveAnalyzer });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const { port } = server.address();
@@ -31,7 +56,7 @@ test("phone frame upload returns a complete live insight", async (t) => {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      source: "phone_test",
+      source: "phone_photo",
       captured_at: "2026-07-11T20:14:32.491Z",
       mime_type: "image/jpeg",
       image_base64: "cGhvbmUtZnJhbWU=",
@@ -43,12 +68,12 @@ test("phone frame upload returns a complete live insight", async (t) => {
   const body = await response.json();
   assert.equal(body.selection.accepted, true);
   assert.equal(body.insight.source, "live");
-  assert.equal(body.insight.extraction, "test-phone-vision");
-  assert.equal(body.insight.state.away_score, 104);
-  assert.equal(body.insight.estimate.outcome, "nba_bos_wins");
+  assert.equal(body.insight.extraction, "test-phone-vision-batch");
+  assert.equal(body.insight.observation.sport, "soccer");
+  assert.equal(body.insight.analysis.primary_probability, 0.42);
   assert.equal(body.insight.presentation.status, "ready");
 
   const latest = await (await fetch(`${base}/api/latest`)).json();
-  assert.equal(latest.frame.frame_id, body.frame.frame_id);
-  assert.equal(latest.extraction, "test-phone-vision");
+  assert.equal(latest.frame_window.frames[0].frame_id, body.frame.frame_id);
+  assert.equal(latest.extraction, "test-phone-vision-batch");
 });

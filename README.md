@@ -4,17 +4,17 @@
 
 BloomKnights is a wearable visual-intelligence system for live sports and event prediction markets. A user points camera-enabled smart glasses at a screen showing a live event. The system reads the visible game state, estimates the probability of an outcome, compares that estimate with the current prediction-market price, and returns a short, useful result through a glasses-friendly interface.
 
-The first hackathon version is focused on one experience:
+The hackathon version is focused on one cross-sport experience:
 
-> Point Meta glasses at a live NBA broadcast and hear or see the model's current win probability alongside the prediction market's implied probability.
+> Point Meta glasses at a live World Cup, American football, UFC, or NBA broadcast and receive the most relevant prediction-market probability without searching for the event.
 
 Example output:
 
 ```text
-Boston vs. New York — 4Q, 02:14
-Model: 68% Boston
-Market: 59% Boston
-Difference: +9 percentage points
+USA vs. Brazil — 72:14, 1-1
+Primary market: Brazil to win
+Model probability: 42%
+Alternate market: Draw 30%
 State confidence: High
 ```
 
@@ -53,11 +53,11 @@ The sports demo is the wedge, not the ceiling. The same visual-to-probability ar
 
 ## 3. The north-star experience
 
-1. A user watches an NBA game on a television or laptop.
+1. A user watches a major live sporting event on a television or laptop.
 2. The user looks at the broadcast through Meta glasses.
 3. BloomKnights identifies the teams and reads the scoreboard.
-4. It constructs the current game state: score, quarter, clock, and any other reliably available features.
-5. It estimates each team's probability of winning.
+4. It constructs a sport-aware state: score, clock, period/round, visible cards, down and distance, or other reliably available features.
+5. It selects the most relevant prediction-market question and estimates its outcomes.
 6. It finds the matching prediction-market contract and reads the latest price.
 7. It reports the model probability, market probability, difference, and confidence.
 8. As the visible state changes, the estimate updates.
@@ -74,12 +74,12 @@ A bad response is a dashboard full of unexplained numbers, an uncalibrated claim
 
 ### Primary use case
 
-Live win-probability comparison for an NBA game visible on a screen.
+Live prediction-market analysis for World Cup soccer, American football, UFC/MMA, and NBA basketball visible on a screen.
 
 ### Required inputs
 
 - Camera frames originating from the glasses or a development-time camera substitute.
-- A broadcast scoreboard containing identifiable teams, score, period, and game clock.
+- A broadcast view containing identifiable participants and enough visible event state to support a probability estimate.
 - A configured prediction-market source or a realistic mock adapter for the exact demo matchup.
 
 ### Required outputs
@@ -98,7 +98,7 @@ Live win-probability comparison for an NBA game visible on a screen.
 - Locate and parse the scoreboard region.
 - Normalize team names or abbreviations to stable internal IDs.
 - Reject or retain the previous state when a frame is unreadable.
-- Calculate a deterministic win probability from the structured state.
+- Calculate or infer sport-appropriate probabilities from the structured state.
 - Match the game to one market contract.
 - Fetch or simulate a timestamped market price behind a clean adapter interface.
 - Return a response only when the state and market data are sufficiently trustworthy.
@@ -116,7 +116,7 @@ Live win-probability comparison for an NBA game visible on a screen.
 
 - Detect possession, timeouts, or recent scoring events.
 - Support more than one broadcast scoreboard layout.
-- Support a second game or a second sport.
+- Match live observations against real cross-sport prediction-market contracts.
 - Notify only when the probability difference crosses a configured threshold.
 
 ## 5. Explicit non-goals
@@ -663,7 +663,7 @@ Definition of done: a teammate can point the selected capture device at the demo
 
 ### Primary live demo
 
-1. Show the selected NBA broadcast on a television or laptop.
+1. Show a current World Cup broadcast or another selected live sporting event on a television or laptop.
 2. Show the glasses or camera view in the debug interface.
 3. Point at the scoreboard and let BloomKnights identify the game.
 4. Display the structured state to prove the system read the screen.
@@ -766,8 +766,8 @@ Any production version would require a deeper review of device privacy, market-p
 This repository is expected to be edited by multiple teammates and AI coding tools. Agents should follow these rules:
 
 1. Read this README before proposing or implementing work.
-2. Preserve the primary end-to-end use case: visible NBA broadcast to trusted probability comparison.
-3. Do not widen the sport, market, or device scope until the primary vertical slice works.
+2. Preserve the primary end-to-end use case: visible live sport to trusted, sport-aware prediction analysis.
+3. Keep the supported demo set bounded to soccer, American football, UFC/MMA, and NBA until those vertical slices are reliable.
 4. Keep device, vision, probability, market, and presentation concerns behind explicit interfaces.
 5. Prefer typed or schema-validated data between components.
 6. Never invent live market values, model evaluation results, latency measurements, or device capabilities.
@@ -787,10 +787,10 @@ The following decisions are locked for the first build:
 | Decision | Current choice | Reason |
 |---|---|---|
 | Initial domain | Live sports | Visually clear and easy to demonstrate |
-| Initial sport | NBA basketball | Structured scoreboard and intuitive win probability |
+| Demo sports | Soccer, American football, UFC/MMA, NBA | Covers the highest-interest live prediction categories |
 | Primary input | A screen showing a broadcast | Matches the wearable visual-intelligence thesis |
 | Vision responsibility | Extract structured game state | More reliable than end-to-end video prediction |
-| Primary prediction | Game winner | Clear market mapping and model target |
+| Primary prediction | Most relevant supported market | Winner, draw, advancement, totals, next score, or method of victory depending on sport |
 | Main comparison | Difference in percentage points | Simple and mathematically honest |
 | Trade execution | Out of scope | Keeps focus on intelligence and interaction |
 | Demo architecture | Hardware-agnostic capture gateway | Protects the build from device SDK constraints |
@@ -803,7 +803,7 @@ These questions should be answered through quick prototypes or documented decisi
 - What frame access and response surfaces are available on the exact Meta hardware in hand?
 - Which broadcast layout and footage will be the canonical demo fixture?
 - Which OCR or multimodal extraction method is most reliable on that footage?
-- Which historical dataset, if any, will train or calibrate the NBA model?
+- Which sport-specific datasets or market priors should calibrate generated probabilities?
 - Which prediction-market provider and contract type are available for the demo?
 - What freshness threshold is appropriate for a displayed comparison?
 - Will the first client use audio, a phone card, a browser overlay, or a native glasses display?
@@ -814,7 +814,7 @@ Each resolved question should update the relevant section of this README or crea
 ## 20. Immediate next actions
 
 1. Confirm the exact glasses model and available capture/developer access.
-2. Choose one NBA broadcast clip and save a small set of representative frames.
+2. Choose one reliable demo clip each for World Cup soccer, American football, UFC, and NBA, with a World Cup clip as the primary path.
 3. Define shared schemas for `Frame`, `ParsedScoreboard`, `CanonicalGameState`, `ProbabilityEstimate`, `MarketSnapshot`, and `Comparison`.
 4. Build the deterministic end-to-end skeleton with a saved frame and mock market data.
 5. Evaluate scoreboard extraction methods on the chosen fixtures.

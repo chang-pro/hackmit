@@ -6,7 +6,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
-import { runFramePipeline, runPipeline, resetLivePipeline } from "./pipeline.js";
+import { runPipeline, resetLivePipeline } from "./pipeline.js";
+import { LiveEventAnalyzer } from "./live-event-analyzer.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { visionStatus } from "../vision/index.js";
@@ -71,7 +72,9 @@ export function createBloomServer({
   gateway = new CaptureGateway(),
   selector = new FrameSelector({ minIntervalMs: 750 }),
   visionBackend = undefined,
+  liveAnalyzer = undefined,
 } = {}) {
+  const analyzer = liveAnalyzer ?? new LiveEventAnalyzer({ visionBackend });
   let latestInsight = null;
   let latestInsightAt = 0;
 
@@ -99,10 +102,18 @@ export function createBloomServer({
     }
 
     try {
-      const insight = await runFramePipeline(gateway.frame(meta.frame_id), { visionBackend });
-      latestInsight = insight;
-      latestInsightAt = Date.now();
-      sendJson(res, 201, { frame: meta, selection, insight });
+      const result = await analyzer.submit(gateway.frame(meta.frame_id), {
+        force: body.force_analysis === true || body.source === "phone_photo",
+      });
+      if (result.analysis_status === "analyzed") {
+        latestInsight = result.insight;
+        latestInsightAt = Date.now();
+      }
+      sendJson(res, result.analysis_status === "analyzed" ? 201 : 202, {
+        frame: meta,
+        selection,
+        ...result,
+      });
     } catch (err) {
       sendJson(res, 422, {
         frame: meta,
@@ -127,6 +138,7 @@ export function createBloomServer({
         await handleFrameSubmission(req, res);
       } else if (req.method === "POST" && url.pathname === "/api/reset") {
         resetLivePipeline();
+        analyzer.reset();
         gateway.clear();
         selector.reset();
         latestInsight = null;
@@ -142,6 +154,7 @@ export function createBloomServer({
           },
           frame_buffer_size: gateway.size,
           has_live_insight: Boolean(latestInsight),
+          analysis_queue: analyzer.status(),
         });
       } else if (
         req.method === "GET" &&
