@@ -154,6 +154,12 @@ async function sendHtml(res, filename, appDir = "demo-web") {
   res.end(html);
 }
 
+async function sendDemoAsset(res, filename, contentType) {
+  const asset = await readFile(join(ROOT, "apps", "demo-web", filename));
+  res.writeHead(200, responseHeaders(contentType));
+  res.end(asset);
+}
+
 // ── Saved ESPN stats snapshots (scripts/pull-stats.js) ──────────────────────
 // Served from disk only — no network calls at request time.
 
@@ -671,6 +677,8 @@ export function createBloomServer({
         (url.pathname === "/capture" || url.pathname === "/capture.html")
       ) {
         await sendHtml(res, "capture.html");
+      } else if (req.method === "GET" && url.pathname === "/sunglasses.svg") {
+        await sendDemoAsset(res, "sunglasses.svg", "image/svg+xml");
       } else if (
         req.method === "GET" &&
         (url.pathname === "/phone" || url.pathname === "/phone.html")
