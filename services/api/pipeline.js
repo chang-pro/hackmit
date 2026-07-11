@@ -5,7 +5,7 @@ import { parseFrame } from "../vision/index.js";
 import { resolveEvent } from "../vision/resolver.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { estimate } from "../probability/index.js";
-import { mockAdapter } from "../market/mock-adapter.js";
+import { marketAdapter } from "../market/index.js";
 
 const MIN_STATE_CONFIDENCE = 0.8;
 const MAX_MARKET_AGE_MS = 30_000;
@@ -13,10 +13,10 @@ const MAX_MARKET_AGE_MS = 30_000;
 const reconciler = new Reconciler();
 
 // ── Extraction seam ─────────────────────────────────────────────────────────
-// Slice 2 (real OCR, in progress on a parallel branch) replaces the body of
-// this function only: given a live frame it should run scoreboard detection +
-// parsing on that frame's image instead of reading the fixture. Nothing
-// outside this function changes when it lands.
+// Slice 2 (real OCR) replaces the body of this function only: given a live
+// frame it should run scoreboard detection + parsing on that frame's image
+// instead of reading the fixture. Nothing outside this function changes when
+// it lands.
 // Until then, live frames flow through the gateway/selector (Slice 4) but the
 // parsed scoreboard still comes from the committed fixture, and the returned
 // payload marks extraction as "fixture_parse" so nobody mistakes it for OCR.
@@ -26,7 +26,9 @@ async function extractState(fixturePath, liveFrame) {
   return { frame: liveFrame, parsed, extraction: "fixture_parse" };
 }
 
-export async function runPipeline(fixturePath, adapter = mockAdapter, liveFrame = null) {
+// Default adapter comes from the Slice 5 registry (MARKET_PROVIDER env,
+// default "mock"); tests may inject any adapter directly.
+export async function runPipeline(fixturePath, adapter = marketAdapter, liveFrame = null) {
   const { frame, parsed, extraction } = await extractState(fixturePath, liveFrame);
   const event = resolveEvent(parsed);
   const { state, accepted, reason } = reconciler.observe(event, parsed, frame);
@@ -47,8 +49,9 @@ export async function runPipeline(fixturePath, adapter = mockAdapter, liveFrame 
   const teamId = state.away_team_id;
   const est = estimate(state, teamId);
 
-  const marketId = adapter.find_market(event.event_id, est.outcome);
-  const snapshot = adapter.get_market_snapshot(marketId);
+  // Awaits are no-ops for the sync mock; real adapters are async.
+  const marketId = await adapter.find_market(event.event_id, est.outcome);
+  const snapshot = await adapter.get_market_snapshot(marketId);
 
   const gapPts = Number(((est.probability - snapshot.display_probability) * 100).toFixed(1));
   const freshnessMs = Date.now() - Date.parse(snapshot.provider_timestamp);
