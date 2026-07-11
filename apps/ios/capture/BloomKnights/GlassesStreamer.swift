@@ -69,6 +69,7 @@ final class GlassesStreamer: ObservableObject {
     private var statusTimer: Timer?
     private var lastRestartAt = Date.distantPast
     private var pendingStart = false
+    private var hasActiveDevice = false
 
     private let decoder = FrameDecoder()
     let rtc = RTCPublisher()
@@ -81,11 +82,16 @@ final class GlassesStreamer: ObservableObject {
     }
 
     // Watch the active-device stream so START works even if the glasses were
-    // still waking up when it was pressed.
+    // still waking up when it was pressed. Guarded so a view rebuild can't spawn
+    // duplicate monitors (Codex).
+    private var monitoring = false
     func monitor() {
+        guard !monitoring else { return }
+        monitoring = true
         Task { [weak self] in
             guard let self else { return }
             for await dev in deviceSelector.activeDeviceStream() {
+                self.hasActiveDevice = (dev != nil)
                 if dev != nil && self.pendingStart { self.beginCapture() }
                 if dev == nil && self.stream != nil { self.status = "Glasses disconnected — put them on" }
             }
@@ -102,8 +108,13 @@ final class GlassesStreamer: ObservableObject {
             Task { [weak self] in try? await self?.wearables.startRegistration() }
             return
         }
-        // Kick off immediately; if no active device yet, monitor() starts it.
-        beginCapture()
+        if hasActiveDevice {
+            beginCapture()
+        } else {
+            // Glasses not active yet — monitor() calls beginCapture the moment
+            // an active device appears (pendingStart stays true).
+            status = "Put glasses on — waiting…"
+        }
     }
 
     func stop() {
@@ -123,6 +134,12 @@ final class GlassesStreamer: ObservableObject {
     private func beginCapture() {
         guard pendingStart, stream == nil else { return }
         pendingStart = false
+        // Prime the WebRTC connection to the viewer IMMEDIATELY, in parallel with
+        // the glasses permission/session/stream setup below. The video track
+        // exists from the start and simply begins carrying frames once the decoder
+        // runs — so signaling/ICE finishes while the camera is still coming up,
+        // shaving seconds off "time to first frame on the site".
+        Task { [weak self] in await self?.rtc.connect(baseURL: Self.backendBase) }
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -179,8 +196,7 @@ final class GlassesStreamer: ObservableObject {
                 let errTok = stream.errorPublisher.listen { _ in }   // transient; ignore
                 tokens.append(errTok)
 
-                decoder.setRunning(true)
-                Task { [weak self] in await self?.rtc.connect(baseURL: Self.backendBase) }
+                decoder.setRunning(true)   // rtc.connect already primed above
                 self.isLive = true
                 self.lastRestartAt = .distantPast
                 self.keepAlive.start()
