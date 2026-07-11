@@ -279,6 +279,17 @@ function setRemoteFeedUI(active) {
   setStatusPill("idle", "waiting for phone");
 }
 
+function showWebRtcBlocked(message) {
+  remoteFeedActive = false;
+  document.body.classList.remove("running", "remote-feed");
+  remotePreview.srcObject = null;
+  remotePreview.style.display = "none";
+  analyzeButton.hidden = true;
+  setStatusPill("error", "TURN required");
+  $("idleHint").textContent = message;
+  $("stats").textContent = "WebRTC blocked · TURN relay needed";
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, { cache: "no-store", ...options });
   const data = await response.json();
@@ -297,22 +308,29 @@ async function sendSignal(kind, payload) {
 
 async function getPeerConnection() {
   if (peerConnection) return peerConnection;
-  const config = await api("/api/webrtc/config");
-  peerConnection = new RTCPeerConnection({ iceServers: config.ice_servers });
-  peerConnection.onicecandidate = ({ candidate }) => {
+  const config = await api(`/api/webrtc/config?session_id=${encodeURIComponent(sessionId)}`);
+  const connection = new RTCPeerConnection({ iceServers: config.ice_servers });
+  peerConnection = connection;
+  connection.onicecandidate = ({ candidate }) => {
     if (candidate) sendSignal("ice", candidate.toJSON()).catch(() => {});
   };
-  peerConnection.ontrack = ({ streams }) => {
+  connection.ontrack = ({ streams }) => {
     remotePreview.srcObject = streams[0];
     remotePreview.style.display = "block";
     video.style.display = "none";
     remotePreview.play().catch(() => {});
     setRemoteFeedUI(true);
   };
-  peerConnection.onconnectionstatechange = () => {
-    if (["failed", "closed"].includes(peerConnection?.connectionState)) setRemoteFeedUI(false);
+  connection.onconnectionstatechange = () => {
+    if (peerConnection !== connection) return;
+    if (connection.connectionState === "failed") {
+      showWebRtcBlocked("This campus network blocked the direct video route. Add a TURN relay, then select New pairing and try again.");
+    } else if (connection.connectionState === "disconnected") {
+      setStatusPill("low_confidence", "reconnecting…");
+      $("stats").textContent = "WebRTC reconnecting";
+    }
   };
-  return peerConnection;
+  return connection;
 }
 
 async function flushIce() {
@@ -334,6 +352,8 @@ async function handleSignal(signal) {
     return;
   }
   if (signal.kind === "offer") {
+    setStatusPill("capturing", "negotiating WebRTC…");
+    $("stats").textContent = "Signal received · connecting";
     const connection = await getPeerConnection();
     await connection.setRemoteDescription(signal.payload);
     await flushIce();

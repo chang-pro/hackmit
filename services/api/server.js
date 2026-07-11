@@ -13,7 +13,7 @@
 //   POST /api/webrtc/join        — exchange a pairing code for a session id
 //   POST /api/webrtc/signal      — relay SDP/ICE signaling (never media)
 //   GET  /api/webrtc/poll        — poll pending SDP/ICE signaling messages
-//   GET  /api/webrtc/config      — browser-safe ICE server configuration
+//   GET  /api/webrtc/config      — session-bound browser-safe ICE configuration
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
@@ -51,6 +51,10 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 // to become a substitute media relay even if a client is modified.
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+
+function isIceServerList(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((server) => server && server.urls);
+}
 
 function readJsonBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -101,13 +105,44 @@ function configuredIceServers() {
   if (!process.env.WEBRTC_ICE_SERVERS_JSON) return DEFAULT_ICE_SERVERS;
   try {
     const configured = JSON.parse(process.env.WEBRTC_ICE_SERVERS_JSON);
-    if (Array.isArray(configured) && configured.every((server) => server && server.urls)) {
+    if (isIceServerList(configured)) {
       return configured;
     }
   } catch {
     // The public STUN default keeps the hackathon demo usable if an env value is malformed.
   }
   return DEFAULT_ICE_SERVERS;
+}
+
+function cloudflareTurnConfiguration() {
+  const keyId = process.env.CLOUDFLARE_TURN_KEY_ID?.trim();
+  const apiToken = process.env.CLOUDFLARE_TURN_API_TOKEN?.trim();
+  if (!keyId || !apiToken) return null;
+  const requestedTtl = Number(process.env.CLOUDFLARE_TURN_TTL_SECONDS ?? 900);
+  return {
+    keyId,
+    apiToken,
+    // Keep issued browser credentials short-lived and aligned with the ten-minute pairing TTL.
+    ttlSeconds: Number.isFinite(requestedTtl) ? Math.min(3_600, Math.max(600, requestedTtl)) : 900,
+  };
+}
+
+async function createCloudflareTurnIceServers(configuration) {
+  const response = await fetch(
+    `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(configuration.keyId)}/credentials/generate-ice-servers`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${configuration.apiToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ttl: configuration.ttlSeconds }),
+    }
+  );
+  if (!response.ok) throw new Error(`Cloudflare TURN credentials request failed (${response.status})`);
+  const body = await response.json();
+  if (!isIceServerList(body?.iceServers)) throw new Error("Cloudflare TURN returned an invalid ICE server list");
+  return body.iceServers;
 }
 
 async function sendHtml(res, filename, appDir = "demo-web") {
@@ -487,8 +522,24 @@ export function createBloomServer({
     sendJson(res, 200, { signals, expires_at: new Date(session.expires_at).toISOString() });
   }
 
-  function handleWebRtcConfig(res) {
-    sendJson(res, 200, { ice_servers: configuredIceServers() });
+  async function handleWebRtcConfig(res, url) {
+    pruneWebRtcSessions();
+    const session = webrtcSessions.get(url.searchParams.get("session_id"));
+    if (!session) {
+      sendJson(res, 404, { error: "WebRTC session is invalid or expired" });
+      return;
+    }
+    try {
+      if (!session.ice_servers) {
+        const turnConfiguration = cloudflareTurnConfiguration();
+        session.ice_servers = turnConfiguration
+          ? await createCloudflareTurnIceServers(turnConfiguration)
+          : configuredIceServers();
+      }
+      sendJson(res, 200, { ice_servers: session.ice_servers });
+    } catch (err) {
+      sendJson(res, 502, { error: `Unable to configure WebRTC relay: ${err.message}` });
+    }
   }
 
   function handleAnalysisStatus(res) {
@@ -573,7 +624,7 @@ export function createBloomServer({
       } else if (req.method === "GET" && url.pathname === "/api/webrtc/poll") {
         pollWebRtcSignals(res, url);
       } else if (req.method === "GET" && url.pathname === "/api/webrtc/config") {
-        handleWebRtcConfig(res);
+        await handleWebRtcConfig(res, url);
       } else if (req.method === "GET" && url.pathname === "/api/analysis/status") {
         handleAnalysisStatus(res);
       } else if (

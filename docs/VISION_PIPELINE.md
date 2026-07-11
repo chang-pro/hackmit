@@ -155,7 +155,7 @@ Other endpoints:
 - `POST /api/webrtc/session` — create a ten-minute desktop pairing session.
 - `POST /api/webrtc/join` — resolve a pairing code on the phone.
 - `POST /api/webrtc/signal`, `GET /api/webrtc/poll` — SDP/ICE signaling only.
-- `GET /api/webrtc/config` — configured STUN/TURN servers for browser peers.
+- `GET /api/webrtc/config?session_id=<id>` — session-bound STUN/TURN servers for browser peers.
 - `GET /api/analysis/status` — analysis-enabled state for the phone client.
 - `POST /api/analysis/start` — begin quota-limited model analysis.
 - `POST /api/analysis/stop` — stop model analysis while video keeps streaming.
@@ -164,7 +164,9 @@ Other endpoints:
 
 The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the Quick Tunnel. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
 
-The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. Supply browser-safe, time-limited STUN/TURN credentials through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. Do not put long-lived credentials in frontend source code.
+The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Cloudflare Realtime TURN: set `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN` on the server. For each ten-minute pairing session, the server exchanges that long-lived key for short-lived browser ICE credentials and returns them only to callers holding that session id. Do not put the TURN key or API token in frontend source code.
+
+An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. TURN relays encrypted WebRTC packets; it is separate from the Quick Tunnel, which continues to carry only pairing/signaling and gated analysis snapshots.
 
 ## Cerebras models
 
