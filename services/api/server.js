@@ -447,6 +447,25 @@ export function createBloomServer({
     });
   }
 
+  // One-button pairing for the glasses app: returns the newest session that
+  // is still waiting for a phone (no offer relayed yet), so the app can join
+  // without the user typing the code. The desktop /capture page still shows
+  // the code for the manual path.
+  function webRtcPairHint(res) {
+    pruneWebRtcSessions();
+    const open = [...webrtcSessions.values()]
+      .filter((session) => session.signals.viewer.length === 0)
+      .sort((a, b) => b.created_at - a.created_at)[0];
+    if (!open) {
+      sendJson(res, 404, { error: "no open pairing session — open /capture on the desktop first" });
+      return;
+    }
+    sendJson(res, 200, {
+      pair_code: open.pair_code,
+      expires_at: new Date(open.expires_at).toISOString(),
+    });
+  }
+
   async function joinWebRtcSession(req, res) {
     try {
       const body = await readJsonBody(req);
@@ -589,6 +608,8 @@ export function createBloomServer({
         await handleFrameSubmission(req, res);
       } else if (req.method === "POST" && url.pathname === "/api/webrtc/session") {
         createWebRtcSession(res);
+      } else if (req.method === "GET" && url.pathname === "/api/webrtc/pair-hint") {
+        webRtcPairHint(res);
       } else if (req.method === "POST" && url.pathname === "/api/webrtc/join") {
         await joinWebRtcSession(req, res);
       } else if (req.method === "POST" && url.pathname === "/api/webrtc/signal") {
