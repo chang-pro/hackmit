@@ -40,9 +40,15 @@ echo "Creating public HTTPS phone/glasses endpoint..."
 echo "Open the printed URL with /capture on the desktop, then copy its generated phone pairing link."
 echo "Continuous camera video is direct WebRTC between the paired browsers."
 echo "This public tunnel carries SDP/ICE signaling and user-gated analysis snapshots only."
-echo "The public page opens directly; there is no LocalTunnel password/interstitial page."
+echo "Cloudflare provides HTTPS page delivery and signaling only; it never proxies WebRTC media."
 echo
 
-# Tunnelmole gives us a direct public HTTPS endpoint without LocalTunnel's
-# anti-abuse form, which otherwise blocks a phone user before the pairing page.
-npx --yes tunnelmole "$PORT"
+if ! command -v cloudflared >/dev/null 2>&1; then
+  echo "cloudflared is required for the approved HTTPS signaling tunnel." >&2
+  exit 1
+fi
+
+# Quick Tunnel: no account, no DNS configuration, and no browser interstitial.
+# The server exposes only signaling plus user-gated sparse snapshots; the
+# phone's continuous WebRTC media path does not traverse Cloudflare.
+cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:${PORT}"
