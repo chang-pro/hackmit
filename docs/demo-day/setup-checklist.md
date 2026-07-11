@@ -21,7 +21,7 @@ Curl every moment you plan to click on stage. **A moment that doesn't return `"s
 - [ ] `curl http://localhost:3000/api/comparison?fixture=frame_000260` → ready, model 0.999, gap +40.9
 - [ ] Ending A gate: `curl "http://localhost:3000/api/comparison?sport=football&fixture=<sb51 id from the dashboard>"`
   - Returns 200 + ready → Ending A (Super Bowl LI flip) is GO.
-  - Returns 400 (`unknown fixture`) → **Ending A is OFF. Use Ending B.** As of this writing the server allowlists only the two NBA fixtures; SB LI needs the multi-sport wiring merged first. Do not "hope" — this exact click on stage shows an error card.
+  - Returns 400 (`unknown fixture`) → the checked-out server and fixture catalog are out of sync. Do not demo until `npm test` passes and `/api/demo/intelligence` lists all four packs.
 - [ ] Known 404s that are fine to ignore: `/api/sports` and `/data` (dashboard falls back to its built-in catalog; the analytics page is not routed).
 
 ## T-30 min · Browser and tabs

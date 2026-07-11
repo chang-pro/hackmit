@@ -30,11 +30,11 @@ Universal safety net: the dashboard's NBA demo moments run on committed fixtures
 **Recovery (10s):** click **Clip replay** mode → choose the local game clip file (you know the folder) → play. Same counters, same pipeline. If even that fumbles, skip Beat 3 entirely and return to the dashboard — the demo moments never needed a camera.
 **Prevent:** grant camera permission for localhost during T-20 testing; keep the clip file on the desktop.
 
-## 5. You click a sport tab that isn't wired (Soccer/UFC/Football/Golf)
+## 5. Vision recognizes the sport but not the exact event pack
 
-**Symptom:** big numbers turn to "—", status shows error / "No comparison available" — the server only allowlists the two NBA fixtures unless the multi-sport wiring was merged and curl-verified this morning.
-**Recovery (10s):** one click back to **NBA → Q4 2:14** (this always works). Line: "Those are our replay lanes — let me show you the live one." Then run Ending B.
-**Prevent:** the T-45 curl gate decides Ending A vs B *before* the demo. Muscle-memory rule: on stage you only click what you curled.
+**Symptom:** the evidence badge says `Sport template` instead of `Historical replay`.
+**Recovery (10s):** switch the source screen to the matching canonical clip. Line: "The sport is recognized, but we refuse to attach another game's facts. Let me use the event this evidence pack belongs to." Continue when the exact pack appears.
+**Prevent:** use the four clip identities in `runbook.md`, verify them with the pack catalog, and rehearse each event switch before the slot.
 
 ## 6. Speak button makes no sound
 

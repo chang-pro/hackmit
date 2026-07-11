@@ -88,6 +88,7 @@
   body.running .theater-shell { top: 1.5rem; right: calc(clamp(18rem, 25vw, 23rem) + 3rem); bottom: 1.5rem; left: 1.5rem; }
   body.running .theater-screen { overflow: hidden; border: 1px solid rgba(255,255,255,.82); border-radius: 1.45rem; background: #101624; box-shadow: 0 24px 60px rgba(40,54,94,.20), inset 0 1px 0 rgba(255,255,255,.20); }
   body.running #video, body.running #remotePreview { border-radius: inherit; }
+  body.running #remotePreview { object-fit: contain; }
   body.running .scrim { display: none; }
   body.running .ambient { opacity: .22; }
   body.running .reticle, body.running .dock { display: none; }
@@ -100,6 +101,9 @@
   .research-queries { display: grid; gap: .48rem; margin: 1rem 0 0; padding: 0; list-style: none; }
   .research-queries li { display: grid; grid-template-columns: .5rem 1fr; gap: .52rem; align-items: start; color: #48526f; font: .7rem/1.4 var(--mono); }
   .research-queries li::before { content: ""; width: .4rem; height: .4rem; margin-top: .28rem; border-radius: 50%; background: linear-gradient(135deg, #ff8fc4, #79c8ff); box-shadow: 0 0 0 3px rgba(148,173,255,.12); }
+  .research-queries li.ready::before { background: #26bd91; box-shadow: 0 0 0 3px rgba(38,189,145,.13); }
+  .evidence-copy { min-width: 0; }.evidence-source { display: block; color: #303a58; font-weight: 700; }.evidence-detail { display: block; margin-top: .12rem; color: #6d7692; font-size: .62rem; line-height: 1.35; }
+  .intel-badge { display: inline-flex; width: fit-content; margin-top: .65rem; padding: .28rem .46rem; border: 1px solid rgba(77,101,164,.16); border-radius: 999px; color: #56607c; background: rgba(255,255,255,.48); font: 600 .55rem var(--mono); letter-spacing: .06em; text-transform: uppercase; }
   .control-tile { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 1.05rem; }
   .control-tile .tile-title { margin-top: .28rem; font-size: .92rem; }.control-tile .tile-note { max-width: 18ch; font-size: .71rem; }
   .control-tile .analyze { flex: none; padding: .7rem .9rem; }
@@ -109,15 +113,18 @@
   body.running .readout .ro-game { font-size: .62rem; }
   body.running .readout .ro-prob { font-size: clamp(2.6rem, 4.2vw, 3.35rem); }
   body.running .readout .ro-say { font-size: .78rem; }
+  .ro-context { display: grid; gap: .32rem; margin-top: .72rem; padding-top: .68rem; border-top: 1px solid rgba(67,78,116,.10); color: #626c88; font: .62rem/1.4 var(--mono); }
+  .ro-context strong { color: #303a58; font-weight: 700; }.ro-disclosure { margin-top: .55rem; color: #7a6172; font: .54rem/1.35 var(--mono); }
   @media (max-width: 900px) {
-    body.running .theater-shell { top: 1rem; right: 1rem; bottom: 43vh; left: 1rem; }
-    body.running .analysis-tiles { top: auto; right: 1rem; bottom: 1rem; left: 1rem; width: auto; grid-template-columns: 1.2fr 1fr; grid-template-rows: minmax(0, 1fr); gap: .7rem; }
-    body.running .readout { display: none !important; }
+    body.running .theater-shell { top: 1rem; right: 1rem; bottom: 45vh; left: 1rem; }
+    body.running .analysis-tiles { top: auto; right: 1rem; bottom: 1rem; left: 1rem; width: auto; grid-template-columns: 1.15fr .82fr 1fr; grid-template-rows: minmax(0, 1fr); gap: .7rem; }
+    body.running.has-read .readout { display: block !important; }
     .research-tile { padding: .9rem; }.control-tile { padding: .9rem; }
   }
-  @media (max-width: 560px) {
-    body.running .theater-shell { bottom: 48vh; }
-    body.running .analysis-tiles { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  @media (max-width: 720px) {
+    body.running .theater-shell { bottom: 54vh; }
+    body.running .analysis-tiles { grid-template-columns: 1.2fr .8fr; grid-template-rows: minmax(0, 1fr) auto; }
+    body.running .readout { grid-column: 1 / -1; }
     .research-queries { grid-template-columns: 1fr 1fr; }.research-queries li { font-size: .62rem; }
   }
   @media (max-width: 640px) { .dock { bottom: max(.85rem, env(safe-area-inset-bottom)); }.connect { min-width: 9.75rem; } }
@@ -152,9 +159,10 @@
 
     <aside class="analysis-tiles" aria-label="Analysis workspace">
       <section class="analysis-tile research-tile">
-        <div class="tile-eyebrow">Research plan</div>
+        <div class="tile-eyebrow" id="detectedSport">Evidence retrieval</div>
         <div class="tile-title" id="researchStatus">Awaiting visible event state</div>
-        <p class="tile-note">These are queued investigation paths—not completed searches.</p>
+        <p class="tile-note" id="researchNote">Cerebras will identify the broadcast, then attach the matching precollected intelligence pack.</p>
+        <div class="intel-badge" id="intelBadge" hidden></div>
         <ul class="research-queries" id="researchQueries"></ul>
       </section>
 
@@ -171,9 +179,14 @@
         <div class="tile-eyebrow">Model probability</div>
         <div class="ro-game" id="roGame">—</div>
         <div class="ro-prob" id="roModel">—</div>
-        <div class="ro-cap">Model win probability</div>
+        <div class="ro-cap" id="roOutcome">Model win probability</div>
         <div class="ro-cmp"><span class="mk" id="roMarket">MKT —</span><span class="gp" id="roGap">—</span></div>
         <div class="ro-say" id="roSay">Reading the scoreboard…</div>
+        <div class="ro-context" id="roContext" hidden>
+          <span><strong>Changed</strong> <span id="roChanged"></span></span>
+          <span><strong>Next trigger</strong> <span id="roTrigger"></span></span>
+        </div>
+        <div class="ro-disclosure" id="roDisclosure" hidden></div>
         <button class="ro-speak" id="speak">🔊 Speak</button>
       </section>
     </aside>
@@ -327,7 +340,7 @@ function renderVisualDetections() {
   const bounds = screen.getBoundingClientRect();
   const { width: sourceWidth, height: sourceHeight } = activeVideoDimensions();
   if (bounds.width < 1 || bounds.height < 1) return;
-  const scale = Math.max(bounds.width / sourceWidth, bounds.height / sourceHeight);
+  const scale = Math.min(bounds.width / sourceWidth, bounds.height / sourceHeight);
   const paintedWidth = sourceWidth * scale;
   const paintedHeight = sourceHeight * scale;
   const offsetX = (bounds.width - paintedWidth) / 2;
@@ -377,31 +390,70 @@ function clearVisualDetections() {
   renderVisualDetections();
 }
 
-function renderResearchPlan(insight = null) {
+function renderResearchPlan(insight = null, queue = null) {
   const observation = insight?.observation;
   const analysis = insight?.analysis;
+  const intelligence = insight?.demo_intelligence;
   const status = $("researchStatus");
+  const note = $("researchNote");
+  const badge = $("intelBadge");
   const list = $("researchQueries");
-  const queries = observation
-    ? [
-        `Find current prediction market · ${observation.event_name || "recognized event"}`,
-        `Verify live score · ${[observation.score_display, observation.phase, observation.clock].filter(Boolean).join(" ") || "state pending"}`,
-        `Check event context · ${observation.competition || observation.sport || "sport pending"}`,
-        ...(analysis?.primary_market_question ? [`Compare model question · ${analysis.primary_market_question}`] : []),
-      ]
-    : [
-        "Identify the broadcast event and participants",
-        "Locate the matching prediction-market contract",
-        "Check official score, clock, and freshness",
-      ];
-  status.textContent = observation
-    ? "Research plan from visible state"
-    : remoteAnalysisEnabled
-      ? "Collecting visual context"
+  let items;
+  if (intelligence) {
+    const confidence = Math.round(intelligence.match_confidence * 100);
+    $("detectedSport").textContent = `${(SPORT_LABEL[observation.sport] || observation.sport).toUpperCase()} DETECTED · ${Math.round(observation.confidence * 100)}%`;
+    status.textContent = `${intelligence.pack_label} · ${intelligence.moment_label}`;
+    note.textContent = intelligence.mode === "precollected_event_replay"
+      ? "Detected event matched. Cached evidence, replay market, and probability checkpoint are loaded."
+      : "Sport matched to an illustrative template; event-specific values remain model-led.";
+    badge.hidden = false;
+    badge.textContent = `${intelligence.mode === "precollected_event_replay" ? "Historical replay" : "Sport template"} · match ${confidence}%`;
+    items = intelligence.evidence.map((evidence) => ({
+      title: `${evidence.provider} · ${evidence.label}`,
+      detail: evidence.detail,
+      ready: evidence.status === "ready",
+    }));
+  } else if (observation) {
+    $("detectedSport").textContent = `${(SPORT_LABEL[observation.sport] || observation.sport).toUpperCase()} DETECTED · ${Math.round(observation.confidence * 100)}%`;
+    status.textContent = observation.event_name || "Event recognized";
+    note.textContent = "No exact historical pack matched; the live Cerebras analysis remains authoritative.";
+    badge.hidden = true;
+    items = [
+      { title: "Broadcast event identified", detail: observation.event_name || observation.event_identity, ready: true },
+      { title: "Visible state verified", detail: [observation.score_display, observation.phase, observation.clock].filter(Boolean).join(" · "), ready: true },
+      { title: "Prediction question generated", detail: analysis?.primary_market_question || "Waiting for analytics", ready: Boolean(analysis) },
+    ];
+  } else {
+    const pending = queue?.pending_frames ?? 0;
+    const needed = queue?.frames_per_request ?? 5;
+    $("detectedSport").textContent = remoteAnalysisEnabled ? "CEREBRAS ACQUISITION" : "EVIDENCE RETRIEVAL";
+    status.textContent = remoteAnalysisEnabled
+      ? queue?.analysis_in_flight ? "Cerebras is identifying the event…" : `Capturing temporal evidence · ${pending}/${needed}`
       : "Awaiting visible event state";
-  list.replaceChildren(...queries.map((query) => {
+    note.textContent = remoteAnalysisEnabled
+      ? "A fast first-frame burst builds the visual window; later updates respect the five-request-per-minute limit."
+      : "Press Analyze when the broadcast is framed and ready.";
+    badge.hidden = true;
+    items = [
+      { title: "Direct camera stream", detail: remoteFeedActive ? "Connected and ready" : "Waiting for camera", ready: remoteFeedActive },
+      { title: `Temporal frame window · ${pending}/${needed}`, detail: "Multiple frames reduce scoreboard and replay-graphic errors", ready: pending >= needed },
+      { title: "Automatic event match", detail: "Sport, competition, participants, score, phase, and clock", ready: false },
+      { title: "Evidence + market pack", detail: "Loaded only after a supported event is identified", ready: false },
+    ];
+  }
+  list.replaceChildren(...items.map((entry) => {
     const item = document.createElement("li");
-    item.textContent = query;
+    if (entry.ready) item.classList.add("ready");
+    const copy = document.createElement("span");
+    copy.className = "evidence-copy";
+    const title = document.createElement("span");
+    title.className = "evidence-source";
+    title.textContent = entry.title;
+    const detail = document.createElement("span");
+    detail.className = "evidence-detail";
+    detail.textContent = entry.detail || "Pending";
+    copy.append(title, detail);
+    item.append(copy);
     return item;
   }));
 }
@@ -647,25 +699,42 @@ function renderInsight(insight) {
   if (!insight?.observation) return;
   const observation = insight.observation;
   const analysis = insight.analysis;
+  const intelligence = insight.demo_intelligence;
+  const comparison = insight.comparison;
   const presentation = insight.presentation || {};
   renderResearchPlan(insight);
   document.body.classList.add("has-read");
   if (observation.sport) {
     document.body.dataset.detectedSport = SPORT_LABEL[observation.sport] || observation.sport.toUpperCase();
   }
-  $("roGame").textContent = [observation.event_name, observation.score_display, observation.phase, observation.clock].filter(Boolean).join(" · ");
-  $("roSay").textContent = presentation.short_text || "Reading the event…";
+  $("roGame").textContent = [SPORT_LABEL[observation.sport] || observation.sport, observation.event_name, observation.score_display, observation.phase, observation.clock].filter(Boolean).join(" · ");
+  $("roSay").textContent = analysis?.event_summary || presentation.short_text || "Reading the event…";
   lastSpoken = presentation.spoken_text || presentation.short_text || "";
   if (!analysis) {
     document.body.classList.add("gated");
+    document.body.classList.remove("ready");
     return;
   }
   document.body.classList.remove("gated");
   document.body.classList.add("ready");
   tweenNum($("roModel"), analysis.primary_probability * 100, (value) => value.toFixed(0) + "%");
-  $("roMarket").textContent = analysis.primary_outcome || "MODEL";
-  $("roGap").textContent = `CONF ${Math.round((analysis.confidence ?? observation.confidence ?? 0) * 100)}%`;
-  $("roGap").className = "gp";
+  $("roOutcome").textContent = analysis.primary_outcome || "Model win probability";
+  const marketProbability = insight.market?.probability ?? analysis.market_probability;
+  const gap = comparison?.gap_percentage_points ?? analysis.gap_percentage_points;
+  $("roMarket").textContent = Number.isFinite(marketProbability)
+    ? `MARKET ${Math.round(marketProbability * 100)}%`
+    : `CONF ${Math.round((analysis.confidence ?? observation.confidence ?? 0) * 100)}%`;
+  $("roGap").textContent = Number.isFinite(gap)
+    ? `${gap > 0 ? "+" : ""}${Number(gap).toFixed(1)} pts${insight.market?.is_mock ? " · MOCK" : ""}`
+    : analysis.primary_market_question || "MODEL";
+  $("roGap").className = `gp${Number.isFinite(gap) && gap < 0 ? " neg" : ""}`;
+  const changed = analysis.what_changed || intelligence?.what_changed;
+  const trigger = analysis.next_probability_trigger || intelligence?.next_probability_trigger;
+  $("roContext").hidden = !(changed || trigger);
+  $("roChanged").textContent = changed || "No prior checkpoint";
+  $("roTrigger").textContent = trigger || "Next visible state change";
+  $("roDisclosure").hidden = !intelligence?.disclosure;
+  $("roDisclosure").textContent = intelligence?.disclosure || "";
 }
 
 async function refreshAnalysis() {
@@ -674,7 +743,12 @@ async function refreshAnalysis() {
     remoteAnalysisEnabled = status.analysis_enabled === true;
     if (remoteFeedActive) updateAnalyzeButton();
     if (!remoteAnalysisEnabled) return;
-    renderInsight(await api("/api/latest"));
+    if (!document.body.classList.contains("has-read")) renderResearchPlan(null, status.queue);
+    try {
+      renderInsight(await api("/api/latest"));
+    } catch {
+      // The first result does not exist until Cerebras has a complete frame window.
+    }
   } catch {
     // Direct WebRTC video stays up through temporary signaling failures.
   }

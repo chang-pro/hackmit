@@ -1,0 +1,88 @@
+{
+  "id": "nba-finals-2016-game-7",
+  "sport": "basketball",
+  "event_label": "2016 NBA Finals Game 7 · Cavaliers vs Warriors",
+  "competition_tokens": ["nba finals", "finals game 7"],
+  "event_tokens": ["cavaliers", "warriors", "cleveland", "golden state", "cle", "gsw"],
+  "participant_groups": [["cavaliers", "cleveland", "cle", "cavs"], ["warriors", "golden state", "gsw"]],
+  "focus_aliases": ["cavaliers", "cleveland", "cle", "cavs"],
+  "focus_label": "Cleveland",
+  "disclosure": "Historical evidence pack with illustrative replay-market prices; this is a funding-demo estimate, not a live quote or trading advice.",
+  "moments": [
+    {
+      "id": "halftime-deficit",
+      "label": "Halftime · Golden State 49–42 Cleveland",
+      "phase_tokens": ["halftime", "half", "q2", "second quarter"],
+      "scores": [[42, 49], [49, 42]],
+      "clock_seconds": 0,
+      "clock_tolerance_seconds": 90,
+      "model_probability": 0.31,
+      "market_probability": 0.3,
+      "confidence": 0.91,
+      "market_question": "Will {focus} win NBA Finals Game 7?",
+      "outcome": "{focus} wins",
+      "summary": "{focus} trails by seven at halftime on the road, leaving a credible but clearly underdog comeback path.",
+      "what_changed": "Golden State carried a multi-possession lead into halftime, increasing the value of every second-half stop.",
+      "next_trigger": "A Cleveland run that cuts the margin to one possession would move the estimate back toward even.",
+      "key_factors": ["Seven-point halftime deficit", "Twenty-four minutes remain", "Game 7 road environment"],
+      "alternate_markets": [
+        { "question": "Will Golden State lead after three quarters?", "outcome": "Golden State leads after Q3", "probability": 0.69, "confidence": 0.78 }
+      ],
+      "evidence": [
+        { "provider": "NBA gamebook cache", "label": "Official box score", "query": "2016 Finals Game 7 halftime score", "detail": "Cached quarter totals align the visible 49–42 halftime state." },
+        { "provider": "Bloom NBA model", "label": "Score-clock baseline", "query": "Seven-point halftime deficit in Game 7", "detail": "The deficit is material but far from terminal with two quarters left." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Cleveland in-play replay price at halftime", "detail": "Illustrative midpoint: 30%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "late-tie",
+      "label": "Q4 4:39 · 89–89",
+      "phase_tokens": ["q4", "fourth quarter", "4th"],
+      "scores": [[89, 89]],
+      "clock_seconds": 279,
+      "clock_tolerance_seconds": 210,
+      "model_probability": 0.5,
+      "market_probability": 0.49,
+      "confidence": 0.95,
+      "market_question": "Will {focus} win NBA Finals Game 7?",
+      "outcome": "{focus} wins",
+      "summary": "Game 7 is tied at 89 late in the fourth; one high-leverage possession can swing the championship.",
+      "what_changed": "Cleveland erased the halftime deficit and forced a true late-game coin-flip state.",
+      "next_trigger": "The next made three, turnover, or transition stop will produce the largest remaining swing.",
+      "key_factors": ["Tie game", "Under five minutes", "Possession-level variance dominates"],
+      "alternate_markets": [
+        { "question": "Will the game be decided by five points or fewer?", "outcome": "Winning margin 1–5", "probability": 0.74, "confidence": 0.84 }
+      ],
+      "evidence": [
+        { "provider": "NBA gamebook cache", "label": "Official play-by-play", "query": "2016 Finals Game 7 89–89 fourth quarter", "detail": "Cached play sequence confirms the extended late tie." },
+        { "provider": "Bloom NBA model", "label": "Late tie model", "query": "Tie game under five minutes", "detail": "Pregame strength matters less as the remaining possession count collapses." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Cleveland replay price during 89–89 tie", "detail": "Illustrative midpoint: 49%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "irving-three",
+      "label": "Q4 0:53 · Cleveland 92–89 Golden State",
+      "phase_tokens": ["q4", "fourth quarter", "4th"],
+      "scores": [[92, 89], [89, 92]],
+      "clock_seconds": 53,
+      "clock_tolerance_seconds": 90,
+      "model_probability": 0.78,
+      "market_probability": 0.74,
+      "confidence": 0.94,
+      "market_question": "Will {focus} win NBA Finals Game 7?",
+      "outcome": "{focus} wins",
+      "summary": "{focus} leads by three with 53 seconds left after the go-ahead shot, but Golden State retains a full response possession.",
+      "what_changed": "A single made three broke the prolonged tie and moved Cleveland from near-even to a strong favorite.",
+      "next_trigger": "A Golden State score, Cleveland stop, or successful free throws will decide the final branch.",
+      "key_factors": ["Three-point lead", "53 seconds remaining", "Golden State still has a possession"],
+      "alternate_markets": [
+        { "question": "Will Golden State tie or take the lead next?", "outcome": "Golden State ties or leads", "probability": 0.34, "confidence": 0.76 }
+      ],
+      "evidence": [
+        { "provider": "NBA gamebook cache", "label": "Official play-by-play", "query": "Kyrie Irving three Game 7 53 seconds", "detail": "Cached play sequence aligns the visible three-point Cleveland lead." },
+        { "provider": "Bloom NBA model", "label": "One-possession closeout model", "query": "Three-point lead with 53 seconds", "detail": "Cleveland is favored but the game remains one made shot from a tie." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Cleveland replay price after go-ahead three", "detail": "Illustrative midpoint: 74%; explicitly marked mock/replay." }
+      ]
+    }
+  ]
+}

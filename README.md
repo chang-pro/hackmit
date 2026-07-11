@@ -44,6 +44,12 @@ Pages served by `npm start` (see `services/api/server.js`):
 
 API routes: `GET /api/webrtc/active`, `POST /api/webrtc/active`, `POST /api/webrtc/signal`, `POST /api/analysis/start`, `POST /api/frames`, `GET /api/comparison`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
 
+### Four-stream funding demo
+
+The live camera path now bridges automatic Cerebras detection to four deterministic, precollected intelligence timelines: the 2022 World Cup Final, 2016 NBA Finals Game 7, Super Bowl LI, and UFC 229. The matching layer uses detected sport, competition, participants, score, phase, and clock—never a client-side picker. It returns cached evidence, a deterministic model estimate, an explicitly mocked replay-market estimate, the model-market gap, what changed, and the next probability trigger. GPT OSS/GLM enriches the explanation but does not control the committed demo probabilities.
+
+The pack catalog is available at `GET /api/demo/intelligence`; source data lives in `packages/fixtures/demo-intelligence/`. If the teammate-provided clips use different events, update the corresponding aliases and checkpoints before the demo rather than attaching mismatched historical facts. The complete stage procedure is in [`docs/demo-day/runbook.md`](docs/demo-day/runbook.md).
+
 The iOS companion app lives at `apps/ios/` — see its README for build and glasses-streaming instructions. The rendered 60-second demo video is at `apps/demo-video/out/`.
 
 Full documentation index: [docs/README.md](docs/README.md).

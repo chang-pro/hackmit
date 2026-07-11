@@ -1,5 +1,9 @@
 import { cerebrasBackend } from "../vision/backends/cerebras.js";
 import { analyzeUniversalEvent } from "../analytics/cerebras.js";
+import {
+  analysisFromDemoIntelligence,
+  selectDemoIntelligence,
+} from "../demo/intelligence.js";
 
 const DEFAULT_INTERVAL_MS = 12_000;
 const DEFAULT_BATCH_SIZE = 5;
@@ -177,22 +181,27 @@ export class LiveEventAnalyzer {
     const observation = await this.visionBackend.extractEventBatch(frames);
     const previousObservation = this.latestInsight?.observation ?? null;
     const eventSwitch = detectEventSwitch(previousObservation, observation);
-    let analysis = null;
+    const demoIntelligence = selectDemoIntelligence(observation, {
+      previous: eventSwitch.detected ? null : this.latestInsight?.demo_intelligence ?? null,
+    });
+    let modelAnalysis = null;
     let analyticsError = null;
     try {
-      analysis = await this.analyze({
+      modelAnalysis = await this.analyze({
         observation,
         previous_observation: eventSwitch.detected ? null : previousObservation,
         previous_analysis: eventSwitch.detected ? null : this.latestInsight?.analysis ?? null,
         event_switch: eventSwitch,
+        precollected_intelligence: demoIntelligence,
         frame_count: frames.length,
         captured_from: frames[0].captured_at,
         captured_to: frames.at(-1).captured_at,
       });
-      if (analysis) this.analyticsCalls.push(callStartedAt);
+      if (modelAnalysis) this.analyticsCalls.push(callStartedAt);
     } catch (err) {
       analyticsError = err.message;
     }
+    const analysis = analysisFromDemoIntelligence(demoIntelligence, modelAnalysis);
 
     const eventLabel = observation.event_name ||
       `${observation.participant_a} vs ${observation.participant_b}`;
@@ -220,6 +229,29 @@ export class LiveEventAnalyzer {
       },
       observation,
       event_switch: eventSwitch,
+      demo_intelligence: demoIntelligence,
+      market: demoIntelligence?.mode === "precollected_event_replay"
+        ? {
+            provider: demoIntelligence.market.provider,
+            probability: demoIntelligence.market.market_probability,
+            is_mock: demoIntelligence.market.is_mock,
+            question: demoIntelligence.market.question,
+            outcome: demoIntelligence.market.outcome,
+          }
+        : null,
+      comparison: demoIntelligence?.mode === "precollected_event_replay"
+        ? {
+            model_probability: demoIntelligence.market.model_probability,
+            market_probability: demoIntelligence.market.market_probability,
+            gap_percentage_points: demoIntelligence.market.gap_percentage_points,
+            direction: demoIntelligence.market.gap_percentage_points > 0
+              ? "model_higher"
+              : demoIntelligence.market.gap_percentage_points < 0
+                ? "model_lower"
+                : "aligned",
+            confidence: demoIntelligence.confidence,
+          }
+        : null,
       analysis,
       diagnostics: { analytics_error: analyticsError },
       presentation: {

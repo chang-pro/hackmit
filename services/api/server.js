@@ -17,7 +17,8 @@
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
-//   GET  /api/latest            — alias of /api/comparison
+//   GET  /api/latest            — latest live insight only (never fixture fallback)
+//   GET  /api/demo/intelligence — precollected four-event demo pack catalog
 //   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
@@ -39,6 +40,7 @@ import { CEREBRAS_ANALYTICS_MODEL } from "../analytics/cerebras.js";
 import { CEREBRAS_VISION_MODEL } from "../vision/backends/cerebras.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { getSport, listSports, DEFAULT_SPORT_ID } from "../sports/index.js";
+import { listDemoIntelligencePacks } from "../demo/intelligence.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
@@ -51,6 +53,19 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 // to become a substitute media relay even if a client is modified.
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+
+function registrySportId(value) {
+  return {
+    basketball: "nba",
+    nba: "nba",
+    soccer: "soccer",
+    american_football: "football",
+    football: "football",
+    mma: "ufc",
+    ufc: "ufc",
+    golf: "golf",
+  }[String(value ?? "").trim().toLowerCase()] ?? "unknown";
+}
 
 function isIceServerList(value) {
   return Array.isArray(value) && value.length > 0 && value.every((server) => server && server.urls);
@@ -340,7 +355,7 @@ export function createBloomServer({
       if (result.analysis_status === "analyzed") {
         latestInsight = {
           ...result.insight,
-          sport: result.insight.observation?.sport ?? requestedSport?.id ?? "unknown",
+          sport: registrySportId(result.insight.observation?.sport ?? requestedSport?.id),
         };
         latestInsightAt = Date.now();
       }
@@ -420,6 +435,14 @@ export function createBloomServer({
         sportId: sport.id,
       })
     );
+  }
+
+  function handleLatestInsight(res) {
+    if (!latestInsight) {
+      sendJson(res, 404, { error: "no analyzed live camera insight yet" });
+      return;
+    }
+    sendJson(res, 200, latestInsight);
   }
 
   function handleLatestFrame(res) {
@@ -638,6 +661,7 @@ export function createBloomServer({
           analysis_enabled: analysisEnabled,
           webrtc_sessions: webrtcSessions.size,
           analysis_queue: analyzer.status(),
+          demo_intelligence_packs: listDemoIntelligencePacks().length,
         });
       } else if (req.method === "GET" && url.pathname === "/api/live-frame") {
         handleLatestFrame(res);
@@ -649,11 +673,12 @@ export function createBloomServer({
         await handleWebRtcConfig(res, url);
       } else if (req.method === "GET" && url.pathname === "/api/analysis/status") {
         handleAnalysisStatus(res);
-      } else if (
-        req.method === "GET" &&
-        (url.pathname === "/api/comparison" || url.pathname === "/api/latest")
-      ) {
+      } else if (req.method === "GET" && url.pathname === "/api/comparison") {
         await handleComparison(res, url);
+      } else if (req.method === "GET" && url.pathname === "/api/latest") {
+        handleLatestInsight(res);
+      } else if (req.method === "GET" && url.pathname === "/api/demo/intelligence") {
+        sendJson(res, 200, { packs: listDemoIntelligencePacks() });
       } else if (req.method === "GET" && url.pathname === "/api/sports") {
         handleSports(res);
       } else if (req.method === "GET" && url.pathname === "/api/stats/raw") {

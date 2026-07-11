@@ -1,0 +1,88 @@
+{
+  "id": "super-bowl-li",
+  "sport": "american_football",
+  "event_label": "Super Bowl LI · Patriots vs Falcons",
+  "competition_tokens": ["super bowl", "nfl championship"],
+  "event_tokens": ["patriots", "falcons", "new england", "atlanta", "ne", "atl"],
+  "participant_groups": [["patriots", "new england", "ne"], ["falcons", "atlanta", "atl"]],
+  "focus_aliases": ["patriots", "new england", "ne"],
+  "focus_label": "New England",
+  "disclosure": "Historical evidence pack with illustrative replay-market prices; this is a funding-demo estimate, not a live quote or trading advice.",
+  "moments": [
+    {
+      "id": "twenty-eight-three",
+      "label": "Q3 8:31 · Atlanta 28–3 New England",
+      "phase_tokens": ["q3", "third quarter", "3rd"],
+      "scores": [[3, 28], [28, 3]],
+      "clock_seconds": 511,
+      "clock_tolerance_seconds": 360,
+      "model_probability": 0.03,
+      "market_probability": 0.04,
+      "confidence": 0.96,
+      "market_question": "Will {focus} win Super Bowl LI?",
+      "outcome": "{focus} wins",
+      "summary": "Down 28–3 in the third quarter, {focus} has only a narrow comeback path in the preloaded NFL state model.",
+      "what_changed": "Atlanta's 25-point lead pushed the game into the extreme tail of the comeback distribution.",
+      "next_trigger": "A quick New England touchdown and defensive stop are required before the estimate moves materially.",
+      "key_factors": ["25-point deficit", "Third-quarter clock", "Multiple possessions required"],
+      "alternate_markets": [
+        { "question": "Will Atlanta win in regulation?", "outcome": "Atlanta wins", "probability": 0.96, "confidence": 0.95 }
+      ],
+      "evidence": [
+        { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI 28–3 third quarter", "detail": "Cached play-by-play aligns the visible score and quarter." },
+        { "provider": "Bloom NFL model", "label": "Possession deficit model", "query": "25-point deficit with 23:31 remaining", "detail": "The required number of scoring drives makes the comeback a tail event." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Patriots in-play replay price at 28–3", "detail": "Illustrative midpoint: 4%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "one-score-game",
+      "label": "Q4 5:56 · Atlanta 28–20 New England",
+      "phase_tokens": ["q4", "fourth quarter", "4th"],
+      "scores": [[20, 28], [28, 20]],
+      "clock_seconds": 356,
+      "clock_tolerance_seconds": 240,
+      "model_probability": 0.27,
+      "market_probability": 0.24,
+      "confidence": 0.93,
+      "market_question": "Will {focus} win Super Bowl LI?",
+      "outcome": "{focus} wins",
+      "summary": "The comeback has reached one-score range, but New England still needs another stop, touchdown, and conversion.",
+      "what_changed": "A touchdown plus two-point conversion converted the game from an extreme tail into a plausible late comeback.",
+      "next_trigger": "An Atlanta first down would burn critical clock; a quick stop would sharply lift New England.",
+      "key_factors": ["Eight-point margin", "Under six minutes", "New England still needs possession back"],
+      "alternate_markets": [
+        { "question": "Will the game reach overtime?", "outcome": "Overtime", "probability": 0.22, "confidence": 0.76 }
+      ],
+      "evidence": [
+        { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI 28–20 5:56", "detail": "Cached play-by-play confirms the touchdown and conversion." },
+        { "provider": "Bloom NFL model", "label": "Late-game drive model", "query": "Eight-point deficit with one expected possession", "detail": "Comeback probability rises but remains below the leader." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–20", "detail": "Illustrative midpoint: 24%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "game-tied",
+      "label": "Q4 0:57 · 28–28",
+      "phase_tokens": ["q4", "fourth quarter", "4th"],
+      "scores": [[28, 28]],
+      "clock_seconds": 57,
+      "clock_tolerance_seconds": 120,
+      "model_probability": 0.54,
+      "market_probability": 0.55,
+      "confidence": 0.95,
+      "market_question": "Will {focus} win Super Bowl LI?",
+      "outcome": "{focus} wins",
+      "summary": "The game is tied with 57 seconds left; the historic 25-point deficit has been fully erased.",
+      "what_changed": "The tying touchdown and conversion reset the outcome near a coin flip, with a slight situational edge to New England.",
+      "next_trigger": "A regulation scoring drive, turnover, or overtime coin toss will create the next major move.",
+      "key_factors": ["Tie game", "57 seconds remaining", "Overtime is now plausible"],
+      "alternate_markets": [
+        { "question": "Will the game reach overtime?", "outcome": "Overtime", "probability": 0.68, "confidence": 0.85 }
+      ],
+      "evidence": [
+        { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI tie 28–28", "detail": "Cached play-by-play confirms the late tying conversion." },
+        { "provider": "Bloom NFL model", "label": "Tie-state recalculation", "query": "Tie game with 57 seconds remaining", "detail": "The estimate resets near even instead of carrying the prior 28–3 state." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–28", "detail": "Illustrative midpoint: 55%; explicitly marked mock/replay." }
+      ]
+    }
+  ]
+}

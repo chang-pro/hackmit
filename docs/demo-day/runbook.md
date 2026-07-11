@@ -1,108 +1,130 @@
-# Demo-day runbook — 3-minute live demo
+# Demo-day runbook — four-stream funding demo
 
-The one-line pitch you are proving on stage: **look at a game through Meta glasses, and BloomKnights tells you the win probability and how it compares to the prediction market — without touching anything.**
+The one-line claim this demo proves:
 
-## Video or live? Verdict: go straight to live.
+> Look at a game through Meta glasses. BloomKnights identifies it, retrieves the matching event intelligence, and shows the model probability beside the prediction-market probability without a search or sport picker.
 
-Do NOT cold-open with the 60-second hype video (`apps/demo-video/out/bloomknights-demo.mp4`). It would eat a third of your 3 minutes, and judges reward a working thing over a rendered thing. Instead:
+## Canonical stage setup
 
-- **Before your slot:** play the video on loop on the demo screen while judges walk up. It sets the vibe for free.
-- **During the slot:** 100% live product.
-- **If the live demo dies completely** (it shouldn't — see `failure-modes.md`): the video becomes your emergency ending, not your opening.
+Run the named tunnel connector:
 
-## What is proven vs. what needs wiring (read this first)
+```bash
+npm run phone:tunnel
+```
 
-Verified on this working tree (server run, endpoints curled, 68/68 tests pass):
+Open these stable pages:
 
-- WORKS TODAY: dashboard `/`, capture page `/capture`, both NBA moments (Q4 2:14 and Q4 0:30), Speak audio, mock-market banner, live-frame ingestion counters on `/capture`.
-- NOT WIRED YET: the other four sport tabs (Soccer, UFC, Football, Golf) render on the dashboard but their moments return HTTP 400 — the server only allowlists the two NBA fixtures, `/api/sports` and `/data` are 404, and the dashboard's fixture ids (`wc22_final_60`) don't match the fixture files on disk (`wc22_final_60min`). Soccer and Super Bowl LI fixture files exist; UFC and golf fixtures do not exist at all.
+- Viewer: `https://capture.saicharanramineni.com/capture`
+- Phone fallback: `https://capture.saicharanramineni.com/phone`
 
-So this runbook has **two endings**. Ending A (Super Bowl LI flip) is the goal — it only goes in the show if it passes the curl gate in `setup-checklist.md`. Ending B (NBA flip) is fully proven today and is scripted below. Never click a moment on stage that you did not curl that morning.
+Use current Chrome or Edge for the viewer so YOLO uses WebGPU. The live-vision tile must eventually read `YOLO11s WebGPU`; Safari intentionally falls back to WASM.
 
-## Pre-set stage state
+Prepare the four teammate clips in this order:
 
-- Tab 1: `http://localhost:3000/` — NBA tab, **Q4 2:14** moment selected, page already loaded (numbers on screen, no skeletons).
-- Tab 2: `http://localhost:3000/capture` — mode set to your best working rung (glasses stream > webcam > clip replay), NOT yet capturing.
-- Tab 3 (Ending A only): dashboard with Football tab + SB LI Q3 moment ready.
-- Volume up, Speak button tested in the last 10 minutes.
+1. 2022 World Cup Final — Argentina vs France.
+2. 2016 NBA Finals Game 7 — Cavaliers vs Warriors.
+3. Super Bowl LI — Patriots vs Falcons.
+4. UFC 229 — Khabib Nurmagomedov vs Conor McGregor.
 
----
+Those identities match the committed intelligence packs. If the extracted footage differs, update the matching JSON under `packages/fixtures/demo-intelligence/` before stage day; never silently attach one event's facts to another.
 
-## The script (timing marks from "go")
+## Preflight gate
 
-### 0:00 — 0:20 · Hook (Tab 1 already on screen)
+Run:
 
-SAY:
-> "This is BloomKnights. You point Meta glasses at any live game, and they tell you two numbers: what our model thinks the win probability is, and what the prediction market is charging for it. No app-switching, no searching for the right market. You just look."
+```bash
+npm test
+curl -fsS https://capture.saicharanramineni.com/api/health
+curl -fsS https://capture.saicharanramineni.com/api/demo/intelligence
+```
 
-DO: nothing. Let the dashboard breathe. The lens preview on the right is what the wearer sees.
+Pass criteria:
 
-### 0:20 — 0:55 · Beat 1: the machine reads the game (NBA, Q4 2:14)
+- All tests pass.
+- Health reports `vision.ready: true` and `demo_intelligence_packs: 4`.
+- The pack catalog contains World Cup, NBA Finals, Super Bowl, and UFC.
+- Phone and viewer establish video on separate devices.
+- Pressing **Analyze** shows `Capturing temporal evidence · 1/5` and reaches a first result in roughly four seconds plus model latency.
+- Exact target footage produces `Historical replay`, not `Sport template`.
+- The probability tile shows Model, Market, Gap, and `MOCK`.
 
-SAY:
-> "Right now it's reading a Celtics–Knicks broadcast. Boston up 3, two minutes left. It read the scoreboard — score, quarter, clock, confidence — you can see the parsed state right here. Our model says Boston wins this about 88% of the time. The market feed is at 59%. That gap is the whole product: the difference between what you can *see* and what the market is *priced at*."
+## Three-minute stage sequence
 
-DO:
-1. Point at the **Score / Clock / Conf** row (proof it read the screen).
-2. Point at the three big numbers: **Model 87.8% / Market 59% / Gap +28.7 pts**.
-3. Click **Speak**. Let the audio play fully: *"bos's estimated win probability is 88 percent. The market is at 59 percent."*
+### 0:00–0:20 — Hook
 
-SAY (over the end of the audio):
-> "That voice is what comes through the glasses. Glanceable or speakable in three seconds."
+Show the live viewer before analysis.
 
-If a judge squints at the amber banner, beat them to it:
-> "And see this banner — 'simulated market feed'. When we mock data, we label it. The system never pretends."
+Say:
 
-### 0:55 — 1:25 · Beat 2: the game moves, the number moves (NBA, Q4 0:30)
+> “Prediction markets know their contracts, but they do not know what I am looking at. BloomKnights starts with the physical world. I look at a broadcast and it finds the event, state, and relevant market for me.”
 
-DO: click the **Q4 0:30** moment card. Numbers tween live: model climbs 87.8% → 99.9%, gap widens to +40.9.
+### 0:20–1:05 — World Cup recognition
 
-SAY:
-> "Ninety seconds of game time later — Boston up 7, thirty seconds left. Watch the model: it jumps to 99.9%. A lead is worth more the less time is left, and the model knows that. The market snapshot hasn't caught up, so the gap got *wider*. That's the moment this thing earns its keep: it updates the instant the picture changes."
+Play the Argentina–France clip, start the phone/glasses feed, then press **Analyze**.
 
-### 1:25 — 2:05 · Beat 3: it's real capture, not a slideshow (Tab 2, /capture)
+Point to the right rail as it progresses:
 
-DO: switch to the capture tab. Start your best rung (glasses screen-share, or webcam pointed at a laptop playing a game clip). Let the **sent / accepted / skipped** counters tick.
+1. Direct camera connected.
+2. Five-frame temporal window collected.
+3. Soccer and the World Cup Final detected.
+4. Official timeline, state model, and replay market cache loaded.
 
-SAY:
-> "This is the live pipe. The glasses livestream, we capture it, and every second a frame goes to the server. Watch the counters — it accepts sharp new frames and skips duplicates, so we're not burning compute on identical pictures. If the glasses drop, a webcam works. If the webcam drops, a recorded clip works. The demo has three ways to stay alive, and every fallback is labeled honestly in the output."
+When the result appears, point to Model / Market / Gap and say:
 
-DO: after ~15 seconds of counters ticking, stop capture and switch back to the dashboard tab.
+> “The vision model did not receive a sport selector. It recognized the World Cup Final, found the matching historical intelligence pack, and priced the visible state. The market value is a clearly labeled replay simulation—we are demonstrating the product loop, not pretending this old game is trading live.”
 
-### 2:05 — 2:50 · Beat 4: THE ENDING
+### 1:05–1:40 — Automatic NBA switch
 
-**Ending A — Super Bowl LI flip (ONLY if it passed today's curl gate).**
+Switch the source screen to 2016 Finals Game 7. Do not touch BloomKnights.
 
-DO: click the **Football** tab. Click **Q3 · ATL 28–3**.
+Say:
 
-SAY:
-> "One more. Super Bowl LI. Third quarter, Falcons up 28 to 3. Every market on earth had Atlanta as a lock — and so does our model. Now watch."
+> “Now I only change what I am watching.”
 
-DO: click **Q4 · tied 28–28**.
+On the next model window, the UI should show basketball detected and an event switch. At the 89–89 or 92–89 checkpoint, explain `What changed` and `Next trigger`.
 
-SAY:
-> "Fourth quarter. 28–28. The biggest comeback in Super Bowl history, and the probability flips right in front of you. If you were wearing these glasses that night, you'd have watched the number cross 50 while everyone else was still staring at a stale price. That's BloomKnights."
+### 1:40–2:15 — Super Bowl probability swing
 
-**Ending B — NBA flip retold (proven today, use if Ending A is not wired).**
+Switch to Super Bowl LI at 28–3, then scrub or cut to 28–28.
 
-DO: stay on the dashboard, click back and forth **Q4 2:14 → Q4 0:30** once so the tween plays again.
+Say:
 
-SAY:
-> "Here's why this matters beyond one game. Super Bowl LI — Falcons up 28–3, every market said it was over, and then the Patriots flipped it. The whole value of this product lives in moments like that: the game state changes faster than the price does. You just watched our model move 12 points in ninety game-seconds while the market snapshot sat still. Glasses on, you see the flip the moment it happens. That's BloomKnights."
+> “This is where a visual probability layer becomes visceral. The same event moves from a three-percent comeback tail to essentially a coin flip because the score and clock changed—not because somebody searched for another market.”
 
-(Note: the historical moment cards for soccer, UFC, football, and golf are visible on the dashboard either way — it's fine to gesture at them: "same engine, five sports, one scoreboard-reader per sport.")
+The monotonic replay cursor prevents a noisy old graphic from rewinding the analysis after the later checkpoint is reached.
 
-### 2:50 — 3:00 · Close
+### 2:15–2:40 — UFC proves the abstraction
 
-SAY:
-> "Look at the game. See the probability. Thanks."
+Switch to UFC 229.
 
-DO: leave the dashboard on screen for Q&A — the raw pipeline JSON in "Live analysis" at the bottom is your friend for judge questions.
+Say:
 
----
+> “The state representation changes with the sport. There is no basketball-style score here, so the system uses fighter identity, round, clock, and visibly supported control context. It does not invent judge scores or damage.”
 
-## Rules while on stage
+The canonical finish-window clock is `1:57 remaining`; `3:03` is elapsed time.
 
-- Never say "guaranteed edge", "risk-free", or "the market is wrong." Say "model estimate", "market-implied probability", "gap" (README §6 — judges who know the space will notice).
-- If any click misbehaves, do not debug on stage. One click back to the NBA Q4 2:14 moment always works. `failure-modes.md` has the 10-second recovery for everything else.
-- If asked "is that real OCR?" answer honestly and immediately — see `judge-qa.md` Q2. Honesty is rehearsed, not improvised.
+### 2:40–3:00 — Close
+
+Say:
+
+> “Four broadcasts. No picker. No search. One interface from visible reality to a market question. With funding, the precollected replay layer becomes a live data and market infrastructure layer. Look at the game. See the probability.”
+
+## Operator rules
+
+- Analysis stays off until the clip is framed and ready.
+- Use Chrome or Edge on the viewer.
+- Keep the scoreboard unobstructed and large enough to read.
+- Never remove `Historical replay`, `Sport template`, or `MOCK` labels.
+- Never call the gap guaranteed profit or say the market is wrong.
+- If the exact pack does not match, the UI will say `Sport template`; explain it honestly or switch to the correct clip.
+- `/api/latest` contains live analyzed insight only and never silently changes to an NBA fixture.
+
+## Fallback ladder
+
+1. Meta glasses → native companion → viewer.
+2. Phone browser → viewer.
+3. Prerecorded clip displayed to either camera source.
+4. `/capture?demo=1` for UI/video proof only; it intentionally does not fake Cerebras analysis.
+5. Dashboard deterministic fixture moments for Q&A.
+
+The first three paths prove automatic event detection. The last two are honest recovery tools, not substitutes for the primary demo.

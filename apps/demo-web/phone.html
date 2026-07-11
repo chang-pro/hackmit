@@ -81,6 +81,8 @@
 
 <script>
 const ANALYSIS_INTERVAL_MS = 2400;
+const INITIAL_ANALYSIS_INTERVAL_MS = 800;
+const INITIAL_ANALYSIS_FRAMES = 5;
 const MAX_IMAGE_EDGE = 1600;
 const JPEG_QUALITY = 0.82;
 const SIGNAL_POLL_MS = 350;
@@ -103,6 +105,7 @@ let stream = null;
 let liveTimer = null;
 let processing = false;
 let analysisEnabled = false;
+let analysisBurstRemaining = 0;
 let sessionId = null;
 let peerConnection = null;
 let pendingIce = [];
@@ -241,6 +244,8 @@ async function refreshAnalysisState() {
     const status = await api("/api/analysis/status");
     const changed = analysisEnabled !== (status.analysis_enabled === true);
     analysisEnabled = status.analysis_enabled === true;
+    if (changed && analysisEnabled) analysisBurstRemaining = INITIAL_ANALYSIS_FRAMES;
+    if (!analysisEnabled) analysisBurstRemaining = 0;
     if (changed && stream) renderAnalysisState();
   } catch {
     // A signaling retry will recover the control status without interrupting camera capture.
@@ -283,7 +288,7 @@ function renderAnalysisState() {
   document.getElementById("camera-note").textContent = !connected
     ? "Camera is ready and WebRTC is negotiating the desktop connection. Analysis stays off until the desktop connects and you press Analyze."
     : analysisEnabled
-      ? "Direct WebRTC video is live. Analysis is enabled and collects five frames over twelve seconds before each model request."
+      ? "Direct WebRTC video is live. The first five-frame evidence burst completes in about four seconds; later model windows respect the twelve-second quota."
       : "Direct WebRTC video is live. Analysis is off until you press Analyze on the desktop capture page.";
 }
 
@@ -316,6 +321,7 @@ async function analyzeCanvas(source) {
       if (!data.insight) document.getElementById("headline").textContent = "Collecting temporal context before the next model call.";
       document.getElementById("detail").textContent = `Next model window in ${Math.ceil((data.queue?.next_analysis_ms ?? 0) / 1000)}s · quota ${data.queue?.calls_last_minute?.vision ?? 0}/5 vision calls this minute`;
     }
+    return data;
   } catch (error) {
     setStatus("Error", error.message);
     document.getElementById("detail").textContent = "Keep the scoreboard large and unobstructed, then try again.";
@@ -393,9 +399,11 @@ async function liveTick() {
   if (!stream) return;
   if (analysisEnabled && !processing && video.videoWidth) {
     videoToCanvas(MAX_IMAGE_EDGE);
-    await analyzeCanvas("phone_live");
+    const data = await analyzeCanvas("phone_live");
+    if (analysisBurstRemaining > 0 && data?.selection?.accepted !== false) analysisBurstRemaining -= 1;
   }
-  if (stream) liveTimer = setTimeout(liveTick, ANALYSIS_INTERVAL_MS);
+  const nextInterval = analysisBurstRemaining > 0 ? INITIAL_ANALYSIS_INTERVAL_MS : ANALYSIS_INTERVAL_MS;
+  if (stream) liveTimer = setTimeout(liveTick, nextInterval);
 }
 
 async function startLive() {
@@ -422,6 +430,7 @@ async function startLive() {
   try {
     await connectWebRtc();
     await refreshAnalysisState();
+    if (analysisEnabled) analysisBurstRemaining = INITIAL_ANALYSIS_FRAMES;
     renderAnalysisState();
   } catch (error) {
     stopLive();
