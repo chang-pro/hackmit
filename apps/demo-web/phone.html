@@ -88,6 +88,8 @@ const MAX_IMAGE_EDGE = 1600;
 const JPEG_QUALITY = 0.82;
 const SIGNAL_POLL_MS = 350;
 const ANALYSIS_STATUS_POLL_MS = 1_000;
+const VIDEO_TARGET_BITRATE_BPS = 6_000_000;
+const VIDEO_TARGET_FPS = 30;
 
 const video = document.getElementById("video");
 const preview = document.getElementById("preview");
@@ -212,12 +214,31 @@ async function connectWebRtc() {
       setStatus("Reconnecting", "Trying to restore the direct WebRTC connection…");
     }
   };
-  stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+  const senders = stream.getTracks().map((track) => {
+    if (track.kind === "video" && "contentHint" in track) track.contentHint = "detail";
+    return peerConnection.addTrack(track, stream);
+  });
+  await Promise.all(senders.map(configureSenderQuality));
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   await sendSignal("offer", peerConnection.localDescription);
   setStatus("Pairing", "Camera is ready. Negotiating an encrypted WebRTC video route to the desktop…");
   pollSignals();
+}
+
+async function configureSenderQuality(sender) {
+  if (sender.track?.kind !== "video") return;
+  const parameters = sender.getParameters();
+  if (!parameters.encodings?.length) return;
+  parameters.encodings[0].maxBitrate = VIDEO_TARGET_BITRATE_BPS;
+  parameters.encodings[0].maxFramerate = VIDEO_TARGET_FPS;
+  parameters.degradationPreference = "maintain-resolution";
+  try {
+    await sender.setParameters(parameters);
+  } catch {
+    // Some mobile WebKit versions ignore sender parameters; the 1080p capture
+    // request and detail content hint still apply on those browsers.
+  }
 }
 
 async function refreshAnalysisState() {
@@ -387,7 +408,12 @@ async function startLive() {
     throw new Error("Live camera is unavailable here. Use Take photo, or open this page over HTTPS.");
   }
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: VIDEO_TARGET_FPS, max: VIDEO_TARGET_FPS },
+    },
     audio: false,
   });
   video.srcObject = stream;

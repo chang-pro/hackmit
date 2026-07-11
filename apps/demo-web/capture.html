@@ -229,6 +229,7 @@ let pollInFlight = false;
 let remoteFeedActive = false;
 let remoteAnalysisEnabled = false;
 let lastSpoken = "";
+let lastInboundVideoStats = null;
 
 const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
 const STEPS = [
@@ -276,6 +277,7 @@ function setRemoteFeedUI(active) {
   remotePreview.srcObject = null;
   remotePreview.style.display = "none";
   analyzeButton.hidden = true;
+  lastInboundVideoStats = null;
   setStatusPill("idle", "waiting for phone");
 }
 
@@ -288,6 +290,32 @@ function showWebRtcBlocked(message) {
   setStatusPill("error", "TURN required");
   $("idleHint").textContent = message;
   $("stats").textContent = "WebRTC blocked · TURN relay needed";
+}
+
+async function refreshVideoStats() {
+  if (!remoteFeedActive || !peerConnection) return;
+  try {
+    const reports = await peerConnection.getStats();
+    const inbound = [...reports.values()].find(
+      (report) => report.type === "inbound-rtp" && (report.kind === "video" || report.mediaType === "video")
+    );
+    if (!inbound) return;
+    const previous = lastInboundVideoStats;
+    lastInboundVideoStats = { bytes: inbound.bytesReceived ?? 0, timestamp: inbound.timestamp ?? 0 };
+    const width = inbound.frameWidth || remotePreview.videoWidth;
+    const height = inbound.frameHeight || remotePreview.videoHeight;
+    const fps = Math.round(inbound.framesPerSecond || 0);
+    const elapsedSeconds = previous ? (lastInboundVideoStats.timestamp - previous.timestamp) / 1000 : 0;
+    const megabits = previous && elapsedSeconds > 0
+      ? ((lastInboundVideoStats.bytes - previous.bytes) * 8) / elapsedSeconds / 1_000_000
+      : 0;
+    const resolution = width && height ? `${width}×${height}` : "video";
+    const frameRate = fps ? ` · ${fps} fps` : "";
+    const bitrate = megabits > 0 ? ` · ${megabits.toFixed(1)} Mbps` : "";
+    $("stats").textContent = `${resolution}${frameRate}${bitrate}`;
+  } catch {
+    // Stats are diagnostic only; media keeps playing if a browser blocks them.
+  }
 }
 
 async function api(path, options = {}) {
@@ -473,6 +501,7 @@ window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch((
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
 $("helpNote").textContent = NOTE;
 setInterval(refreshAnalysis, INSIGHT_POLL_MS);
+setInterval(refreshVideoStats, INSIGHT_POLL_MS);
 createPairing().catch(() => setStatusPill("error", "pairing error"));
 </script>
 </body>

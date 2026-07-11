@@ -161,7 +161,7 @@ Other endpoints:
 
 ## Frame cadence
 
-The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the public HTTP tunnel. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
+The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the public HTTP tunnel. The phone requests 1080p/30fps capture with a detail-preserving 6 Mbps sender ceiling; `/capture` reports the received resolution, frame rate, and bitrate in its dock. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
 
 The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Metered Open Relay: set `METERED_TURN_APP_NAME` and `METERED_TURN_API_KEY` on the server. For each ten-minute pairing session, the server retrieves the provider-issued browser ICE configuration and returns it only to callers holding that session id. Do not put the API key in frontend source code.
 
