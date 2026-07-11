@@ -39,6 +39,12 @@ export class FrameSelector {
     this.lastHash = null;
   }
 
+  reset() {
+    this.lastSelectedAt = -Infinity;
+    this.lastLength = null;
+    this.lastHash = null;
+  }
+
   // Decides whether a frame should flow downstream to vision.
   // Returns { accepted: boolean, reason: string | null }.
   consider(imageBase64) {

@@ -4,8 +4,8 @@
 // and diffs the required fields — teams, scores, period, clock (README §7.3)
 // — against packages/fixtures/expected/. Prints per-field accuracy.
 //
-// The fixture backend always runs and is deterministic. The gemini backend is
-// attempted only when GEMINI_API_KEY is set AND the fixture has a real image
+// The fixture backend always runs and is deterministic. The Cerebras backend is
+// attempted only when CEREBRAS_API_KEY is set AND the fixture has a real image
 // file on disk; otherwise it is reported as skipped — accuracy is measured,
 // never invented (README §17.6).
 
@@ -115,9 +115,9 @@ const fixtureBackendClean = await evaluateBackend("fixture", fixtures, (f) => ({
 }));
 if (!fixtureBackendClean) process.exitCode = 1;
 
-// --- gemini backend: only with a key and a real image on disk ---
-console.log("\nBackend: gemini");
-const haveKey = Boolean(process.env.GEMINI_API_KEY);
+// --- Cerebras Gemma 4 backend: only with a key and a real image on disk ---
+console.log("\nBackend: cerebras");
+const haveKey = Boolean(process.env.CEREBRAS_API_KEY);
 const withImages = fixtures.filter((f) => {
   const imagePath = f.frame.image_uri ? resolve(ROOT, f.frame.image_uri) : null;
   if (imagePath && existsSync(imagePath)) {
@@ -128,14 +128,14 @@ const withImages = fixtures.filter((f) => {
 });
 
 if (!haveKey) {
-  console.log("  skipped: GEMINI_API_KEY is not set");
+  console.log("  skipped: CEREBRAS_API_KEY is not set");
 } else if (withImages.length === 0) {
   console.log("  skipped: no fixture has an image file on disk");
 } else {
   console.log(
     `  running on ${withImages.length}/${fixtures.length} fixture(s) that have image files`
   );
-  await evaluateBackend("gemini", withImages, (f) => ({
+  await evaluateBackend("cerebras", withImages, (f) => ({
     ...f.frame,
     image_path: f.imagePath,
   }));

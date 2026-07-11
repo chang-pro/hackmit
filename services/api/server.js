@@ -1,41 +1,42 @@
-// API server — orchestrates the pipeline and serves the debug view.
-// Zero dependencies (node:http) so the skeleton runs with `node` alone.
+// BloomKnights API server. The mobile client posts base64 frames and receives
+// the complete camera-to-insight result in the same response (live Cerebras
+// vision when configured). The demo pages replay famous-match fixtures across
+// five sports. Zero dependencies (node:http).
 //
-// Slice 4 added the live-frame path: POST /api/frames routes submissions
-// through the capture gateway (§7.1) and frame selector (§7.2), and GET
-// /capture serves a webcam capture page. The multi-sport slice adds:
-//   GET  /api/sports            — sport selector data for the frontend
-//   GET  /api/comparison?sport=<id>&fixture=<name> — sport-aware pipeline
+// Routes:
+//   POST /api/frames            — live frame in, full insight out (sport-aware)
+//   POST /api/reset             — clear live session state
+//   GET  /api/health            — vision backend + buffer status
+//   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
+//   GET  /api/latest            — alias of /api/comparison
+//   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
-//   POST /api/frames            — now accepts an optional "sport" field
-// plus the DatasetWriter (README §16: off unless DATASET_DIR is set), which
-// pairs selector-accepted live frames with the latest reconciled state.
-//
-// The server is exported as a factory (createBloomServer) so tests can run it
-// on an ephemeral port; it only listens when executed directly (npm start).
+//   GET  /, /capture, /phone, /data, /landing, /pitch — pages
 
 import { createServer } from "node:http";
 import { readFile, readdir } from "node:fs/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, join } from "node:path";
-import { runPipeline } from "./pipeline.js";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { networkInterfaces } from "node:os";
+import { runFramePipeline, runPipeline, resetLivePipeline } from "./pipeline.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
+import { visionStatus } from "../vision/index.js";
+import { CEREBRAS_ANALYTICS_MODEL } from "../analytics/cerebras.js";
+import { CEREBRAS_VISION_MODEL } from "../vision/backends/cerebras.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { getSport, listSports, DEFAULT_SPORT_ID } from "../sports/index.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
 const STATS_DIR = join(ROOT, "packages", "fixtures", "stats");
-const PORT = process.env.PORT || 3000;
-
-const MAX_BODY_BYTES = 8 * 1024 * 1024; // generous for base64 1080p JPEGs
-const LIVE_SESSION_TTL_MS = 10_000; // no selected frame for 10 s => not live
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
+const LIVE_SESSION_TTL_MS = 30_000;
 
 function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolveBody, reject) => {
     const chunks = [];
     let size = 0;
     req.on("data", (chunk) => {
@@ -49,7 +50,7 @@ function readJsonBody(req) {
     });
     req.on("end", () => {
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        resolveBody(JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {
         reject(Object.assign(new Error("invalid JSON body"), { statusCode: 400 }));
       }
@@ -58,8 +59,19 @@ function readJsonBody(req) {
   });
 }
 
+function responseHeaders(contentType = "application/json") {
+  return {
+    "Content-Type": contentType,
+    "Access-Control-Allow-Origin": process.env.CORS_ORIGIN ?? "*",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store",
+    "X-BloomKnights-API-Version": "1",
+  };
+}
+
 function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { "Content-Type": "application/json" });
+  res.writeHead(statusCode, responseHeaders());
   res.end(JSON.stringify(payload, null, 2));
 }
 
@@ -74,7 +86,7 @@ async function sendHtml(res, filename, appDir = "demo-web") {
     }
     throw err;
   }
-  res.writeHead(200, { "Content-Type": "text/html" });
+  res.writeHead(200, responseHeaders("text/html; charset=utf-8"));
   res.end(html);
 }
 
@@ -141,26 +153,15 @@ async function handleStatsRaw(res, sportId) {
 
 // ── Server factory ───────────────────────────────────────────────────────────
 
-export function createBloomServer() {
-  const gateway = new CaptureGateway();
-  const selector = new FrameSelector();
+export function createBloomServer({
+  gateway = new CaptureGateway(),
+  selector = new FrameSelector({ minIntervalMs: 750 }),
+  visionBackend = undefined,
+} = {}) {
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
-  let lastSelected = null; // { meta, at, sport } — most recent selector-approved frame
-  const lastStateBySport = new Map(); // sport id -> latest reconciled state
+  let latestInsight = null;
+  let latestInsightAt = 0;
 
-  // Only frames tagged with the SAME sport count as the live session for a
-  // comparison — NBA frames must never make a golf comparison claim "live".
-  function activeLiveFrame(sportId) {
-    if (!lastSelected) return null;
-    if (sportId != null && lastSelected.sport !== sportId) return null;
-    return Date.now() - lastSelected.at <= LIVE_SESSION_TTL_MS ? lastSelected.meta : null;
-  }
-
-  // POST /api/frames — source-agnostic frame ingestion.
-  // The gateway assigns the frame_id and buffers the frame in memory; the
-  // selector then decides whether it flows downstream (rate limit + duplicate
-  // skip). Skipped frames still get metadata back so clients can count them.
-  // Optional body field "sport" tags the frame's sport (default nba).
   async function handleFrameSubmission(req, res) {
     let body;
     try {
@@ -195,32 +196,82 @@ export function createBloomServer() {
     }
 
     const selection = selector.consider(body.image_base64);
-    let dataset = null;
-    if (selection.accepted) {
-      lastSelected = { meta, at: Date.now(), sport: sport.id };
-      // Training-data collector (§16): writes only when DATASET_DIR is set.
-      // A dataset failure must never break frame ingestion.
+    if (!selection.accepted) {
+      sendJson(res, 200, { frame: meta, sport: sport.id, selection, insight: latestInsight });
+      return;
+    }
+
+    // No live vision backend configured (no key, no injected backend): frame
+    // ingestion still works — buffered + counted honestly, just no insight.
+    if (visionBackend === undefined && visionStatus().selected === null) {
+      let dataset = null;
       if (datasetWriter.enabled) {
         try {
           const files = await datasetWriter.record({
             sport: sport.id,
             frame: meta,
             imageBase64: body.image_base64,
-            state: lastStateBySport.get(sport.id) ?? null,
+            state: null,
           });
           dataset = { saved: true, labeled: files.label != null };
         } catch (err) {
           dataset = { saved: false, error: err.message };
         }
       }
+      sendJson(res, 201, {
+        frame: meta,
+        sport: sport.id,
+        selection,
+        insight: null,
+        analysis: { status: "no_vision_backend", error: visionStatus().error },
+        ...(dataset ? { dataset } : {}),
+      });
+      return;
     }
 
-    sendJson(res, selection.accepted ? 201 : 200, {
-      frame: meta,
-      sport: sport.id,
-      selection,
-      ...(dataset ? { dataset } : {}),
-    });
+    try {
+      const frame = { ...gateway.frame(meta.frame_id), sport: sport.id };
+      const insight = await runFramePipeline(frame, { visionBackend, sportId: sport.id });
+      latestInsight = insight;
+      latestInsightAt = Date.now();
+
+      // Training-data collector (§16): writes only when DATASET_DIR is set.
+      // A dataset failure must never break frame ingestion.
+      let dataset = null;
+      if (datasetWriter.enabled) {
+        try {
+          const files = await datasetWriter.record({
+            sport: sport.id,
+            frame: meta,
+            imageBase64: body.image_base64,
+            state: insight.state ?? null,
+          });
+          dataset = { saved: true, labeled: files.label != null };
+        } catch (err) {
+          dataset = { saved: false, error: err.message };
+        }
+      }
+
+      sendJson(res, 201, {
+        frame: meta,
+        sport: sport.id,
+        selection,
+        insight,
+        ...(dataset ? { dataset } : {}),
+      });
+    } catch (err) {
+      sendJson(res, 422, {
+        frame: meta,
+        sport: sport.id,
+        selection,
+        insight: null,
+        analysis: {
+          status: "error",
+          backend: visionStatus().selected,
+          error: err.message,
+        },
+      });
+    }
   }
 
   async function handleComparison(res, url) {
@@ -231,31 +282,46 @@ export function createBloomServer() {
       sendJson(res, 400, { error: err.message });
       return;
     }
+    const requestedFixture = url.searchParams.get("fixture");
     // Allowlist per sport — the fixture param never touches the filesystem
     // directly, and a fixture can only be served under its own sport.
-    const fixture = url.searchParams.get("fixture") || sport.defaultFixture;
-    if (!sport.fixtures.includes(fixture)) {
+    if (requestedFixture && !sport.fixtures.includes(requestedFixture)) {
       sendJson(res, 400, {
         error: `unknown fixture for sport "${sport.id}"; known: ${sport.fixtures.join(", ")}`,
       });
       return;
     }
-    // Each fixture request is an independent demo moment, so it gets a fresh
-    // Reconciler with the sport's §7.5 invariants: those compare consecutive
-    // observations, and demo moments are minutes of game time apart. The
-    // adapter stays undefined so the Slice 5 registry default applies.
-    const result = await runPipeline(
-      join(FIXTURES_DIR, `${fixture}.json`),
-      undefined,
-      activeLiveFrame(sport.id),
-      new Reconciler(sport.reconcilerRules),
-      sport.id
-    );
-    if (result.state) {
-      // Remember the latest reconciled state per sport for dataset labeling.
-      lastStateBySport.set(sport.id, result.state);
+    if (requestedFixture) {
+      // Each fixture request is an independent demo moment, so it gets a
+      // fresh Reconciler with the sport's §7.5 invariants.
+      sendJson(
+        res,
+        200,
+        await runPipeline(join(FIXTURES_DIR, `${requestedFixture}.json`), undefined, null, {
+          reconciler: new Reconciler(sport.reconcilerRules),
+          sportId: sport.id,
+        })
+      );
+      return;
     }
-    sendJson(res, 200, result);
+    // Live insights only count for the sport they were tagged with — NBA
+    // frames must never make a golf comparison claim "live".
+    if (
+      latestInsight &&
+      latestInsight.sport === sport.id &&
+      Date.now() - latestInsightAt <= LIVE_SESSION_TTL_MS
+    ) {
+      sendJson(res, 200, latestInsight);
+      return;
+    }
+    sendJson(
+      res,
+      200,
+      await runPipeline(join(FIXTURES_DIR, `${sport.defaultFixture}.json`), undefined, null, {
+        reconciler: new Reconciler(sport.reconcilerRules),
+        sportId: sport.id,
+      })
+    );
   }
 
   function handleSports(res) {
@@ -277,41 +343,94 @@ export function createBloomServer() {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-      if (req.method === "POST" && url.pathname === "/api/frames") {
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, responseHeaders());
+        res.end();
+      } else if (req.method === "POST" && url.pathname === "/api/frames") {
         await handleFrameSubmission(req, res);
-      } else if (url.pathname === "/api/comparison") {
+      } else if (req.method === "POST" && url.pathname === "/api/reset") {
+        resetLivePipeline();
+        gateway.clear();
+        selector.reset();
+        latestInsight = null;
+        latestInsightAt = 0;
+        sendJson(res, 200, { status: "reset" });
+      } else if (req.method === "GET" && url.pathname === "/api/health") {
+        sendJson(res, 200, {
+          status: "ok",
+          vision: visionStatus(),
+          cerebras_models: {
+            vision: CEREBRAS_VISION_MODEL,
+            analytics: CEREBRAS_ANALYTICS_MODEL,
+          },
+          frame_buffer_size: gateway.size,
+          has_live_insight: Boolean(latestInsight),
+        });
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/api/comparison" || url.pathname === "/api/latest")
+      ) {
         await handleComparison(res, url);
-      } else if (url.pathname === "/api/sports") {
+      } else if (req.method === "GET" && url.pathname === "/api/sports") {
         handleSports(res);
-      } else if (url.pathname === "/api/stats/raw") {
+      } else if (req.method === "GET" && url.pathname === "/api/stats/raw") {
         await handleStatsRaw(res, url.searchParams.get("sport"));
-      } else if (url.pathname === "/api/stats") {
+      } else if (req.method === "GET" && url.pathname === "/api/stats") {
         await handleStats(res);
-      } else if (url.pathname === "/" || url.pathname === "/index.html") {
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/" || url.pathname === "/index.html")
+      ) {
         await sendHtml(res, "index.html");
-      } else if (url.pathname === "/capture" || url.pathname === "/capture.html") {
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/capture" || url.pathname === "/capture.html")
+      ) {
         await sendHtml(res, "capture.html");
-      } else if (url.pathname === "/data" || url.pathname === "/data.html") {
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/phone" || url.pathname === "/phone.html")
+      ) {
+        await sendHtml(res, "phone.html");
+      } else if (req.method === "GET" && (url.pathname === "/data" || url.pathname === "/data.html")) {
         await sendHtml(res, "data.html");
-      } else if (url.pathname === "/landing") {
+      } else if (req.method === "GET" && url.pathname === "/landing") {
         await sendHtml(res, "index.html", "landing");
-      } else if (url.pathname === "/pitch") {
+      } else if (req.method === "GET" && url.pathname === "/pitch") {
         await sendHtml(res, "index.html", "pitch");
       } else {
         sendJson(res, 404, { error: "not found" });
       }
     } catch (err) {
-      // The UI never shows a raw stack; the debug endpoint reports the failure.
       sendJson(res, 500, { error: err.message });
     }
   });
 }
 
-// Listen only when run directly (npm start) — importing for tests stays silent.
-const isMain =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isMain) {
-  createBloomServer().listen(PORT, () => {
-    console.log(`BloomKnights demo: http://localhost:${PORT} (webcam capture: /capture)`);
+function lanAddresses(port) {
+  const addresses = [];
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family === "IPv4" && !entry.internal) {
+        addresses.push(`http://${entry.address}:${port}/phone`);
+      }
+    }
+  }
+  return addresses;
+}
+
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  const port = Number(process.env.PORT ?? 3000);
+  const host = process.env.HOST ?? "0.0.0.0";
+  const server = createBloomServer();
+  server.listen(port, host, () => {
+    console.log(`BloomKnights desktop: http://localhost:${port}`);
+    for (const address of lanAddresses(port)) console.log(`BloomKnights phone:   ${address}`);
+    const status = visionStatus();
+    console.log(
+      status.selected
+        ? `Vision backend: ${status.selected}`
+        : `Vision backend unavailable: ${status.error}`
+    );
   });
 }
