@@ -56,17 +56,17 @@ struct ContentView: View {
                 .font(.footnote)
                 .foregroundColor(.secondary)
 
-                if !streamer.savedFile.isEmpty {
-                    Text("Saved: \(streamer.savedFile)")
+                if !streamer.rtcStatus.isEmpty {
+                    Text(streamer.rtcStatus)
                         .font(.footnote)
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(streamer.rtcStatus.contains("LIVE") ? .green : .orange)
                 }
-                if !streamer.uploadStatus.isEmpty {
-                    Text(streamer.uploadStatus)
+                if !streamer.uplinkStatus.isEmpty {
+                    Text(streamer.uplinkStatus)
                         .font(.footnote)
                         .multilineTextAlignment(.center)
-                        .foregroundColor(streamer.uploadStatus.hasPrefix("Uploaded") ? .green : .orange)
+                        .foregroundColor(streamer.uplinkStatus.contains("fail 0") ? .green : .orange)
                 }
                 if !streamer.lastError.isEmpty {
                     Text(streamer.lastError)

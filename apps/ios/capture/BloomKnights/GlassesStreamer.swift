@@ -185,13 +185,11 @@ final class GlassesStreamer: ObservableObject {
     @Published var frameSize = "-"
     @Published var elapsed = "00:00"
     @Published var uploadStatus = ""
+    @Published var uplinkStatus = ""   // frames delivered to /api/frames (analysis)
+    @Published var rtcStatus = ""      // live WebRTC video link to the /capture viewer
 
-    // Mac Mini on the HOME LAN — recordings auto-upload here after STOP whenever
-    // the phone is on home Wi-Fi. No Tailscale/VPN (that double-burns cellular);
-    // this is local-network only, zero cellular data. If not on home Wi-Fi the
-    // upload just fails and the clip stays on the phone until next time home.
-    // NOTE: pin 192.168.1.113 as a DHCP reservation on the router so it never moves.
-    private let uploadURL = "http://192.168.1.113:8009/upload"
+    // The laptop backend (stable custom domain) — WebRTC signaling + analysis.
+    static let backendBase = URL(string: "https://capture.saicharanramineni.com")!
 
     private var elapsedTimer: Timer?
     private var startedAt: Date?
@@ -204,11 +202,19 @@ final class GlassesStreamer: ObservableObject {
     private var tokens: [any AnyListenerToken] = []
     private var compatTokens: [DeviceIdentifier: any AnyListenerToken] = [:]
     private let recorder = RecorderBox()
+    private let uplink = FrameUplink()    // decode hvc1 -> WebRTC tap + 1fps analysis
+    let rtc = RTCPublisher()              // live video -> desktop /capture viewer
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
     let preview = PreviewSink()   // live on-screen view of the hvc1 stream
 
     init() {
         deviceSelector = AutoDeviceSelector(wearables: Wearables.shared)
+        // Decoded frames (bounded, off the delivery thread) feed the WebRTC video.
+        let rtc = self.rtc
+        uplink.setFrameTap { buf in rtc.push(buf) }
+        uplink.onStatus = { [weak self] line in
+            Task { @MainActor in self?.uplinkStatus = line }
+        }
     }
 
     // Start all the live monitors so the screen always shows current state.
@@ -299,6 +305,8 @@ final class GlassesStreamer: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         let wasRecording = isRecording
         recorder.setRecording(false); isRecording = false
+        uplink.setStreaming(false)
+        rtc.disconnect(); rtcStatus = ""
         stream?.stop(); stream = nil
         session?.stop(); session = nil
         // Drop the stream's frame/state/error listeners so a restart doesn't
@@ -310,36 +318,12 @@ final class GlassesStreamer: ObservableObject {
             recorder.stop { [weak self] url in
                 Task { @MainActor in
                     self?.savedFile = url?.lastPathComponent ?? ""
-                    self?.status = "Saved \(url?.lastPathComponent ?? "?")"
-                    if let url { self?.uploadToMac(url) }
+                    self?.status = "Stopped — clip saved on phone"
                 }
             }
         } else {
             status = "Stopped"
         }
-    }
-
-    // Send the finished recording to the Mac Mini over Tailscale. If it fails
-    // (offline / Tailscale off), the file stays on the phone as a fallback.
-    private func uploadToMac(_ fileURL: URL) {
-        let name = fileURL.lastPathComponent
-        guard var comps = URLComponents(string: uploadURL) else { return }
-        comps.queryItems = [URLQueryItem(name: "name", value: name)]
-        guard let url = comps.url else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.timeoutInterval = 120
-        uploadStatus = "Uploading \(name)..."
-        let task = URLSession.shared.uploadTask(with: req, fromFile: fileURL) { [weak self] _, resp, err in
-            Task { @MainActor in
-                if let http = resp as? HTTPURLResponse, http.statusCode == 200 {
-                    self?.uploadStatus = "Uploaded \(name) to Mac"
-                } else {
-                    self?.uploadStatus = "Upload failed (kept on phone): \(err?.localizedDescription ?? "no Tailscale?")"
-                }
-            }
-        }
-        task.resume()
     }
 
     // Debounced recovery: nudge the stream back ONLY if it fully stopped while we
@@ -395,12 +379,16 @@ final class GlassesStreamer: ObservableObject {
 
                 let recorder = self.recorder
                 let preview = self.preview
+                let uplink = self.uplink
                 // Record EVERY frame (cheap pass-through) AND feed the live preview
-                // layer, which decodes the encoded HEVC natively. Captured as locals
-                // so the SDK delivery thread never touches the @MainActor streamer.
+                // layer (native hvc1 decode) AND hand the sample to the uplink,
+                // which decodes on its OWN bounded queue → WebRTC video + 1fps
+                // analysis. The delivery thread only does the cheap append/enqueue
+                // + one async handoff, never the decode.
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
                     recorder.append(frame)
                     preview.enqueue(frame.sampleBuffer)
+                    uplink.ingest(frame.sampleBuffer)
                     guard recorder.tickPreview() else { return }
                     recorder.note(frame)
                     Task { @MainActor in self?.frameSize = recorder.sizeLabel() }
@@ -415,7 +403,7 @@ final class GlassesStreamer: ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         if s == .streaming {
-                            self.status = "RECORDING (hvc1, \(self.elapsed))"
+                            self.status = "LIVE 720p — video to /capture (\(self.elapsed))"
                         } else if s == .paused {
                             self.status = "Buffering…"          // self-recovers; don't touch it
                         } else if s == .stopped {
@@ -440,6 +428,11 @@ final class GlassesStreamer: ObservableObject {
                 // frame/keyframe is never dropped (append() no-ops until armed, and
                 // gates on the first keyframe anyway).
                 recorder.start(); recorder.setRecording(true)
+                uplink.setStreaming(true)
+                // Publish live video to the desktop /capture viewer over WebRTC.
+                Task { [weak self] in
+                    await self?.rtc.connect(baseURL: Self.backendBase)
+                }
                 self.isRecording = true
                 self.lastRestartAt = .distantPast   // fresh session: clear stale debounce
                 // Keep Meta AI + the glasses audio route alive (or iOS suspends it
@@ -448,7 +441,7 @@ final class GlassesStreamer: ObservableObject {
                 UIApplication.shared.isIdleTimerDisabled = true
                 self.startElapsedTimer()
                 stream.start()
-                self.status = "RECORDING (hvc1, max clarity)"
+                self.status = "LIVE 720p — video to /capture + analysis"
             } catch {
                 self.lastError = "\(error)"
                 // Meta SDK #231: a prior hard suspension (e.g. phone locked mid-
@@ -472,6 +465,14 @@ final class GlassesStreamer: ObservableObject {
                 guard let self, let start = self.startedAt else { return }
                 let s = Int(Date().timeIntervalSince(start))
                 self.elapsed = String(format: "%02d:%02d", s / 60, s % 60)
+                self.rtcStatus = self.rtc.state.label
+                // Forgiving: if the viewer wasn't open when we joined, retry the
+                // WebRTC connect every 8s while we're still streaming.
+                if s % 8 == 0, self.isRecording, case .failed = self.rtc.state {
+                    Task { [weak self] in
+                        await self?.rtc.connect(baseURL: Self.backendBase)
+                    }
+                }
             }
         }
     }
