@@ -9,10 +9,10 @@ BloomKnights Node backend. Four tabs:
   `GET /api/comparison?sport=&fixture=` every 5 seconds.
 - **Glasses** — two source modes:
   - **Meta glasses (SDK)** — the REAL Ray-Ban stream via Meta's Wearables
-    Device Access Toolkit (same proven setup as the PokerAI app: keep-alive
-    audio session for the ~85s suspension, hvc1 720p over WiFi transport,
-    debounced recovery). Decodes ~1 frame/second → JPEG → POSTs to
-    `/api/frames` with source `rayban_sdk`. Requires the xcodegen build (below).
+    Device Access Toolkit (keep-alive audio session for the ~85s suspension
+    and debounced recovery). Uses Meta's supported raw 360x640 stream path,
+    renders with `VideoFrame.makeUIImage()`, and feeds a bounded 12 fps WebRTC
+    publisher. Requires the xcodegen build (below).
   - **Phone camera** — fallback bridge: point the phone at the screen showing
     the broadcast. Samples ~1 fps, POSTs with source `ios_app`.
   Both show sent / accepted / skipped / failed counters.
