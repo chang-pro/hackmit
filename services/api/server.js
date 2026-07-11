@@ -179,12 +179,15 @@ export function createBloomServer({
       return;
     }
 
-    let sport;
+    let requestedSport = null;
     try {
       if (body.sport != null && typeof body.sport !== "string") {
         throw new Error("sport must be a string");
       }
-      sport = getSport(body.sport ?? null);
+      const sportHint = body.sport?.trim().toLowerCase();
+      if (sportHint && sportHint !== "auto") {
+        requestedSport = { id: sportHint };
+      }
     } catch (err) {
       sendJson(res, 400, { error: err.message });
       return;
@@ -200,7 +203,12 @@ export function createBloomServer({
 
     const selection = selector.consider(body.image_base64);
     if (!selection.accepted) {
-      sendJson(res, 200, { frame: meta, sport: sport.id, selection, insight: latestInsight });
+      sendJson(res, 200, {
+        frame: meta,
+        sport: latestInsight?.observation?.sport ?? requestedSport?.id ?? "auto",
+        selection,
+        insight: latestInsight,
+      });
       return;
     }
 
@@ -211,13 +219,10 @@ export function createBloomServer({
     if (datasetWriter.enabled) {
       try {
         const files = await datasetWriter.record({
-          sport: sport.id,
+          sport: latestInsight?.observation?.sport ?? requestedSport?.id ?? "unknown",
           frame: meta,
           imageBase64: body.image_base64,
-          state:
-            latestInsight?.sport === sport.id
-              ? latestInsight?.state ?? latestInsight?.observation ?? null
-              : null,
+          state: latestInsight?.state ?? latestInsight?.observation ?? null,
         });
         dataset = { saved: true, labeled: files.label != null };
       } catch (err) {
@@ -226,17 +231,27 @@ export function createBloomServer({
     }
 
     try {
-      const frame = { ...gateway.frame(meta.frame_id), sport: sport.id };
+      const frame = {
+        ...gateway.frame(meta.frame_id),
+        ...(requestedSport ? { requested_sport_hint: requestedSport.id } : {}),
+      };
       const result = await analyzer.submit(frame, {
         force: body.force_analysis === true || body.source === "phone_photo",
       });
       if (result.analysis_status === "analyzed") {
-        latestInsight = { ...result.insight, sport: result.insight.sport ?? sport.id };
+        latestInsight = {
+          ...result.insight,
+          sport: result.insight.observation?.sport ?? requestedSport?.id ?? "unknown",
+        };
         latestInsightAt = Date.now();
       }
       sendJson(res, result.analysis_status === "analyzed" ? 201 : 202, {
         frame: meta,
-        sport: sport.id,
+        sport:
+          result.insight?.observation?.sport ??
+          latestInsight?.observation?.sport ??
+          requestedSport?.id ??
+          "auto",
         selection,
         ...result,
         ...(dataset ? { dataset } : {}),
@@ -244,7 +259,7 @@ export function createBloomServer({
     } catch (err) {
       sendJson(res, 422, {
         frame: meta,
-        sport: sport.id,
+        sport: requestedSport?.id ?? "auto",
         selection,
         insight: null,
         analysis: {
@@ -258,9 +273,10 @@ export function createBloomServer({
   }
 
   async function handleComparison(res, url) {
+    const requestedSportId = url.searchParams.get("sport");
     let sport;
     try {
-      sport = getSport(url.searchParams.get("sport"));
+      sport = getSport(requestedSportId);
     } catch (err) {
       sendJson(res, 400, { error: err.message });
       return;
@@ -287,11 +303,11 @@ export function createBloomServer({
       );
       return;
     }
-    // Live insights only count for the sport they were tagged with — NBA
-    // frames must never make a golf comparison claim "live".
+    // With no explicit fixture or sport filter, the latest auto-detected event
+    // wins. An explicit sport query keeps the legacy dashboard isolated.
     if (
       latestInsight &&
-      latestInsight.sport === sport.id &&
+      (!requestedSportId || latestInsight.sport === sport.id) &&
       Date.now() - latestInsightAt <= LIVE_SESSION_TTL_MS
     ) {
       sendJson(res, 200, latestInsight);

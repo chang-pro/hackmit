@@ -255,15 +255,9 @@
     <aside class="side">
       <div class="panel">
         <div class="field">
-          <label for="sport">Sport</label>
-          <select id="sport">
-            <option value="nba">NBA</option>
-            <option value="soccer">Soccer</option>
-            <option value="ufc">UFC</option>
-            <option value="football">Football</option>
-            <option value="golf">Golf</option>
-          </select>
-          <div class="hint">Included with every frame so the pipeline picks the right scoreboard parser.</div>
+          <label>Sport and event</label>
+          <div style="font-size:18px;font-weight:700;color:var(--text)">Automatic detection</div>
+          <div class="hint">Keep the broadcast visible. The vision backend identifies the sport and starts fresh context when the event changes.</div>
         </div>
         <div class="counters">
           <div><div class="c-label">Sent</div><div class="c-value" id="sent">0</div></div>
@@ -406,7 +400,6 @@ async function sendFrame() {
         image_base64,
         width: canvas.width,
         height: canvas.height,
-        sport: $("sport").value,
       }),
     });
     const d = await r.json();
@@ -490,24 +483,6 @@ video.addEventListener("ended", () => {
 for (const [id, m] of [["mode-webcam", "webcam"], ["mode-rayban", "rayban_stream"], ["mode-clip", "clip_replay"]]) {
   $(id).addEventListener("click", () => switchMode(m));
 }
-
-// Sport dropdown from /api/sports, NBA fallback if the endpoint isn't wired yet
-(async () => {
-  try {
-    const r = await fetch("/api/sports");
-    if (!r.ok) return;
-    const d = await r.json();
-    if (!Array.isArray(d) || !d.length) return;
-    const sel = $("sport");
-    sel.textContent = "";
-    for (const s of d) {
-      const o = document.createElement("option");
-      o.value = s.id;
-      o.textContent = s.label || s.id.toUpperCase();
-      sel.appendChild(o);
-    }
-  } catch { /* keep NBA fallback */ }
-})();
 
 renderMode();
 </script>

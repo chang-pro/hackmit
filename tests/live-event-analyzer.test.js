@@ -1,11 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LiveEventAnalyzer } from "../services/api/live-event-analyzer.js";
+import {
+  LiveEventAnalyzer,
+  detectEventSwitch,
+} from "../services/api/live-event-analyzer.js";
 
 const observation = {
   sport: "mma",
   competition: "UFC",
   event_name: "Fighter A vs Fighter B",
+  event_identity: "mma:ufc-fighter-a-vs-fighter-b",
+  event_format: "head_to_head",
+  participants: [
+    { name: "Fighter A", role_or_position: "red corner", score_or_status: "", visible_rank: 0 },
+    { name: "Fighter B", role_or_position: "blue corner", score_or_status: "", visible_rank: 0 },
+  ],
   participant_a: "Fighter A",
   participant_b: "Fighter B",
   score_a: 0,
@@ -123,4 +132,119 @@ test("a manual photo analyzes immediately but still respects cooldown", async ()
   const second = await analyzer.submit(frame(2), { force: true });
   assert.equal(second.analysis_status, "queued");
   assert.equal(second.queue.next_analysis_ms, 11_000);
+});
+
+test("automatically detects an NBA-to-golf switch and clears prior analysis context", async () => {
+  let now = 0;
+  const observations = [
+    {
+      ...observation,
+      sport: "basketball",
+      competition: "NBA",
+      event_name: "Celtics vs Knicks",
+      event_identity: "nba:boston-celtics-vs-new-york-knicks",
+      event_format: "team_event",
+      participants: [
+        { name: "Boston Celtics", role_or_position: "away", score_or_status: "104", visible_rank: 0 },
+        { name: "New York Knicks", role_or_position: "home", score_or_status: "101", visible_rank: 0 },
+      ],
+      participant_a: "Boston Celtics",
+      participant_b: "New York Knicks",
+      score_a: 104,
+      score_b: 101,
+      score_display: "104-101",
+      phase: "Q4",
+      clock: "2:14",
+    },
+    {
+      ...observation,
+      sport: "golf",
+      competition: "The Open Championship",
+      event_name: "The Open 2026",
+      event_identity: "golf:the-open-2026",
+      event_format: "leaderboard",
+      participants: [
+        { name: "Player One", role_or_position: "leader", score_or_status: "-12", visible_rank: 1 },
+        { name: "Player Two", role_or_position: "second", score_or_status: "-10", visible_rank: 2 },
+      ],
+      participant_a: "Player One",
+      participant_b: "Player Two",
+      score_a: -12,
+      score_b: -10,
+      score_display: "1 Player One -12 · 2 Player Two -10",
+      phase: "Round 4 · Hole 15",
+      clock: "",
+      possession_or_control: "Player One leads",
+      situation: "Final round leaderboard",
+    },
+  ];
+  const contexts = [];
+  const analyzer = new LiveEventAnalyzer({
+    now: () => now,
+    visionBackend: {
+      name: "test-vision",
+      async extractEventBatch() {
+        return observations.shift();
+      },
+    },
+    analyze: async (context) => {
+      contexts.push(context);
+      return analysis;
+    },
+  });
+
+  await analyzer.submit(frame(1), { force: true });
+  now = 12_000;
+  const result = await analyzer.submit(frame(2), { force: true });
+
+  assert.equal(result.insight.event_switch.detected, true);
+  assert.equal(result.insight.event_switch.reason, "sport_changed");
+  assert.equal(result.insight.event_switch.from_event.sport, "basketball");
+  assert.equal(result.insight.event_switch.to_event.sport, "golf");
+  assert.equal(contexts[1].previous_observation, null);
+  assert.equal(contexts[1].previous_analysis, null);
+  assert.equal(result.insight.presentation.status, "event_switched");
+});
+
+test("a golf leaderboard changing visible players remains the same event", () => {
+  const first = {
+    sport: "golf",
+    competition: "The Open Championship",
+    event_name: "The Open 2026",
+    event_identity: "golf:the-open-2026",
+    event_format: "leaderboard",
+    participants: [{ name: "Player One" }],
+    confidence: 0.92,
+  };
+  const second = {
+    ...first,
+    participants: [{ name: "Player Seven" }],
+    participant_a: "Player Seven",
+  };
+
+  const eventSwitch = detectEventSwitch(first, second);
+  assert.equal(eventSwitch.detected, false);
+  assert.equal(eventSwitch.reason, "stable_event_identity");
+});
+
+test("switching between two games in the same sport starts a new event", () => {
+  const first = {
+    sport: "basketball",
+    competition: "NBA",
+    event_name: "Celtics vs Knicks",
+    event_identity: "nba:celtics-vs-knicks",
+    event_format: "team_event",
+    participants: [{ name: "Celtics" }, { name: "Knicks" }],
+    confidence: 0.94,
+  };
+  const second = {
+    ...first,
+    event_name: "Lakers vs Warriors",
+    event_identity: "nba:lakers-vs-warriors",
+    participants: [{ name: "Lakers" }, { name: "Warriors" }],
+  };
+
+  const eventSwitch = detectEventSwitch(first, second);
+  assert.equal(eventSwitch.detected, true);
+  assert.equal(eventSwitch.reason, "event_identity_changed");
 });

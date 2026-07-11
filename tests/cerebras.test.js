@@ -49,6 +49,12 @@ test("Gemma 4 packs five ordered sports frames into one vision request", async (
           sport: "soccer",
           competition: "FIFA World Cup",
           event_name: "USA vs Brazil",
+          event_identity: "soccer:usa-vs-brazil-world-cup-2026",
+          event_format: "team_event",
+          participants: [
+            { name: "USA", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
+            { name: "Brazil", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
+          ],
           participant_a: "USA",
           participant_b: "Brazil",
           score_a: 1,
@@ -75,6 +81,9 @@ test("Gemma 4 packs five ordered sports frames into one vision request", async (
   const imageParts = request.messages[1].content.filter((part) => part.type === "image_url");
   assert.equal(request.schemaName, "multisport_live_event_window");
   assert.equal(imageParts.length, 5);
+  assert.equal(request.schema.properties.sport.enum, undefined);
+  assert.equal(request.schema.properties.event_identity.type, "string");
+  assert.equal(request.schema.properties.participants.type, "array");
   assert.equal(result.sport, "soccer");
 });
 
