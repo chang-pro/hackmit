@@ -80,6 +80,14 @@
   /* Active feed: a quiet theater workspace, not a full-screen HUD. */
   .theater-shell { position: absolute; z-index: 1; inset: 0; pointer-events: none; }
   .theater-screen { position: absolute; inset: 0; overflow: hidden; }
+  .vision-overlay { position: absolute; z-index: 3; inset: 0; overflow: visible; pointer-events: none; }
+  .vision-overlay[hidden], .vision-overlay-status[hidden] { display: none; }
+  .vision-box { position: absolute; border: 2px solid var(--box-stroke); border-radius: .5rem; background: var(--box-fill); box-shadow: 0 0 0 1px rgba(5,20,48,.18), 0 0 22px var(--box-glow); transition: left .18s linear, top .18s linear, width .18s linear, height .18s linear; }
+  .vision-box::before, .vision-box::after { content: ""; position: absolute; width: .58rem; height: .58rem; }
+  .vision-box::before { top: -.2rem; left: -.2rem; border-top: 2px solid var(--box-stroke); border-left: 2px solid var(--box-stroke); border-radius: .22rem 0 0; }
+  .vision-box::after { right: -.2rem; bottom: -.2rem; border-right: 2px solid var(--box-stroke); border-bottom: 2px solid var(--box-stroke); border-radius: 0 0 .22rem; }
+  .vision-label { position: absolute; top: -1.58rem; left: -.14rem; max-width: 13rem; overflow: hidden; padding: .28rem .43rem; border-radius: .35rem .35rem .35rem .08rem; color: #10213b; background: var(--box-stroke); box-shadow: 0 4px 13px rgba(3,13,35,.22); font: 700 .55rem var(--mono); letter-spacing: .045em; text-overflow: ellipsis; white-space: nowrap; }
+  .vision-overlay-status { position: absolute; z-index: 4; bottom: 1rem; left: 1rem; padding: .42rem .58rem; border: 1px solid rgba(211,239,255,.46); border-radius: .62rem; color: rgba(241,250,255,.94); background: rgba(12,25,53,.48); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 8px 24px rgba(3,13,35,.22); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); font: .56rem var(--mono); letter-spacing: .1em; text-transform: uppercase; text-shadow: 0 1px 7px rgba(0,0,0,.4); }
   .analysis-tiles { display: none; }
   body.running .theater-shell { top: 1.5rem; right: calc(clamp(18rem, 25vw, 23rem) + 3rem); bottom: 1.5rem; left: 1.5rem; }
   body.running .theater-screen { overflow: hidden; border: 1px solid rgba(255,255,255,.82); border-radius: 1.45rem; background: #101624; box-shadow: 0 24px 60px rgba(40,54,94,.20), inset 0 1px 0 rgba(255,255,255,.20); }
@@ -126,6 +134,8 @@
     <div class="theater-screen">
       <video id="video" autoplay playsinline muted></video>
       <video id="remotePreview" autoplay playsinline muted></video>
+      <div class="vision-overlay" id="visionOverlay" aria-hidden="true" hidden></div>
+      <div class="vision-overlay-status" id="visionOverlayStatus" hidden></div>
     </div>
   </div>
   <div class="scrim"></div>
@@ -215,6 +225,18 @@ let lastSpoken = "";
 let lastInboundVideoStats = null;
 let demoStream = null;
 let demoAnimation = null;
+let visualDetections = [];
+let visualDetectionSource = null;
+
+const DETECTION_STYLES = {
+  athlete: { stroke: "#83e9ff", fill: "rgba(87, 188, 255, .14)", glow: "rgba(87, 188, 255, .32)" },
+  player: { stroke: "#83e9ff", fill: "rgba(87, 188, 255, .14)", glow: "rgba(87, 188, 255, .32)" },
+  fighter: { stroke: "#ff9fc9", fill: "rgba(255, 111, 170, .14)", glow: "rgba(255, 111, 170, .32)" },
+  golfer: { stroke: "#9cf4c7", fill: "rgba(78, 234, 164, .14)", glow: "rgba(78, 234, 164, .32)" },
+  referee: { stroke: "#e6c7ff", fill: "rgba(190, 143, 255, .14)", glow: "rgba(190, 143, 255, .32)" },
+  ball: { stroke: "#ffe28c", fill: "rgba(255, 204, 96, .16)", glow: "rgba(255, 204, 96, .32)" },
+  other: { stroke: "#ced9ff", fill: "rgba(161, 177, 255, .12)", glow: "rgba(161, 177, 255, .28)" },
+};
 
 const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
 const STEPS = [
@@ -262,9 +284,92 @@ function setRemoteFeedUI(active) {
   document.body.classList.remove("running", "remote-feed");
   remotePreview.srcObject = null;
   remotePreview.style.display = "none";
+  clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
   setStatusPill("idle", "waiting for phone");
+}
+
+function boundedDetection(detection) {
+  const box = detection?.bbox;
+  const values = [box?.x, box?.y, box?.width, box?.height].map(Number);
+  if (!values.every(Number.isFinite)) return null;
+  let [x, y, width, height] = values;
+  x = Math.max(0, Math.min(1000, x));
+  y = Math.max(0, Math.min(1000, y));
+  width = Math.max(1, Math.min(1000 - x, width));
+  height = Math.max(1, Math.min(1000 - y, height));
+  if (width < 2 || height < 2) return null;
+  return {
+    label: String(detection?.label || "PLAYER").trim().slice(0, 28) || "PLAYER",
+    kind: DETECTION_STYLES[detection?.kind] ? detection.kind : "other",
+    bbox: { x, y, width, height },
+    confidence: Math.max(0, Math.min(1, Number(detection?.confidence) || 0)),
+  };
+}
+
+function activeVideoDimensions() {
+  const activeVideo = remotePreview.style.display !== "none" ? remotePreview : video;
+  return { width: activeVideo.videoWidth || 16, height: activeVideo.videoHeight || 9 };
+}
+
+function renderVisualDetections() {
+  const overlay = $("visionOverlay");
+  const status = $("visionOverlayStatus");
+  const screen = document.querySelector(".theater-screen");
+  if (!remoteFeedActive || visualDetections.length === 0 || !screen) {
+    overlay.replaceChildren();
+    overlay.hidden = true;
+    status.hidden = true;
+    return;
+  }
+  const bounds = screen.getBoundingClientRect();
+  const { width: sourceWidth, height: sourceHeight } = activeVideoDimensions();
+  if (bounds.width < 1 || bounds.height < 1) return;
+  const scale = Math.max(bounds.width / sourceWidth, bounds.height / sourceHeight);
+  const paintedWidth = sourceWidth * scale;
+  const paintedHeight = sourceHeight * scale;
+  const offsetX = (bounds.width - paintedWidth) / 2;
+  const offsetY = (bounds.height - paintedHeight) / 2;
+  overlay.replaceChildren();
+  for (const detection of visualDetections) {
+    const style = DETECTION_STYLES[detection.kind];
+    const x = offsetX + (detection.bbox.x / 1000) * paintedWidth;
+    const y = offsetY + (detection.bbox.y / 1000) * paintedHeight;
+    const width = (detection.bbox.width / 1000) * paintedWidth;
+    const height = (detection.bbox.height / 1000) * paintedHeight;
+    const box = document.createElement("div");
+    box.className = "vision-box";
+    box.style.left = `${x}px`;
+    box.style.top = `${y}px`;
+    box.style.width = `${width}px`;
+    box.style.height = `${height}px`;
+    box.style.opacity = Math.max(.64, detection.confidence).toFixed(2);
+    box.style.setProperty("--box-stroke", style.stroke);
+    box.style.setProperty("--box-fill", style.fill);
+    box.style.setProperty("--box-glow", style.glow);
+    const tag = `${detection.label.toUpperCase()}  ${Math.round(detection.confidence * 100)}%`;
+    const label = document.createElement("span");
+    label.className = "vision-label";
+    label.textContent = tag;
+    box.append(label);
+    overlay.append(box);
+  }
+  overlay.hidden = false;
+  status.textContent = visualDetectionSource === "model" ? "Vision overlay · latest model pass" : "Vision overlay · local demo tracker";
+  status.hidden = false;
+}
+
+function setVisualDetections(detections, source = "model") {
+  visualDetections = (Array.isArray(detections) ? detections : []).map(boundedDetection).filter(Boolean);
+  visualDetectionSource = visualDetections.length > 0 ? source : null;
+  renderVisualDetections();
+}
+
+function clearVisualDetections() {
+  visualDetections = [];
+  visualDetectionSource = null;
+  renderVisualDetections();
 }
 
 function renderResearchPlan(insight = null) {
@@ -335,6 +440,21 @@ function paintDemoBroadcast(context, width, height, now) {
   }
 }
 
+function renderDemoDetections(now) {
+  const phase = now / 1000;
+  const detections = Array.from({ length: 8 }, (_, index) => {
+    const centerX = 1000 * (.18 + index * .09) + Math.sin(phase * 1.8 + index) * 9.4;
+    const centerY = 1000 * (.51 + (index % 2) * .11) + Math.cos(phase * 1.4 + index) * 8.3;
+    return {
+      label: index < 4 ? "ORBIT PLAYER" : "NOVA PLAYER",
+      kind: "player",
+      bbox: { x: Math.round(centerX - 21), y: Math.round(centerY - 37), width: 42, height: 74 },
+      confidence: .88 + (index % 3) * .03,
+    };
+  });
+  setVisualDetections(detections, "demo");
+}
+
 function stopDemoFeed({ resetUI = true } = {}) {
   if (demoAnimation) cancelAnimationFrame(demoAnimation);
   demoAnimation = null;
@@ -351,6 +471,7 @@ function startDemoFeed() {
   const context = canvas.getContext("2d");
   const draw = (now) => {
     paintDemoBroadcast(context, canvas.width, canvas.height, now);
+    renderDemoDetections(now);
     demoAnimation = requestAnimationFrame(draw);
   };
   demoAnimation = requestAnimationFrame(draw);
@@ -359,6 +480,7 @@ function startDemoFeed() {
   remotePreview.style.display = "block";
   video.style.display = "none";
   remotePreview.play().catch(() => {});
+  remotePreview.addEventListener("loadedmetadata", renderVisualDetections, { once: true });
   setRemoteFeedUI(true);
   $("idleHint").textContent = "Local demo stream is active. No camera, relay, or bandwidth is being used.";
   return "BloomKnights local demo stream started — run bloomDemo.stop() to exit.";
@@ -430,10 +552,12 @@ async function getPeerConnection() {
   };
   connection.ontrack = ({ streams }) => {
     stopDemoFeed({ resetUI: false });
+    clearVisualDetections();
     remotePreview.srcObject = streams[0];
     remotePreview.style.display = "block";
     video.style.display = "none";
     remotePreview.play().catch(() => {});
+    remotePreview.addEventListener("loadedmetadata", renderVisualDetections, { once: true });
     setRemoteFeedUI(true);
   };
   connection.onconnectionstatechange = () => {
@@ -516,6 +640,7 @@ function renderInsight(insight) {
   const observation = insight.observation;
   const analysis = insight.analysis;
   const presentation = insight.presentation || {};
+  setVisualDetections(observation.visual_detections, "model");
   renderResearchPlan(insight);
   document.body.classList.add("has-read");
   if (observation.sport) {
@@ -583,6 +708,7 @@ $("speak").addEventListener("click", () => {
 $("helpClose").addEventListener("click", () => $("help").removeAttribute("open-panel"));
 $("help").addEventListener("click", (event) => { if (event.target === $("help")) $("help").removeAttribute("open-panel"); });
 window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch(() => {}));
+new ResizeObserver(renderVisualDetections).observe(document.querySelector(".theater-screen"));
 window.bloomDemo = Object.freeze({ start: startDemoFeed, stop: () => { stopDemoFeed(); return "BloomKnights local demo stream stopped."; } });
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
 $("helpNote").textContent = NOTE;

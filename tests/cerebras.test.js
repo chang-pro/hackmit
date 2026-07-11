@@ -67,6 +67,9 @@ test("Gemma 4 packs five ordered sports frames into one vision request", async (
           situation: "Open play",
           visible_facts: ["Score tied"],
           changes_across_frames: ["Clock advanced"],
+          visual_detections: [
+            { label: "PLAYER", kind: "player", bbox: { x: 111, y: 222, width: 90, height: 210 }, confidence: 0.89 },
+          ],
           confidence: 0.93,
         },
         meta: { model: CEREBRAS_VISION_MODEL },
@@ -84,6 +87,8 @@ test("Gemma 4 packs five ordered sports frames into one vision request", async (
   assert.equal(request.schema.properties.sport.enum, undefined);
   assert.equal(request.schema.properties.event_identity.type, "string");
   assert.equal(request.schema.properties.participants.type, "array");
+  assert.equal(request.schema.properties.visual_detections.items.properties.bbox.required.length, 4);
+  assert.ok(request.schema.required.includes("visual_detections"));
   assert.equal(result.sport, "soccer");
 });
 

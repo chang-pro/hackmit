@@ -179,6 +179,10 @@ It renders a local animated synthetic broadcast through a canvas `MediaStream` a
 
 For a shareable UI-review link, open `/capture?demo=1` instead.
 
+### Player overlay
+
+Each quota-gated, five-frame vision request also asks for up to twelve visible-subject boxes from its newest frame. The backend returns `visual_detections` with a label, kind, confidence, and `bbox` coordinates normalized from 0–1000. The capture page maps those coordinates over the cover-cropped WebRTC video and draws the overlay locally; it does not create another model request or send video through the signaling tunnel. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.
+
 ## Cerebras models
 
 The live provider is intentionally simple:
