@@ -1,0 +1,11 @@
+{
+  "name": "bloomknights",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Slice 1: deterministic end-to-end skeleton — saved frame -> parsed state -> probability -> mock market -> comparison",
+  "scripts": {
+    "start": "node services/api/server.js",
+    "test": "node --test 'tests/*.test.js'"
+  }
+}
