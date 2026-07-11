@@ -303,8 +303,7 @@ final class GlassesStreamer: ObservableObject {
         elapsedTimer?.invalidate(); elapsedTimer = nil
         keepAlive.stop()
         UIApplication.shared.isIdleTimerDisabled = false
-        let wasRecording = isRecording
-        recorder.setRecording(false); isRecording = false
+        isRecording = false
         uplink.setStreaming(false)
         rtc.disconnect(); rtcStatus = ""
         stream?.stop(); stream = nil
@@ -314,16 +313,7 @@ final class GlassesStreamer: ObservableObject {
         // listeners are keyed per-device and deduped, so they stay.
         tokens.removeAll()
         latestFrame = nil
-        if wasRecording {
-            recorder.stop { [weak self] url in
-                Task { @MainActor in
-                    self?.savedFile = url?.lastPathComponent ?? ""
-                    self?.status = "Stopped — clip saved on phone"
-                }
-            }
-        } else {
-            status = "Stopped"
-        }
+        status = "Stopped"
     }
 
     // Debounced recovery: nudge the stream back ONLY if it fully stopped while we
@@ -369,7 +359,11 @@ final class GlassesStreamer: ObservableObject {
                 // cellular during the session (fine — we record locally) + a one-time
                 // WiFi permission prompt. If it still cuts, WiFi didn't engage and we
                 // dig into the enable path; fall back to .medium 504x896.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 24)
+                // 720p for image quality; 15fps (down from 24) so the phone
+                // decodes+publishes far fewer frames — much less heat/memory over a
+                // long session (fixes the crash-after-a-while). Delay/less motion is
+                // an accepted trade for a smooth, stable, high-quality feed.
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 15)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
@@ -380,13 +374,12 @@ final class GlassesStreamer: ObservableObject {
                 let recorder = self.recorder
                 let preview = self.preview
                 let uplink = self.uplink
-                // Record EVERY frame (cheap pass-through) AND feed the live preview
-                // layer (native hvc1 decode) AND hand the sample to the uplink,
-                // which decodes on its OWN bounded queue → WebRTC video + 1fps
-                // analysis. The delivery thread only does the cheap append/enqueue
-                // + one async handoff, never the decode.
+                // NO phone recording (that "double stream to phone + site" was
+                // extra load for nothing — the goal is the SITE feed). The
+                // delivery thread only feeds the on-phone preview + hands the
+                // sample to the uplink, which decodes on its OWN bounded queue →
+                // WebRTC video to /capture + 1fps analysis.
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
-                    recorder.append(frame)
                     preview.enqueue(frame.sampleBuffer)
                     uplink.ingest(frame.sampleBuffer)
                     guard recorder.tickPreview() else { return }
@@ -427,7 +420,6 @@ final class GlassesStreamer: ObservableObject {
                 // Arm the recorder BEFORE starting the stream so the very first
                 // frame/keyframe is never dropped (append() no-ops until armed, and
                 // gates on the first keyframe anyway).
-                recorder.start(); recorder.setRecording(true)
                 uplink.setStreaming(true)
                 // Publish live video to the desktop /capture viewer over WebRTC.
                 Task { [weak self] in
