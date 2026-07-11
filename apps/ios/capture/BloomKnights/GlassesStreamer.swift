@@ -548,14 +548,12 @@ final class GlassesStreamer: ObservableObject {
                     }
                 }
 
-                // .medium (504x896) @ 24fps — the ONLY resolution proven to stream
-                // smooth + continuous over Bluetooth on this SDK. Device tests:
-                // .high (720x1280) stalls at ANY fps when frames ride Bluetooth (the
-                // glasses throttle hard when the BT channel congests → the ~1-minute
-                // freeze); .medium ran clean ~8 min. SDK 0.8's WiFi/softAP transport
-                // (which would let .high run stable) only engages on some networks and
-                // did NOT engage here, so we stay on the reliable .medium path.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 24)
+                // .high (720x1280) @ 24fps — sharper. WARNING: on prior device
+                // tests 720p STALLS after ~1 min when frames ride Bluetooth (the
+                // glasses throttle when the BT channel congests). It only stays
+                // smooth if SDK 0.8's WiFi/softAP transport engages. If it freezes,
+                // drop back to .medium (504x896), the BT-safe fallback.
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 24)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
