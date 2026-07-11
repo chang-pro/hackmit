@@ -50,7 +50,9 @@ final class RTCPublisher: NSObject, ObservableObject {
 
     private var peerConnection: RTCPeerConnection?
     // Written only on main (connect/disconnect); read from the SDK decode
-    // thread in push(). WebRTC's capturer path is thread-safe by design.
+    // thread in push(). Guard the handoff explicitly so disconnect cannot race
+    // an in-flight VideoToolbox callback.
+    private nonisolated(unsafe) let frameLock = NSLock()
     private nonisolated(unsafe) var videoSource: RTCVideoSource?
     private var videoTrack: RTCVideoTrack?
     private nonisolated(unsafe) let capturer = RTCVideoCapturer()
@@ -136,7 +138,9 @@ final class RTCPublisher: NSObject, ObservableObject {
             peerConnection = pc
 
             let source = Self.factory.videoSource()
+            frameLock.lock()
             videoSource = source
+            frameLock.unlock()
             let track = Self.factory.videoTrack(with: source, trackId: "glasses-video0")
             videoTrack = track
             pc.add(track, streamIds: ["glasses"])
@@ -168,7 +172,10 @@ final class RTCPublisher: NSObject, ObservableObject {
             }
         }
         peerConnection?.close(); peerConnection = nil
-        videoTrack = nil; videoSource = nil
+        videoTrack = nil
+        frameLock.lock()
+        videoSource = nil
+        frameLock.unlock()
         sessionId = nil
         pendingRemoteIce = []
         haveRemoteDescription = false
@@ -225,14 +232,16 @@ final class RTCPublisher: NSObject, ObservableObject {
     // MARK: - Frame input (called from the SDK decode thread)
 
     nonisolated func push(_ imageBuffer: CVImageBuffer) {
-        guard let source = videoSource else { return }
+        frameLock.lock()
+        guard let source = videoSource else { frameLock.unlock(); return }
+        pushCounter += 1
+        let count = pushCounter
+        frameLock.unlock()
         let rtcBuffer = RTCCVPixelBuffer(pixelBuffer: imageBuffer)
         let timeNs = Int64(CACurrentMediaTime() * 1_000_000_000)
         let frame = RTCVideoFrame(buffer: rtcBuffer, rotation: ._0, timeStampNs: timeNs)
         source.capturer(capturer, didCapture: frame)
-        pushCounter += 1
-        if pushCounter % 24 == 0 {
-            let count = pushCounter
+        if count % 12 == 0 {
             Task { @MainActor [weak self] in self?.framesPushed = count }
         }
     }
