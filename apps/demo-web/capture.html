@@ -237,7 +237,7 @@ const STEPS = [
   "The camera video connects directly to this browser with WebRTC; the public tunnel carries signaling only.",
   "Press <b>Analyze</b> here only when you want to start model requests.",
 ];
-const NOTE = "If this campus network blocks a direct peer connection, configure a TURN server with WEBRTC_ICE_SERVERS_JSON. Video will never be relayed through the Quick Tunnel.";
+const NOTE = "If this campus network blocks a direct peer connection, configure a TURN server with WEBRTC_ICE_SERVERS_JSON. Video never passes through the public HTTP tunnel.";
 
 function setStatusPill(kind, label) {
   $("statusPill").className = "pill s-" + kind;
@@ -309,7 +309,10 @@ async function sendSignal(kind, payload) {
 async function getPeerConnection() {
   if (peerConnection) return peerConnection;
   const config = await api(`/api/webrtc/config?session_id=${encodeURIComponent(sessionId)}`);
-  const connection = new RTCPeerConnection({ iceServers: config.ice_servers });
+  const connection = new RTCPeerConnection({
+    iceServers: config.ice_servers,
+    iceTransportPolicy: config.ice_transport_policy || "all",
+  });
   peerConnection = connection;
   connection.onicecandidate = ({ candidate }) => {
     if (candidate) sendSignal("ice", candidate.toJSON()).catch(() => {});

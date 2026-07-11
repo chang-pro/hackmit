@@ -144,6 +144,7 @@ test("WebRTC signaling relays setup messages without proxying media", async (t) 
   assert.equal((await fetch(`${base}/api/webrtc/config`)).status, 404);
   const config = await (await fetch(`${base}/api/webrtc/config?session_id=${session.session_id}`)).json();
   assert.deepEqual(config.ice_servers, [{ urls: "stun:stun.l.google.com:19302" }]);
+  assert.equal(config.ice_transport_policy, "all");
   const analysis = await (await fetch(`${base}/api/analysis/status`)).json();
   assert.equal(analysis.analysis_enabled, false);
   assert.equal((await fetch(`${base}/api/live-stream`)).status, 404);

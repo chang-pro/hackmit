@@ -196,7 +196,10 @@ async function connectWebRtc() {
   });
   sessionId = joined.session_id;
   const config = await api(`/api/webrtc/config?session_id=${encodeURIComponent(sessionId)}`);
-  peerConnection = new RTCPeerConnection({ iceServers: config.ice_servers });
+  peerConnection = new RTCPeerConnection({
+    iceServers: config.ice_servers,
+    iceTransportPolicy: config.ice_transport_policy || "all",
+  });
   peerConnection.onicecandidate = ({ candidate }) => {
     if (candidate) sendSignal("ice", candidate.toJSON()).catch(() => {});
   };
