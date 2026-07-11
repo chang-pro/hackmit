@@ -88,8 +88,12 @@ const MAX_IMAGE_EDGE = 1600;
 const JPEG_QUALITY = 0.82;
 const SIGNAL_POLL_MS = 350;
 const ANALYSIS_STATUS_POLL_MS = 1_000;
-const VIDEO_TARGET_BITRATE_BPS = 6_000_000;
-const VIDEO_TARGET_FPS = 30;
+// Favor readable distant subjects for the on-device detector: 4K capture at
+// half the former frame rate, with twice the WebRTC bitrate ceiling.
+const VIDEO_TARGET_BITRATE_BPS = 12_000_000;
+const VIDEO_TARGET_FPS = 15;
+const VIDEO_TARGET_WIDTH = 3840;
+const VIDEO_TARGET_HEIGHT = 2160;
 
 const video = document.getElementById("video");
 const preview = document.getElementById("preview");
@@ -236,7 +240,7 @@ async function configureSenderQuality(sender) {
   try {
     await sender.setParameters(parameters);
   } catch {
-    // Some mobile WebKit versions ignore sender parameters; the 1080p capture
+    // Some mobile WebKit versions ignore sender parameters; the 4K capture
     // request and detail content hint still apply on those browsers.
   }
 }
@@ -410,8 +414,8 @@ async function startLive() {
   stream = await navigator.mediaDevices.getUserMedia({
     video: {
       facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
+      width: { ideal: VIDEO_TARGET_WIDTH },
+      height: { ideal: VIDEO_TARGET_HEIGHT },
       frameRate: { ideal: VIDEO_TARGET_FPS, max: VIDEO_TARGET_FPS },
     },
     audio: false,

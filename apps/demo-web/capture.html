@@ -173,7 +173,7 @@
       <section class="analysis-tile control-tile">
         <div>
           <div class="tile-eyebrow">Live vision</div>
-          <div class="tile-title" id="trackerState">YOLO11n standby</div>
+          <div class="tile-title" id="trackerState">YOLO11s standby</div>
           <p class="tile-note" id="trackerNote">Player tracking runs on this device; Analyze is only for event and market context.</p>
         </div>
         <button class="analyze" id="analyze" hidden>Analyze</button>
@@ -282,7 +282,7 @@ function setRemoteFeedUI(active) {
     updateAnalyzeButton();
     renderResearchPlan();
     if (demoStream) setTrackerState("Local demo tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
-    else setTrackerState("YOLO11n loading…", "Continuous player and ball tracking runs on this device.");
+    else setTrackerState("YOLO11s loading…", "Continuous player and ball tracking runs on this device.");
     window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: true, demo: Boolean(demoStream) } }));
     return;
   }
@@ -292,7 +292,7 @@ function setRemoteFeedUI(active) {
   clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
-  setTrackerState("YOLO11n standby", "Player tracking starts automatically with a live camera stream.");
+  setTrackerState("YOLO11s standby", "Player tracking starts automatically with a live camera stream.");
   window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: false, demo: false } }));
   setStatusPill("idle", "waiting for phone");
 }
@@ -369,7 +369,7 @@ function renderVisualDetections() {
   }
   overlay.hidden = false;
   status.textContent = visualDetectionSource === "yolo"
-    ? "YOLO11n · live on this device"
+    ? "YOLO11s · live on this device"
     : visualDetectionSource === "model"
       ? "Vision overlay · latest model pass"
       : "Vision overlay · local demo tracker";
@@ -767,15 +767,15 @@ if (idleTitleEl) setInterval(() => {
 <script type="module">
   import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.mjs";
 
-  // YOLO11n runs in the viewer, directly against the already-connected WebRTC
+  // YOLO11s runs in the viewer, directly against the already-connected WebRTC
   // stream. No video frame is sent to the server for this overlay.
   const bridge = window.bloomYoloInput;
-  const MODEL_URL = "/models/yolo11n.onnx";
+  const MODEL_URL = "/models/yolo11s.onnx";
   // A full broadcast frame makes distant athletes too small for COCO person
-  // detection. Two overlapped field tiles at 640px preserve far more detail.
+  // detection. Three overlapped field tiles at 640px preserve far more detail.
   const INPUT_SIZE = 640;
-  const DETECTION_INTERVAL_MS = 650;
-  const CONFIDENCE_THRESHOLD = .36;
+  const DETECTION_INTERVAL_MS = 900;
+  const CONFIDENCE_THRESHOLD = .28;
   const IOU_THRESHOLD = .48;
   const TRACKED_CLASSES = new Map([[0, { label: "PLAYER", kind: "player" }], [32, { label: "BALL", kind: "ball" }]]);
   const canvas = document.createElement("canvas");
@@ -840,9 +840,10 @@ if (idleTitleEl) setInterval(() => {
   function broadcastTiles(video) {
     const width = video.videoWidth;
     const height = video.videoHeight;
-    const tileWidth = Math.min(width, Math.round(width * .56));
+    const tileWidth = Math.min(width, Math.round(width * .4));
     return [
       { x: 0, y: 0, width: tileWidth, height },
+      { x: Math.round((width - tileWidth) / 2), y: 0, width: tileWidth, height },
       { x: width - tileWidth, y: 0, width: tileWidth, height },
     ];
   }
@@ -928,7 +929,7 @@ if (idleTitleEl) setInterval(() => {
       bridge.setDetections(serializeDetections(candidates, bridge.video.videoWidth, bridge.video.videoHeight), "yolo");
       if (started - lastFpsUpdate > 1_000) {
         const hz = (1_000 / Math.max(1, performance.now() - started)).toFixed(1);
-        bridge.setTrackerState(`YOLO11n dense · ${hz} Hz`, "Two overlapping 640px field tiles prioritize distant players.");
+        bridge.setTrackerState(`YOLO11s dense · ${hz} Hz`, "Three overlapping 640px field tiles prioritize distant players.");
         lastFpsUpdate = started;
       }
     } catch (error) {
@@ -950,7 +951,7 @@ if (idleTitleEl) setInterval(() => {
     if (running) return;
     running = true;
     const token = ++runToken;
-    bridge.setTrackerState("YOLO11n loading…", "Loading the lightweight on-device player tracker.");
+    bridge.setTrackerState("YOLO11s loading…", "Loading the stronger on-device player tracker.");
     detect(token);
   }
 
@@ -963,7 +964,7 @@ if (idleTitleEl) setInterval(() => {
     if (event.detail?.active) start(event.detail);
     else stop();
   });
-  window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11n", input_size: INPUT_SIZE }) });
+  window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11s", input_size: INPUT_SIZE }) });
   if (bridge.isFeedActive()) start({ demo: bridge.isDemo() });
 </script>
 </body>
