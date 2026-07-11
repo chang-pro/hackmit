@@ -22,6 +22,46 @@ This README is the source of truth for humans and AI coding tools working on the
 
 ---
 
+## Quickstart
+
+```bash
+npm start        # zero-dependency Node server on http://localhost:3000
+npm test         # 130 tests, node:test, no install needed
+npm run evaluate # run the vision fixtures evaluation
+node scripts/pull-stats.js   # pull live stats snapshots
+```
+
+Pages served by `npm start` (see `services/api/server.js`):
+
+- `/` — judge-facing dashboard
+- `/capture` — phone/Ray-Ban camera capture client
+- `/data` — data dashboard
+- `/landing` — marketing landing page
+- `/pitch` — pitch deck
+
+API routes: `POST /api/frames`, `GET /api/comparison`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
+
+The iOS companion app lives at `apps/ios/` — see its README for build and glasses-streaming instructions. The rendered 60-second demo video is at `apps/demo-video/out/`.
+
+Full documentation index: [docs/README.md](docs/README.md).
+
+## Repository map
+
+- `apps/demo-web/` — dashboard, capture, and data pages served by the API server
+- `apps/landing/` — landing page
+- `apps/pitch/` — pitch deck
+- `apps/ios/` — SwiftUI iPhone companion app (iOS 17+, Meta glasses streaming)
+- `apps/demo-video/` — HyperFrames demo-video project; rendered output in `out/`
+- `services/` — api (server + pipeline), capture, vision, sports (5 sports), probability, market, analytics, cerebras
+- `packages/fixtures/` — demo frames, expected states, market and stats fixtures
+- `scripts/` — evaluate-fixtures, evaluate-model, pull-stats, extract-clip-frames, start-phone-tunnel
+- `tests/` — 130 node:test tests covering pipeline, sports, probability, market, capture
+- `models/metadata/` — model version and calibration info
+- `tools/` — dataset viewer
+- `docs/` — all documentation; start at [docs/README.md](docs/README.md)
+
+---
+
 ## 1. Executive summary
 
 Live prediction markets are difficult to follow while watching an event. The user has to identify the correct market, interpret rapidly changing game conditions, switch between screens, and decide whether the current price reflects what just happened.
