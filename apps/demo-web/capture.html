@@ -741,7 +741,7 @@ if (idleTitleEl) setInterval(() => {
 }, 4500);
 </script>
 <script type="module">
-  import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.mjs";
+  import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.webgpu.min.mjs";
 
   // YOLO11s runs in the viewer, directly against the already-connected WebRTC
   // stream. No video frame is sent to the server for this overlay.
@@ -750,7 +750,8 @@ if (idleTitleEl) setInterval(() => {
   // A full broadcast frame makes distant athletes too small for COCO person
   // detection. Three overlapped field tiles at 640px preserve far more detail.
   const INPUT_SIZE = 640;
-  const DETECTION_INTERVAL_MS = 900;
+  const WEBGPU_INTERVAL_MS = 250;
+  const WASM_INTERVAL_MS = 900;
   const CONFIDENCE_THRESHOLD = .28;
   const IOU_THRESHOLD = .48;
   const TRACKED_CLASSES = new Map([[0, { label: "PLAYER", kind: "player" }], [32, { label: "BALL", kind: "ball" }]]);
@@ -762,6 +763,7 @@ if (idleTitleEl) setInterval(() => {
   let running = false;
   let runToken = 0;
   let lastFpsUpdate = 0;
+  let executionBackend = "loading";
 
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
   // SharedArrayBuffer is unavailable on a normal public tunnel, so threaded
@@ -873,17 +875,32 @@ if (idleTitleEl) setInterval(() => {
     });
   }
 
-  async function getSession() {
-    if (!sessionPromise) {
-      sessionPromise = ort.InferenceSession.create(MODEL_URL, {
-        executionProviders: ["wasm"],
-        graphOptimizationLevel: "all",
-      });
+  async function createSession() {
+    if (navigator.gpu) {
+      try {
+        const session = await ort.InferenceSession.create(MODEL_URL, {
+          executionProviders: ["webgpu", "wasm"],
+          graphOptimizationLevel: "all",
+        });
+        executionBackend = "WebGPU";
+        return session;
+      } catch (error) {
+        console.warn("BloomKnights WebGPU initialization failed; falling back to WASM", error);
+      }
     }
+    executionBackend = "WASM";
+    return ort.InferenceSession.create(MODEL_URL, {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all",
+    });
+  }
+
+  async function getSession() {
+    if (!sessionPromise) sessionPromise = createSession();
     return sessionPromise;
   }
 
-  function schedule(token, delay = DETECTION_INTERVAL_MS) {
+  function schedule(token, delay = executionBackend === "WebGPU" ? WEBGPU_INTERVAL_MS : WASM_INTERVAL_MS) {
     window.setTimeout(() => detect(token), delay);
   }
 
@@ -903,9 +920,11 @@ if (idleTitleEl) setInterval(() => {
         candidates.push(...decode(outputs[session.outputNames[0]], transform));
       }
       bridge.setDetections(serializeDetections(candidates, bridge.video.videoWidth, bridge.video.videoHeight), "yolo");
+      const elapsed = performance.now() - started;
+      const targetInterval = executionBackend === "WebGPU" ? WEBGPU_INTERVAL_MS : WASM_INTERVAL_MS;
       if (started - lastFpsUpdate > 1_000) {
-        const hz = (1_000 / Math.max(1, performance.now() - started)).toFixed(1);
-        bridge.setTrackerState(`YOLO11s dense · ${hz} Hz`, "Three overlapping 640px field tiles prioritize distant players.");
+        const hz = (1_000 / Math.max(targetInterval, elapsed)).toFixed(1);
+        bridge.setTrackerState(`YOLO11s ${executionBackend} · ${hz} Hz`, "Three overlapping 640px field tiles prioritize distant players.");
         lastFpsUpdate = started;
       }
     } catch (error) {
@@ -915,7 +934,8 @@ if (idleTitleEl) setInterval(() => {
       console.warn("BloomKnights YOLO tracker failed", error);
       return;
     }
-    schedule(token, Math.max(DETECTION_INTERVAL_MS, performance.now() - started));
+    const targetInterval = executionBackend === "WebGPU" ? WEBGPU_INTERVAL_MS : WASM_INTERVAL_MS;
+    schedule(token, Math.max(0, targetInterval - (performance.now() - started)));
   }
 
   function start({ demo = false } = {}) {
@@ -927,7 +947,7 @@ if (idleTitleEl) setInterval(() => {
     if (running) return;
     running = true;
     const token = ++runToken;
-    bridge.setTrackerState("YOLO11s loading…", "Loading the stronger on-device player tracker.");
+    bridge.setTrackerState("YOLO11s loading…", navigator.gpu ? "Starting WebGPU player tracking." : "WebGPU unavailable; preparing the WASM fallback.");
     detect(token);
   }
 
@@ -940,7 +960,7 @@ if (idleTitleEl) setInterval(() => {
     if (event.detail?.active) start(event.detail);
     else stop();
   });
-  window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11s", input_size: INPUT_SIZE }) });
+  window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11s", backend: executionBackend, input_size: INPUT_SIZE }) });
   if (bridge.isFeedActive()) start({ demo: bridge.isDemo() });
 </script>
 </body>
