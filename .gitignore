@@ -4,3 +4,7 @@ node_modules/
 !.env.example
 .DS_Store
 *.log
+
+# Raw match footage and extracted frames — never commit (README §16)
+footage/
+clip-frames/
