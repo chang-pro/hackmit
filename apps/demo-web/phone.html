@@ -195,7 +195,7 @@ async function connectWebRtc() {
     body: JSON.stringify({ pair_code: pairCode }),
   });
   sessionId = joined.session_id;
-  const config = await api("/api/webrtc/config");
+  const config = await api(`/api/webrtc/config?session_id=${encodeURIComponent(sessionId)}`);
   peerConnection = new RTCPeerConnection({ iceServers: config.ice_servers });
   peerConnection.onicecandidate = ({ candidate }) => {
     if (candidate) sendSignal("ice", candidate.toJSON()).catch(() => {});
@@ -203,14 +203,17 @@ async function connectWebRtc() {
   peerConnection.onconnectionstatechange = () => {
     if (peerConnection?.connectionState === "connected") {
       setStatus("Direct video", "WebRTC is connected directly to the desktop. Analysis is still off.");
-    } else if (["failed", "disconnected", "closed"].includes(peerConnection?.connectionState)) {
-      setStatus("Connecting", "Trying to establish the direct WebRTC connection…");
+    } else if (peerConnection?.connectionState === "failed") {
+      setStatus("TURN required", "This campus network blocked the direct video route. Ask the desktop operator to configure a TURN relay, then open a fresh pairing link.");
+    } else if (["disconnected", "closed"].includes(peerConnection?.connectionState)) {
+      setStatus("Reconnecting", "Trying to restore the direct WebRTC connection…");
     }
   };
   stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
   await sendSignal("offer", peerConnection.localDescription);
+  setStatus("Pairing", "Camera is ready. Negotiating an encrypted WebRTC video route to the desktop…");
   pollSignals();
 }
 
@@ -257,9 +260,12 @@ function videoToCanvas(maxImageEdge = MAX_IMAGE_EDGE) {
 }
 
 function renderAnalysisState() {
-  document.getElementById("camera-note").textContent = analysisEnabled
-    ? "Direct WebRTC video is live. Analysis is enabled and collects five frames over twelve seconds before each model request."
-    : "Direct WebRTC video is live. Analysis is off until you press Analyze on the desktop capture page.";
+  const connected = peerConnection?.connectionState === "connected";
+  document.getElementById("camera-note").textContent = !connected
+    ? "Camera is ready and WebRTC is negotiating the desktop connection. Analysis stays off until the desktop connects and you press Analyze."
+    : analysisEnabled
+      ? "Direct WebRTC video is live. Analysis is enabled and collects five frames over twelve seconds before each model request."
+      : "Direct WebRTC video is live. Analysis is off until you press Analyze on the desktop capture page.";
 }
 
 async function analyzeCanvas(source) {
