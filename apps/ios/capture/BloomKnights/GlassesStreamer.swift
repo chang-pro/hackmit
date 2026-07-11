@@ -102,6 +102,9 @@ final class FrameUplink: @unchecked Sendable {
     private var okCount = 0
     private var failCount = 0
     var onStatus: @Sendable (String) -> Void = { _ in }
+    // EVERY decoded frame (full rate) — feeds the WebRTC publisher. Called on
+    // the VT decode callback thread.
+    var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
 
     func setStreaming(_ on: Bool) {
         lock.lock()
@@ -154,14 +157,16 @@ final class FrameUplink: @unchecked Sendable {
         if wantUpload { lastUploadAt = now }
         lock.unlock()
 
-        // Decode every frame (required for P-frame continuity); only the
-        // ~1/second "wantUpload" frames get JPEG-encoded and POSTed.
+        // Decode every frame (required for P-frame continuity). Every decoded
+        // frame goes to the WebRTC publisher; only the ~1/second "wantUpload"
+        // frames additionally get JPEG-encoded and POSTed.
         VTDecompressionSessionDecodeFrame(session,
                                           sampleBuffer: sb,
                                           flags: [],
                                           infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
-            guard status == noErr, let imageBuffer, let self, wantUpload else { return }
-            self.encodeAndPost(imageBuffer)
+            guard status == noErr, let imageBuffer, let self else { return }
+            self.onDecodedFrame?(imageBuffer)
+            if wantUpload { self.encodeAndPost(imageBuffer) }
         }
     }
 
@@ -325,6 +330,10 @@ final class GlassesStreamer: ObservableObject {
     @Published var elapsed = "00:00"
     @Published var uploadStatus = ""
     @Published var uplinkStatus = ""   // live /api/frames counters
+    @Published var rtcStatus = ""      // WebRTC link to the desktop viewer
+
+    // The laptop backend (stable custom domain).
+    static let backendBase = URL(string: "https://capture.saicharanramineni.com")!
 
     // Mac Mini on the HOME LAN — recordings auto-upload here after STOP whenever
     // the phone is on home Wi-Fi. No Tailscale/VPN (that double-burns cellular);
@@ -347,12 +356,17 @@ final class GlassesStreamer: ObservableObject {
     private let uplink = FrameUplink()    // ~1 fps JPEG → backend /api/frames
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
     let preview = PreviewSink()   // live on-screen view of the hvc1 stream
+    let rtc = RTCPublisher()      // continuous video → desktop /capture viewer
 
     init() {
         deviceSelector = AutoDeviceSelector(wearables: Wearables.shared)
         uplink.onStatus = { [weak self] line in
             Task { @MainActor in self?.uplinkStatus = line }
         }
+        // Full-rate decoded frames feed the WebRTC track (push is nonisolated
+        // and thread-safe; no-ops until the publisher is connected).
+        let rtc = self.rtc
+        uplink.onDecodedFrame = { buf in rtc.push(buf) }
     }
 
     // Start all the live monitors so the screen always shows current state.
@@ -444,6 +458,7 @@ final class GlassesStreamer: ObservableObject {
         let wasRecording = isRecording
         recorder.setRecording(false); isRecording = false
         uplink.setStreaming(false)
+        rtc.disconnect(); rtcStatus = ""
         stream?.stop(); stream = nil
         session?.stop(); session = nil
         // Drop the stream's frame/state/error listeners so a restart doesn't
@@ -589,6 +604,11 @@ final class GlassesStreamer: ObservableObject {
                 // gates on the first keyframe anyway).
                 recorder.start(); recorder.setRecording(true)
                 uplink.setStreaming(true)
+                // One-button publish: join the newest open pairing session the
+                // desktop /capture page created and go live to its viewer.
+                Task { [weak self] in
+                    await self?.rtc.connect(baseURL: Self.backendBase, pairCode: "")
+                }
                 self.isRecording = true
                 self.lastRestartAt = .distantPast   // fresh session: clear stale debounce
                 // Keep Meta AI + the glasses audio route alive (or iOS suspends it
@@ -621,6 +641,14 @@ final class GlassesStreamer: ObservableObject {
                 guard let self, let start = self.startedAt else { return }
                 let s = Int(Date().timeIntervalSince(start))
                 self.elapsed = String(format: "%02d:%02d", s / 60, s % 60)
+                self.rtcStatus = self.rtc.state.label
+                // Forgiving demo: if the viewer wasn't open yet (join failed),
+                // quietly retry every 8s while we're still streaming.
+                if s % 8 == 0, self.isRecording, case .failed = self.rtc.state {
+                    Task { [weak self] in
+                        await self?.rtc.connect(baseURL: Self.backendBase, pairCode: "")
+                    }
+                }
             }
         }
     }
