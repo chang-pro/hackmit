@@ -679,6 +679,8 @@ export function createBloomServer({
         await sendHtml(res, "capture.html");
       } else if (req.method === "GET" && url.pathname === "/sunglasses.svg") {
         await sendDemoAsset(res, "sunglasses.svg", "image/svg+xml");
+      } else if (req.method === "GET" && url.pathname === "/models/yolo11n.onnx") {
+        await sendDemoAsset(res, "models/yolo11n.onnx", "application/octet-stream");
       } else if (
         req.method === "GET" &&
         (url.pathname === "/phone" || url.pathname === "/phone.html")
