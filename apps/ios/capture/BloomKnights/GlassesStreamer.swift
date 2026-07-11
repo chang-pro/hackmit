@@ -94,9 +94,9 @@ final class FrameUplink: @unchecked Sendable {
     private let jpegQuality: CGFloat = 0.7
     private let ciContext = CIContext()
 
-    // The tunnel to the laptop backend (tunnelmole). Changes when the tunnel
-    // restarts — update + rebuild.
-    private let framesURL = URL(string: "https://wcfox9-ip-132-170-212-21.tunnelmole.net/api/frames")!
+    // The laptop backend, now on a stable custom domain (no more rotating
+    // tunnelmole urls).
+    private let framesURL = URL(string: "https://capture.saicharanramineni.com/api/frames")!
 
     private var sentCount = 0
     private var okCount = 0
