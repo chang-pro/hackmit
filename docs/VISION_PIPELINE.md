@@ -167,6 +167,16 @@ The default configuration uses public STUN discovery. Some campus NATs require a
 
 An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. When a TURN URL is configured, BloomKnights uses relay-only WebRTC so client-isolated Wi-Fi does not waste time attempting a direct media candidate. TURN is independent from the public HTTP tunnel, which carries only pairing/signaling and gated analysis snapshots.
 
+## Browser-only UI demo
+
+To iterate on `/capture` without a phone, glasses, TURN relay, or any video bandwidth, open the capture page and run this in the browser console:
+
+```js
+bloomDemo.start()
+```
+
+It renders a local animated synthetic broadcast through a canvas `MediaStream` and activates the same connected-video UI state as a real camera. Stop it with `bloomDemo.stop()`. It never sends a frame to the backend; model analysis remains off unless you explicitly enable it.
+
 ## Cerebras models
 
 The live provider is intentionally simple:
