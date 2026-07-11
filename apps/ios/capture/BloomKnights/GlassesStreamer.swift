@@ -2,9 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import AVFoundation
-import CoreImage
 import CoreMedia
-import VideoToolbox
 import MWDATCore
 import MWDATCamera
 
@@ -61,9 +59,6 @@ final class KeepAlive {
 // @MainActor streamer. Enqueue is marshalled to main (the layer is UI).
 final class PreviewSink: @unchecked Sendable {
     let layer = AVSampleBufferDisplayLayer()
-    private let lock = NSLock()
-    private var pendingFrame: CMSampleBuffer?
-    private var drainScheduled = false
 
     func enqueue(_ sb: CMSampleBuffer) {
         // Display immediately (live view — no timebase needed).
@@ -74,221 +69,11 @@ final class PreviewSink: @unchecked Sendable {
                 Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
                 Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
-        // Keep only the newest frame while the main thread is busy. Scheduling
-        // one main-queue closure per incoming frame makes latency grow without
-        // bound and eventually retains enough compressed buffers to terminate
-        // the app under memory pressure.
-        lock.lock()
-        pendingFrame = sb
-        guard !drainScheduled else { lock.unlock(); return }
-        drainScheduled = true
-        lock.unlock()
-        DispatchQueue.main.async { [weak self] in self?.drainLatestFrame() }
-    }
-
-    private func drainLatestFrame() {
-        lock.lock()
-        let frame = pendingFrame
-        pendingFrame = nil
-        drainScheduled = false
-        lock.unlock()
-        guard let frame else { return }
-        if layer.status == .failed { layer.flush() }
-        if layer.isReadyForMoreMediaData { layer.enqueue(frame) }
-    }
-}
-
-// FrameUplink — sends ~1 frame/second to the BloomKnights backend as JPEG
-// (POST /api/frames). Same proven decode pattern as before: HEVC P-frames
-// depend on prior frames, so EVERY sample buffer feeds the hardware
-// VTDecompressionSession; only ~1 decoded frame per second
-// is JPEG-encoded and uploaded. Purely additive — recording and preview are
-// untouched if the backend is down.
-final class FrameUplink: @unchecked Sendable {
-    private let lock = NSLock()
-    // Dedicated serial queue so the heavy decode + WebRTC-push + JPEG work
-    // NEVER runs on the SDK's frame-delivery thread — doing it inline backs up
-    // the SDK's bounded delivery queue and stalls the whole stream.
-    private let work = DispatchQueue(label: "com.bloomknights.uplink", qos: .userInitiated)
-    private let maxQueuedFrames = 4
-    private var queuedFrames = 0
-    private var waitForKeyframe = false
-    private var decodeSession: VTDecompressionSession?
-    private var streaming = false
-    private var lastUploadAt = Date.distantPast
-    private var lastPublishAt = Date.distantPast
-    private let uploadInterval: TimeInterval = 1.0   // ~1 fps to the backend
-    private let publishInterval: TimeInterval = 1.0 / 12.0 // 12 fps is enough for the viewer
-    private let jpegQuality: CGFloat = 0.7
-    private let ciContext = CIContext()
-
-    // The laptop backend, now on a stable custom domain (no more rotating
-    // tunnelmole urls).
-    private let framesURL = URL(string: "https://capture.saicharanramineni.com/api/frames")!
-
-    private var sentCount = 0
-    private var okCount = 0
-    private var failCount = 0
-    var onStatus: @Sendable (String) -> Void = { _ in }
-    // Selected decoded frames (12 fps) feed the WebRTC publisher. Called on
-    // the VT decode callback thread.
-    var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
-
-    func setStreaming(_ on: Bool) {
-        lock.lock()
-        streaming = on
-        if on {
-            sentCount = 0; okCount = 0; failCount = 0
-            lastUploadAt = .distantPast; lastPublishAt = .distantPast
-            waitForKeyframe = false
+        let l = layer
+        DispatchQueue.main.async {
+            if l.status == .failed { l.flush() }
+            if l.isReadyForMoreMediaData { l.enqueue(sb) }
         }
-        if !on, let s = decodeSession {
-            VTDecompressionSessionInvalidate(s)
-            decodeSession = nil
-        }
-        lock.unlock()
-    }
-
-    // A sample is a keyframe unless it is explicitly flagged NotSync. The
-    // decoder must start on a keyframe or the first GOP is undecodable.
-    private static func isKeyframe(_ sb: CMSampleBuffer) -> Bool {
-        guard let arr = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false),
-              CFArrayGetCount(arr) > 0 else { return true }
-        let dict = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CFDictionary.self) as NSDictionary
-        if let notSync = dict[kCMSampleAttachmentKey_NotSync as String] as? Bool { return !notSync }
-        return true
-    }
-
-    // Called on the SDK delivery thread — hand off immediately and return, so
-    // the delivery thread is never blocked by decode/encode/push work.
-    func ingest(_ sb: CMSampleBuffer) {
-        let keyframe = Self.isKeyframe(sb)
-        lock.lock()
-        guard streaming else { lock.unlock(); return }
-        if waitForKeyframe {
-            // A dropped HEVC P-frame invalidates the rest of its GOP. Resume
-            // only from a clean keyframe after the bounded queue drains.
-            guard keyframe, queuedFrames == 0 else { lock.unlock(); return }
-            if let session = decodeSession { VTDecompressionSessionInvalidate(session) }
-            decodeSession = nil
-            waitForKeyframe = false
-        }
-        guard queuedFrames < maxQueuedFrames else {
-            waitForKeyframe = true
-            lock.unlock()
-            return
-        }
-        queuedFrames += 1
-        lock.unlock()
-        work.async { [weak self] in
-            self?.ingestSync(sb)
-            self?.finishedQueuedFrame()
-        }
-    }
-
-    private func finishedQueuedFrame() {
-        lock.lock()
-        queuedFrames = max(0, queuedFrames - 1)
-        lock.unlock()
-    }
-
-    private func ingestSync(_ sb: CMSampleBuffer) {
-        guard let fmt = CMSampleBufferGetFormatDescription(sb) else { return }
-
-        lock.lock()
-        guard streaming else { lock.unlock(); return }
-        if let s = decodeSession, !VTDecompressionSessionCanAcceptFormatDescription(s, formatDescription: fmt) {
-            VTDecompressionSessionInvalidate(s)
-            decodeSession = nil
-        }
-        if decodeSession == nil {
-            guard Self.isKeyframe(sb) else { lock.unlock(); return }   // wait for the first keyframe
-            // NV12 uses much less memory than BGRA and is WebRTC's native
-            // camera format. Core Image can still JPEG-encode the 1 fps sample.
-            let attrs: [CFString: Any] = [
-                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-            ]
-            var session: VTDecompressionSession?
-            let status = VTDecompressionSessionCreate(
-                allocator: kCFAllocatorDefault,
-                formatDescription: fmt,
-                decoderSpecification: nil,
-                imageBufferAttributes: attrs as CFDictionary,
-                outputCallback: nil,
-                decompressionSessionOut: &session
-            )
-            guard status == noErr, let session else { lock.unlock(); return }
-            decodeSession = session
-        }
-        guard let session = decodeSession else { lock.unlock(); return }
-        let now = Date()
-        let wantUpload = now.timeIntervalSince(lastUploadAt) >= uploadInterval
-        if wantUpload { lastUploadAt = now }
-        let wantPublish = now.timeIntervalSince(lastPublishAt) >= publishInterval
-        if wantPublish { lastPublishAt = now }
-        lock.unlock()
-
-        // Decode every frame (required for P-frame continuity). Publish at a
-        // bounded 12 fps; only the ~1/second "wantUpload" frames additionally
-        // get JPEG-encoded and POSTed.
-        VTDecompressionSessionDecodeFrame(session,
-                                          sampleBuffer: sb,
-                                          flags: [],
-                                          infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
-            guard status == noErr, let imageBuffer, let self else { return }
-            if wantPublish { self.onDecodedFrame?(imageBuffer) }
-            if wantUpload { self.encodeAndPost(imageBuffer) }
-        }
-    }
-
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private func encodeAndPost(_ imageBuffer: CVImageBuffer) {
-        let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent),
-              let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: jpegQuality) else { return }
-
-        // Server contract (services/capture/gateway.js): snake_case fields;
-        // source + image_base64 + positive width/height are required.
-        let body: [String: Any] = [
-            "source": "rayban_sdk",
-            "sport": "auto",
-            "captured_at": Self.isoFormatter.string(from: Date()),
-            "image_base64": jpeg.base64EncodedString(),
-            "mime_type": "image/jpeg",
-            "width": Int(ciImage.extent.width),
-            "height": Int(ciImage.extent.height),
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
-
-        var req = URLRequest(url: framesURL)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 15
-        bump(sent: 1)
-        let task = URLSession.shared.uploadTask(with: req, from: data) { [weak self] _, resp, err in
-            guard let self else { return }
-            if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                // 202 = server up but analysis not started on the capture page.
-                self.bump(ok: 1, note: http.statusCode == 202 ? "analysis OFF on server" : nil)
-            } else {
-                self.bump(fail: 1, note: err?.localizedDescription ?? "HTTP error")
-            }
-        }
-        task.resume()
-    }
-
-    private func bump(sent: Int = 0, ok: Int = 0, fail: Int = 0, note: String? = nil) {
-        lock.lock()
-        sentCount += sent; okCount += ok; failCount += fail
-        var line = "backend: sent \(sentCount) ok \(okCount) fail \(failCount)"
-        if let note { line += " — \(note)" }
-        lock.unlock()
-        onStatus(line)
     }
 }
 
@@ -320,7 +105,7 @@ final class RecorderBox: @unchecked Sendable {
     func start() {
         lock.lock(); defer { lock.unlock() }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let u = docs.appendingPathComponent("bloom_\(Int(Date().timeIntervalSince1970)).mp4")
+        let u = docs.appendingPathComponent("poker_\(Int(Date().timeIntervalSince1970)).mp4")
         try? FileManager.default.removeItem(at: u)
         writer = nil; input = nil; started = false; url = u
     }
@@ -400,11 +185,6 @@ final class GlassesStreamer: ObservableObject {
     @Published var frameSize = "-"
     @Published var elapsed = "00:00"
     @Published var uploadStatus = ""
-    @Published var uplinkStatus = ""   // live /api/frames counters
-    @Published var rtcStatus = ""      // WebRTC link to the desktop viewer
-
-    // The laptop backend (stable custom domain).
-    static let backendBase = URL(string: "https://capture.saicharanramineni.com")!
 
     // Mac Mini on the HOME LAN — recordings auto-upload here after STOP whenever
     // the phone is on home Wi-Fi. No Tailscale/VPN (that double-burns cellular);
@@ -424,20 +204,11 @@ final class GlassesStreamer: ObservableObject {
     private var tokens: [any AnyListenerToken] = []
     private var compatTokens: [DeviceIdentifier: any AnyListenerToken] = [:]
     private let recorder = RecorderBox()
-    private let uplink = FrameUplink()    // ~1 fps JPEG → backend /api/frames
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
     let preview = PreviewSink()   // live on-screen view of the hvc1 stream
-    let rtc = RTCPublisher()      // continuous video → desktop /capture viewer
 
     init() {
         deviceSelector = AutoDeviceSelector(wearables: Wearables.shared)
-        uplink.onStatus = { [weak self] line in
-            Task { @MainActor in self?.uplinkStatus = line }
-        }
-        // Full-rate decoded frames feed the WebRTC track (push is nonisolated
-        // and thread-safe; no-ops until the publisher is connected).
-        let rtc = self.rtc
-        uplink.onDecodedFrame = { buf in rtc.push(buf) }
     }
 
     // Start all the live monitors so the screen always shows current state.
@@ -528,8 +299,6 @@ final class GlassesStreamer: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         let wasRecording = isRecording
         recorder.setRecording(false); isRecording = false
-        uplink.setStreaming(false)
-        rtc.disconnect(); rtcStatus = ""
         stream?.stop(); stream = nil
         session?.stop(); session = nil
         // Drop the stream's frame/state/error listeners so a restart doesn't
@@ -542,8 +311,7 @@ final class GlassesStreamer: ObservableObject {
                 Task { @MainActor in
                     self?.savedFile = url?.lastPathComponent ?? ""
                     self?.status = "Saved \(url?.lastPathComponent ?? "?")"
-                    // mp4-to-Mac-mini upload disabled here: live frames go to the
-                    // BloomKnights backend via FrameUplink instead (PokerAI-only path).
+                    if let url { self?.uploadToMac(url) }
                 }
             }
         } else {
@@ -609,10 +377,15 @@ final class GlassesStreamer: ObservableObject {
                     }
                 }
 
-                // 504x896 is the device-proven stable profile over Bluetooth.
-                // 720x1280 congested the link and also multiplied decode,
-                // preview, and WebRTC memory pressure on the phone.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 24)
+                // .high (720x1280) for readable cards INCLUDING the board at table
+                // distance. SDK 0.8 added automatic WiFi transport ("consistent video
+                // quality at high resolution settings") — at .high the SDK delivers
+                // frames over WiFi/softAP instead of Bluetooth (far more bandwidth),
+                // so 720p runs stable where it used to stall on BT. The phone drops to
+                // cellular during the session (fine — we record locally) + a one-time
+                // WiFi permission prompt. If it still cuts, WiFi didn't engage and we
+                // dig into the enable path; fall back to .medium 504x896.
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 24)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
@@ -625,11 +398,9 @@ final class GlassesStreamer: ObservableObject {
                 // Record EVERY frame (cheap pass-through) AND feed the live preview
                 // layer, which decodes the encoded HEVC natively. Captured as locals
                 // so the SDK delivery thread never touches the @MainActor streamer.
-                let uplink = self.uplink
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
                     recorder.append(frame)
                     preview.enqueue(frame.sampleBuffer)
-                    uplink.ingest(frame.sampleBuffer)
                     guard recorder.tickPreview() else { return }
                     recorder.note(frame)
                     Task { @MainActor in self?.frameSize = recorder.sizeLabel() }
@@ -669,12 +440,6 @@ final class GlassesStreamer: ObservableObject {
                 // frame/keyframe is never dropped (append() no-ops until armed, and
                 // gates on the first keyframe anyway).
                 recorder.start(); recorder.setRecording(true)
-                uplink.setStreaming(true)
-                // One-button publish: this feed becomes the desktop viewer's
-                // active feed as soon as it starts.
-                Task { [weak self] in
-                    await self?.rtc.connect(baseURL: Self.backendBase)
-                }
                 self.isRecording = true
                 self.lastRestartAt = .distantPast   // fresh session: clear stale debounce
                 // Keep Meta AI + the glasses audio route alive (or iOS suspends it
@@ -683,7 +448,7 @@ final class GlassesStreamer: ObservableObject {
                 UIApplication.shared.isIdleTimerDisabled = true
                 self.startElapsedTimer()
                 stream.start()
-                self.status = "RECORDING (hvc1, low latency)"
+                self.status = "RECORDING (hvc1, max clarity)"
             } catch {
                 self.lastError = "\(error)"
                 // Meta SDK #231: a prior hard suspension (e.g. phone locked mid-
@@ -707,14 +472,6 @@ final class GlassesStreamer: ObservableObject {
                 guard let self, let start = self.startedAt else { return }
                 let s = Int(Date().timeIntervalSince(start))
                 self.elapsed = String(format: "%02d:%02d", s / 60, s % 60)
-                self.rtcStatus = self.rtc.state.label
-                // Forgiving demo: if the viewer wasn't open yet (join failed),
-                // quietly retry every 8s while we're still streaming.
-                if s % 8 == 0, self.isRecording, case .failed = self.rtc.state {
-                    Task { [weak self] in
-                        await self?.rtc.connect(baseURL: Self.backendBase)
-                    }
-                }
             }
         }
     }

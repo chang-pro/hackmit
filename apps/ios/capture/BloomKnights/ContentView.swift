@@ -29,7 +29,7 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                Text("BloomKnights")
+                Text("PokerAI")
                     .font(.largeTitle).bold()
 
                 ZStack {
@@ -67,18 +67,6 @@ struct ContentView: View {
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                         .foregroundColor(streamer.uploadStatus.hasPrefix("Uploaded") ? .green : .orange)
-                }
-                if !streamer.uplinkStatus.isEmpty {
-                    Text(streamer.uplinkStatus)
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(streamer.uplinkStatus.contains("fail 0") ? .green : .orange)
-                }
-                if !streamer.rtcStatus.isEmpty {
-                    Text(streamer.rtcStatus)
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(streamer.rtcStatus.contains("LIVE") ? .green : .orange)
                 }
                 if !streamer.lastError.isEmpty {
                     Text(streamer.lastError)
