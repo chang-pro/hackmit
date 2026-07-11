@@ -1,0 +1,88 @@
+{
+  "id": "world-cup-2022-final",
+  "sport": "soccer",
+  "event_label": "2022 FIFA World Cup Final · Argentina vs France",
+  "competition_tokens": ["fifa world cup", "world cup final"],
+  "event_tokens": ["argentina", "france", "arg", "fra"],
+  "participant_groups": [["argentina", "arg"], ["france", "fra"]],
+  "focus_aliases": ["argentina", "arg"],
+  "focus_label": "Argentina",
+  "disclosure": "Historical evidence pack with illustrative replay-market prices; this is a funding-demo estimate, not a live quote or trading advice.",
+  "moments": [
+    {
+      "id": "argentina-two-goal-lead",
+      "label": "60' · Argentina 2–0 France",
+      "phase_tokens": ["second half", "2nd half", "2h"],
+      "scores": [[2, 0], [0, 2]],
+      "clock_seconds": 3600,
+      "clock_tolerance_seconds": 900,
+      "model_probability": 0.96,
+      "market_probability": 0.85,
+      "confidence": 0.94,
+      "market_question": "Will {focus} win the World Cup Final?",
+      "outcome": "{focus} wins",
+      "summary": "{focus} holds a two-goal second-half lead; the preloaded soccer model prices a regulation win as highly likely.",
+      "what_changed": "The second goal created a decisive game-state shift and reduced the time available for a comeback.",
+      "next_trigger": "A France goal or the clock crossing 75 minutes would materially compress the lead.",
+      "key_factors": ["Two-goal margin", "Second-half time decay", "No visible red card or penalty state"],
+      "alternate_markets": [
+        { "question": "Will France score next?", "outcome": "France scores next", "probability": 0.34, "confidence": 0.7 }
+      ],
+      "evidence": [
+        { "provider": "FIFA archive", "label": "Official match timeline", "query": "Argentina France final score and match minute", "detail": "Cached event timeline aligns the visible 2–0 state with the second half." },
+        { "provider": "Bloom state model", "label": "Soccer clock model", "query": "Two-goal lead with roughly 30 minutes remaining", "detail": "Time-decay model sharply favors the team protecting the lead." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Argentina match-winner replay price", "detail": "Illustrative midpoint: 85%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "france-equalizer",
+      "label": "82' · Argentina 2–2 France",
+      "phase_tokens": ["second half", "2nd half", "2h"],
+      "scores": [[2, 2]],
+      "clock_seconds": 4920,
+      "clock_tolerance_seconds": 480,
+      "model_probability": 0.51,
+      "market_probability": 0.48,
+      "confidence": 0.91,
+      "market_question": "Will {focus} win the World Cup Final?",
+      "outcome": "{focus} wins",
+      "summary": "France has erased the two-goal deficit; the final has reset to nearly a coin flip with little regulation time remaining.",
+      "what_changed": "Two rapid France goals removed Argentina's margin and shifted the match into a high-variance late state.",
+      "next_trigger": "The next goal, extra-time transition, or a red card would dominate the estimate.",
+      "key_factors": ["Level score", "Late regulation", "Momentum is visible but not treated as a guaranteed edge"],
+      "alternate_markets": [
+        { "question": "Will the match reach extra time?", "outcome": "Extra time", "probability": 0.72, "confidence": 0.82 }
+      ],
+      "evidence": [
+        { "provider": "FIFA archive", "label": "Official match timeline", "query": "France equalizer World Cup Final minute", "detail": "Cached timeline confirms the 2–2 late-regulation state." },
+        { "provider": "Bloom state model", "label": "Draw-state recalculation", "query": "Level World Cup Final after 80 minutes", "detail": "The two-goal favorite state collapses to near-even after the equalizer." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Argentina match-winner replay price after 2–2", "detail": "Illustrative midpoint: 48%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "extra-time-level",
+      "label": "118' · Argentina 3–3 France",
+      "phase_tokens": ["extra time", "et", "second extra"],
+      "scores": [[3, 3]],
+      "clock_seconds": 7080,
+      "clock_tolerance_seconds": 420,
+      "model_probability": 0.49,
+      "market_probability": 0.47,
+      "confidence": 0.89,
+      "market_question": "Will {focus} win the World Cup Final?",
+      "outcome": "{focus} wins",
+      "summary": "At 3–3 near the end of extra time, the final is effectively priced around the looming shootout.",
+      "what_changed": "France's extra-time equalizer removed Argentina's renewed lead and made penalty-shootout strength the next major variable.",
+      "next_trigger": "The final whistle for extra time or the first shootout miss would cause the next large probability move.",
+      "key_factors": ["Level after six goals", "Almost no open-play time remains", "Penalty shootout likely"],
+      "alternate_markets": [
+        { "question": "Will the match be decided on penalties?", "outcome": "Penalty shootout", "probability": 0.96, "confidence": 0.94 }
+      ],
+      "evidence": [
+        { "provider": "FIFA archive", "label": "Official match timeline", "query": "World Cup Final 3–3 118 minute", "detail": "Cached timeline confirms the late extra-time equalizer." },
+        { "provider": "Bloom state model", "label": "Extra-time terminal state", "query": "Level match with two minutes remaining", "detail": "Open-play win mass is small; shootout probability dominates." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Argentina match-winner price before penalties", "detail": "Illustrative midpoint: 47%; explicitly marked mock/replay." }
+      ]
+    }
+  ]
+}

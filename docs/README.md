@@ -2,7 +2,7 @@
 
 ## What was built (2026-07-11)
 
-- Multi-sport backend: 5 sports (NBA, football, soccer, UFC, golf in `services/sports/`), famous-match replay fixtures, 130 passing tests (`npm test`).
+- Multi-sport backend: 5 sports (NBA, football, soccer, UFC, golf in `services/sports/`), four automatic camera-to-intelligence demo packs, famous-match replay fixtures, and the full passing `npm test` suite.
 - Redesigned demo web app: dashboard (`/`), Ray-Ban phone capture page (`/capture`), data dashboard (`/data`).
 - Landing page (`/landing`) and pitch deck (`/pitch`), both served by the same zero-dependency Node server.
 - iOS app at `apps/ios/` (SwiftUI, iOS 17+), including Meta glasses SDK streaming — see its README.

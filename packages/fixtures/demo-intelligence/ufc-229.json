@@ -1,0 +1,90 @@
+{
+  "id": "ufc-229",
+  "sport": "mma",
+  "event_label": "UFC 229 · Khabib Nurmagomedov vs Conor McGregor",
+  "competition_tokens": ["ufc 229", "ufc lightweight"],
+  "event_tokens": ["khabib", "nurmagomedov", "mcgregor", "conor"],
+  "participant_groups": [["khabib", "nurmagomedov"], ["mcgregor", "conor"]],
+  "focus_aliases": ["khabib", "nurmagomedov"],
+  "focus_label": "Khabib Nurmagomedov",
+  "disclosure": "Historical evidence pack with illustrative replay-market prices; visible control signals are treated conservatively and this is not a live quote or trading advice.",
+  "moments": [
+    {
+      "id": "round-two-control",
+      "label": "Round 2 · 3:30 remaining",
+      "phase_tokens": ["round 2", "r2", "second round"],
+      "scores": [[0, 0]],
+      "clock_seconds": 210,
+      "clock_tolerance_seconds": 100,
+      "situation_tokens": ["control", "takedown", "ground"],
+      "model_probability": 0.78,
+      "market_probability": 0.73,
+      "confidence": 0.86,
+      "market_question": "Will {focus} win UFC 229?",
+      "outcome": "{focus} wins",
+      "summary": "{focus} is favored as the second round develops, with the replay pack weighting sustained control without inventing unofficial damage scores.",
+      "what_changed": "Visible control and advancing round time strengthened the favorite relative to the pre-fight prior.",
+      "next_trigger": "A clean McGregor separation or another Khabib takedown would move the estimate most.",
+      "key_factors": ["Pre-fight favorite prior", "Round-two control", "No invented judge score"],
+      "alternate_markets": [
+        { "question": "Will the fight end before the judges?", "outcome": "Inside-the-distance finish", "probability": 0.58, "confidence": 0.68 }
+      ],
+      "evidence": [
+        { "provider": "UFCStats cache", "label": "Official fight record", "query": "UFC 229 round two control sequence", "detail": "Cached round record supplies the historical control context." },
+        { "provider": "Bloom MMA model", "label": "Prior-plus-round model", "query": "Favorite prior after sustained round-two control", "detail": "The model updates from the pre-fight prior without pretending to score damage from pixels." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Khabib replay price in round two", "detail": "Illustrative midpoint: 73%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "round-three-reset",
+      "label": "Round 3 · 2:30 remaining",
+      "phase_tokens": ["round 3", "r3", "third round"],
+      "scores": [[0, 0]],
+      "clock_seconds": 150,
+      "clock_tolerance_seconds": 110,
+      "model_probability": 0.72,
+      "market_probability": 0.77,
+      "confidence": 0.8,
+      "market_question": "Will {focus} win UFC 229?",
+      "outcome": "{focus} wins",
+      "summary": "The fight has reached round three; the preloaded model keeps Khabib favored while lowering confidence when control is less visibly decisive.",
+      "what_changed": "A more competitive standing phase narrowed the model edge without erasing the pre-fight and earlier-control priors.",
+      "next_trigger": "The next takedown, knockdown, or prolonged cage-control sequence would dominate the update.",
+      "key_factors": ["Favorite prior persists", "Competitive third round", "Visual evidence remains incomplete"],
+      "alternate_markets": [
+        { "question": "Will the fight reach round five?", "outcome": "Fight reaches round five", "probability": 0.42, "confidence": 0.61 }
+      ],
+      "evidence": [
+        { "provider": "UFCStats cache", "label": "Official round record", "query": "UFC 229 round three timeline", "detail": "Cached round boundary confirms the fight has progressed into round three." },
+        { "provider": "Bloom MMA model", "label": "Round progression model", "query": "Favorite prior through three competitive rounds", "detail": "Confidence is capped because the screen does not expose official judging." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Khabib replay price in round three", "detail": "Illustrative midpoint: 77%; explicitly marked mock/replay." }
+      ]
+    },
+    {
+      "id": "round-four-finish-window",
+      "label": "Round 4 · 1:57 remaining",
+      "phase_tokens": ["round 4", "r4", "fourth round"],
+      "scores": [[0, 0]],
+      "clock_seconds": 117,
+      "clock_tolerance_seconds": 110,
+      "situation_tokens": ["back control", "submission", "neck", "ground"],
+      "model_probability": 0.9,
+      "market_probability": 0.86,
+      "confidence": 0.9,
+      "market_question": "Will {focus} win UFC 229?",
+      "outcome": "{focus} wins",
+      "summary": "With the fight deep in round four and Khabib's control re-established, the replay model prices him as a strong favorite entering the finish window.",
+      "what_changed": "Round-four control converted a durable favorite edge into a near-terminal state.",
+      "next_trigger": "A locked submission or a clean escape is the binary next trigger.",
+      "key_factors": ["Round-four control", "Established favorite prior", "Finish threat visible in the replay context"],
+      "alternate_markets": [
+        { "question": "Will the fight end by submission?", "outcome": "Submission finish", "probability": 0.64, "confidence": 0.78 }
+      ],
+      "evidence": [
+        { "provider": "UFCStats cache", "label": "Official fight record", "query": "UFC 229 official finish round and time", "detail": "Cached record distinguishes 3:03 elapsed from 1:57 remaining on the broadcast clock." },
+        { "provider": "Bloom MMA model", "label": "Finish-window model", "query": "Round-four control with under two minutes remaining", "detail": "The model raises win and submission mass while preserving uncertainty until the stoppage." },
+        { "provider": "Demo market cache", "label": "Historical market reconstruction", "query": "Khabib replay price before finish", "detail": "Illustrative midpoint: 86%; explicitly marked mock/replay." }
+      ]
+    }
+  ]
+}

@@ -9,9 +9,10 @@ Our service owns everything after camera capture:
 ```text
 phone/app camera -> direct WebRTC peer connection -> desktop capture viewer
                   \-> HTTPS tunnel carries SDP/ICE signaling only
-desktop capture viewer -> bundled YOLO11n -> continuous local player/ball overlay
-phone/app analysis JPEGs (only after user action) -> five-frame window -> Gemma 4 event extraction
--> automatic event-switch check -> GPT OSS/GLM prediction analysis -> presentation-ready JSON
+desktop capture viewer -> bundled YOLO11s WebGPU -> continuous local player/ball overlay
+phone/app analysis JPEGs (only after user action) -> fast first five-frame window -> Gemma 4 event extraction
+-> automatic event-switch check -> matching precollected event intelligence pack
+-> GPT OSS/GLM narrative enrichment -> model/market/evidence presentation JSON
 ```
 
 The native app owns camera permissions and frame delivery. The Next.js frontend owns rendering. Neither client should implement OCR, game-state correction, probability calculation, market comparison, or sport selection. The camera feed is the selector.
@@ -78,7 +79,7 @@ GET /api/webrtc/active
 
 When the phone or glasses starts, it claims that session at `POST /api/webrtc/active`. If another provider is already live, the new one replaces it. Both pages then exchange SDP offers/answers and ICE candidates through `POST /api/webrtc/signal` plus `GET /api/webrtc/poll`. Those endpoints carry only setup metadata—never JPEGs or video bytes.
 
-Analysis starts only after `POST /api/analysis/start`. At that point the phone also submits one high-quality JPEG every 2.4 seconds to the analysis endpoint:
+Analysis starts only after `POST /api/analysis/start`. The browser phone sends an initial five-frame burst at 800 ms spacing, then returns to one high-quality JPEG every 2.4 seconds. The backend still permits at most one model window every 12 seconds:
 
 ```http
 POST /api/frames
@@ -142,6 +143,21 @@ The first four live-feed frames normally return HTTP `202` with `analysis_status
 ```
 
 Queued frames return HTTP `202` with queue depth, time until the next eligible request, and the latest cached insight. Rate-limited or duplicate frames return HTTP `200` with `selection.accepted: false`. Extraction failures return HTTP `422` with an `analysis.error`; clients should show that message in debug mode and continue sending later frames.
+
+## Four-event funding-demo intelligence
+
+Gemma remains the source of truth for what the camera sees. After each successful extraction, `services/demo/intelligence.js` canonicalizes the detected sport and matches event context and participant aliases against four committed evidence packs:
+
+- `world-cup-2022-final.json`
+- `nba-finals-2016-game-7.json`
+- `super-bowl-li.json`
+- `ufc-229.json`
+
+The closest checkpoint is selected by score first, then phase and clock. Progress cannot rewind within an event, and an automatic event switch clears the prior checkpoint. Exact matches return `mode: "precollected_event_replay"`; sport-only matches return `mode: "illustrative_sport_template"`. Vision confidence below 0.55 receives no pack.
+
+Each pack includes cached evidence traces, a deterministic model probability, an explicitly mocked replay-market probability, what changed, and the next probability trigger. GPT OSS or GLM may enrich the wording, but it cannot replace the committed checkpoint probabilities. If the analytics call fails, the exact event still produces the deterministic demo result and exposes the failure under `diagnostics.analytics_error`.
+
+`GET /api/latest` returns only the latest live analyzed result and persists until reset. It never silently falls back to an NBA fixture. `GET /api/comparison` retains the explicit deterministic fixture/debug path, and `GET /api/demo/intelligence` lists the four available packs.
 
 Other endpoints:
 

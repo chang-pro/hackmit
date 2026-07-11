@@ -58,6 +58,9 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   const base = `http://127.0.0.1:${port}`;
 
   await fetch(`${base}/api/reset`, { method: "POST" });
+  assert.equal((await fetch(`${base}/api/latest`)).status, 404);
+  const packCatalog = await (await fetch(`${base}/api/demo/intelligence`)).json();
+  assert.equal(packCatalog.packs.length, 4);
   const started = await fetch(`${base}/api/analysis/start`, { method: "POST" });
   assert.equal(started.status, 200);
   const response = await fetch(`${base}/api/frames`, {
