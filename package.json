@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Slice 1: deterministic end-to-end skeleton — saved frame -> parsed state -> probability -> mock market -> comparison",
+  "description": "Slices 1+4: deterministic end-to-end skeleton plus source-agnostic capture gateway, frame selector, and webcam flow",
   "scripts": {
     "start": "node services/api/server.js",
     "test": "node --test 'tests/*.test.js'"
