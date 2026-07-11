@@ -8,6 +8,36 @@
   "focus_aliases": ["khabib", "nurmagomedov"],
   "focus_label": "Khabib Nurmagomedov",
   "disclosure": "Historical evidence pack with illustrative replay-market prices; visible control signals are treated conservatively and this is not a live quote or trading advice.",
+  "research": [
+    {
+      "category": "players",
+      "query": "Khabib Nurmagomedov Conor McGregor fighter context before UFC 229",
+      "source": "Mock historical research cache · UFC fight archive",
+      "result": "Nurmagomedov entered unbeaten at 26-0; McGregor returned as a former two-division champion after nearly two years away from MMA competition.",
+      "is_mock": true
+    },
+    {
+      "category": "teams",
+      "query": "American Kickboxing Academy SBG Ireland corner context UFC 229",
+      "source": "Mock historical research cache · training-camp profiles",
+      "result": "Nurmagomedov represented American Kickboxing Academy's wrestling-heavy camp, while McGregor's SBG Ireland corner emphasized striking and distance control.",
+      "is_mock": true
+    },
+    {
+      "category": "strategy/tactics",
+      "query": "Khabib McGregor UFC 229 tactical matchup",
+      "source": "Mock historical research cache · fight-style preview",
+      "result": "Nurmagomedov's clearest path was cage pressure and chain wrestling; McGregor's was maintaining range for counters before prolonged grappling exchanges.",
+      "is_mock": true
+    },
+    {
+      "category": "news/context",
+      "query": "Historical stakes before UFC 229",
+      "source": "Mock historical research cache · event preview",
+      "result": "The October 2018 main event was contested for the UFC lightweight title and marked McGregor's return to the Octagon.",
+      "is_mock": true
+    }
+  ],
   "moments": [
     {
       "id": "round-two-control",

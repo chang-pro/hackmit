@@ -8,6 +8,36 @@
   "focus_aliases": ["argentina", "arg"],
   "focus_label": "Argentina",
   "disclosure": "Historical evidence pack with illustrative replay-market prices; this is a funding-demo estimate, not a live quote or trading advice.",
+  "research": [
+    {
+      "category": "players",
+      "query": "Lionel Messi and Kylian Mbappe player context before the 2022 World Cup Final",
+      "source": "Mock historical research cache · FIFA tournament archive",
+      "result": "Messi and Mbappe entered the final level on five tournament goals, making the match a direct Golden Boot contest.",
+      "is_mock": true
+    },
+    {
+      "category": "teams",
+      "query": "Argentina and France team context entering the 2022 World Cup Final",
+      "source": "Mock historical research cache · tournament recap",
+      "result": "Argentina arrived as Copa America holders, while France was attempting to become the first repeat men's champion since 1962.",
+      "is_mock": true
+    },
+    {
+      "category": "strategy/tactics",
+      "query": "Argentina France 2022 final tactical matchup",
+      "source": "Mock historical research cache · tactical preview",
+      "result": "Argentina could create overloads through Di Maria's left side, while France's clearest transition threat came through Mbappe attacking space.",
+      "is_mock": true
+    },
+    {
+      "category": "news/context",
+      "query": "Historical stakes surrounding the Argentina France World Cup Final",
+      "source": "Mock historical research cache · pre-match context",
+      "result": "Both nations entered the final seeking a third World Cup title; the match was played at Lusail Stadium on December 18, 2022.",
+      "is_mock": true
+    }
+  ],
   "moments": [
     {
       "id": "argentina-two-goal-lead",

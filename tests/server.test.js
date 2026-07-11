@@ -97,6 +97,39 @@ test("phone photo returns a complete multisport live insight", async (t) => {
   assert.equal(latest.extraction, "test-phone-vision-batch");
 });
 
+test("demo replay endpoint serves valid checkpoints and rejects invalid requests", async (t) => {
+  const server = createBloomServer({
+    liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const valid = await fetch(
+    `${base}/api/demo/replay?pack=world-cup-2022-final&moment=france-equalizer`
+  );
+  assert.equal(valid.status, 200);
+  const insight = await valid.json();
+  assert.equal(insight.demo_intelligence.pack_id, "world-cup-2022-final");
+  assert.equal(insight.demo_intelligence.moment_id, "france-equalizer");
+  assert.equal(insight.rehearsal.no_model_calls, true);
+  assert.equal(insight.market.is_mock, true);
+
+  const unknownPack = await fetch(`${base}/api/demo/replay?pack=not-a-pack`);
+  assert.equal(unknownPack.status, 400);
+  assert.match((await unknownPack.json()).error, /unknown demo intelligence pack/i);
+
+  const unknownMoment = await fetch(
+    `${base}/api/demo/replay?pack=world-cup-2022-final&moment=not-a-moment`
+  );
+  assert.equal(unknownMoment.status, 400);
+  assert.match((await unknownMoment.json()).error, /unknown checkpoint/i);
+
+  const missingPack = await fetch(`${base}/api/demo/replay`);
+  assert.equal(missingPack.status, 400);
+  assert.match((await missingPack.json()).error, /unknown demo intelligence pack/i);
+});
+
 test("WebRTC signaling follows the latest active camera without proxying media", async (t) => {
   const server = createBloomServer({
     liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),

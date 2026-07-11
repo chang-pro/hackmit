@@ -162,6 +162,8 @@ export function listDemoIntelligencePacks() {
     sport: pack.sport,
     event_label: pack.event_label,
     moments: pack.moments.length,
+    checkpoints: pack.moments.map((moment) => ({ id: moment.id, label: moment.label })),
+    research_categories: (pack.research ?? []).map((item) => item.category),
     disclosure: pack.disclosure,
   }));
 }
@@ -194,8 +196,22 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
     moment_index: index,
     moment_count: pack.moments.length,
     moment_match_score: Number(score.toFixed(2)),
+    checkpoints: pack.moments.map((entry, entryIndex) => ({
+      id: entry.id,
+      label: entry.label,
+      model_probability: entry.model_probability,
+      market_probability: entry.market_probability,
+      active: entryIndex === index,
+    })),
     focus,
     evidence: (moment.evidence ?? []).map((item) => ({ ...item, status: "ready" })),
+    research: (pack.research ?? []).map((item) => ({
+      ...item,
+      query: template(item.query, focus),
+      result: template(item.result, focus),
+      status: "ready",
+      is_mock: true,
+    })),
     market: {
       question: template(moment.market_question, focus),
       outcome: template(moment.outcome, focus),
@@ -251,5 +267,110 @@ export function analysisFromDemoIntelligence(intelligence, modelAnalysis = null)
     event_summary: modelAnalysis.event_summary || deterministic.event_summary,
     key_factors: [...new Set([...deterministic.key_factors, ...(modelAnalysis.key_factors ?? [])])].slice(0, 6),
     model: `${modelAnalysis.model ?? "cerebras"}+bloom-demo-intelligence-v1`,
+  };
+}
+
+function titleCase(value) {
+  return String(value ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function displayClock(sport, seconds) {
+  if (seconds == null) return "";
+  if (sport === "soccer") return `${Math.floor(seconds / 60)}'`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function rehearsalObservation(pack, moment) {
+  const participantA = titleCase(pack.participant_groups?.[0]?.[0] ?? pack.focus_label);
+  const participantB = titleCase(pack.participant_groups?.[1]?.[0] ?? "Opponent");
+  const [scoreA, scoreB] = moment.scores?.[0] ?? [0, 0];
+  return {
+    sport: pack.sport,
+    competition: pack.competition_tokens?.[0] ?? pack.event_label,
+    event_name: pack.event_label,
+    event_identity: `demo:${pack.id}`,
+    event_format: pack.sport === "mma" ? "head_to_head" : "team_event",
+    participants: [
+      { name: participantA, role_or_position: "participant", score_or_status: String(scoreA), visible_rank: 0 },
+      { name: participantB, role_or_position: "participant", score_or_status: String(scoreB), visible_rank: 0 },
+    ],
+    participant_a: participantA,
+    participant_b: participantB,
+    score_a: scoreA,
+    score_b: scoreB,
+    score_display: moment.label,
+    phase: moment.phase_tokens?.[0] ?? "Replay checkpoint",
+    clock: displayClock(pack.sport, moment.clock_seconds),
+    event_status: "replay",
+    possession_or_control: "UNKNOWN",
+    situation: moment.situation_tokens?.join(" · ") ?? "Historical replay checkpoint",
+    visible_facts: [moment.label],
+    changes_across_frames: [moment.what_changed],
+    confidence: 0.99,
+  };
+}
+
+export function getDemoRehearsalInsight(packId, momentId = null) {
+  const pack = PACKS.find((entry) => entry.id === packId);
+  if (!pack) throw new Error(`unknown demo intelligence pack "${packId}"`);
+  const moment = momentId
+    ? pack.moments.find((entry) => entry.id === momentId)
+    : pack.moments[0];
+  if (!moment) {
+    throw new Error(`unknown checkpoint for "${packId}"; known: ${pack.moments.map((entry) => entry.id).join(", ")}`);
+  }
+  const observation = rehearsalObservation(pack, moment);
+  const intelligence = selectDemoIntelligence(observation);
+  if (!intelligence || intelligence.pack_id !== pack.id || intelligence.moment_id !== moment.id) {
+    throw new Error(`demo checkpoint "${pack.id}/${moment.id}" does not resolve to itself`);
+  }
+  const analysis = analysisFromDemoIntelligence(intelligence);
+  return {
+    session_id: "session_demo_rehearsal",
+    source: "demo_rehearsal",
+    extraction: "precollected-rehearsal",
+    rehearsal: { is_rehearsal: true, no_model_calls: true },
+    observation,
+    event_switch: {
+      detected: false,
+      from_event: null,
+      to_event: {
+        event_identity: observation.event_identity,
+        sport: observation.sport,
+        competition: observation.competition,
+        event_name: observation.event_name,
+      },
+      reason: "explicit_rehearsal_checkpoint",
+    },
+    demo_intelligence: intelligence,
+    market: {
+      provider: intelligence.market.provider,
+      probability: intelligence.market.market_probability,
+      is_mock: true,
+      question: intelligence.market.question,
+      outcome: intelligence.market.outcome,
+    },
+    comparison: {
+      model_probability: intelligence.market.model_probability,
+      market_probability: intelligence.market.market_probability,
+      gap_percentage_points: intelligence.market.gap_percentage_points,
+      direction: intelligence.market.gap_percentage_points > 0
+        ? "model_higher"
+        : intelligence.market.gap_percentage_points < 0
+          ? "model_lower"
+          : "aligned",
+      confidence: intelligence.confidence,
+    },
+    analysis,
+    diagnostics: { analytics_error: null },
+    presentation: {
+      status: "demo_rehearsal",
+      short_text: `Rehearsal only. ${analysis.event_summary}`,
+      spoken_text: `Rehearsal only. ${analysis.event_summary}`,
+    },
   };
 }

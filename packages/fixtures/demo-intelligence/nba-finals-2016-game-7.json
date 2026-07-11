@@ -8,6 +8,36 @@
   "focus_aliases": ["cavaliers", "cleveland", "cle", "cavs"],
   "focus_label": "Cleveland",
   "disclosure": "Historical evidence pack with illustrative replay-market prices; this is a funding-demo estimate, not a live quote or trading advice.",
+  "research": [
+    {
+      "category": "players",
+      "query": "LeBron James Stephen Curry player context before 2016 NBA Finals Game 7",
+      "source": "Mock historical research cache · NBA Finals archive",
+      "result": "James entered Game 7 after consecutive 41-point performances, while Curry entered as the league's unanimous MVP.",
+      "is_mock": true
+    },
+    {
+      "category": "teams",
+      "query": "Cavaliers Warriors team context entering 2016 Finals Game 7",
+      "source": "Mock historical research cache · season recap",
+      "result": "Golden State had won a record 73 regular-season games; Cleveland was pursuing the first major pro championship for the city since 1964.",
+      "is_mock": true
+    },
+    {
+      "category": "strategy/tactics",
+      "query": "Cleveland Golden State Game 7 tactical matchup",
+      "source": "Mock historical research cache · tactical preview",
+      "result": "Cleveland could attack favorable switches through James and Irving, while Golden State's spacing and three-point volume punished slow rotations.",
+      "is_mock": true
+    },
+    {
+      "category": "news/context",
+      "query": "Historical stakes before 2016 NBA Finals Game 7",
+      "source": "Mock historical research cache · pregame context",
+      "result": "Cleveland had forced Game 7 after trailing the series 3-1; no team had previously completed that comeback in the NBA Finals.",
+      "is_mock": true
+    }
+  ],
   "moments": [
     {
       "id": "halftime-deficit",
