@@ -17,32 +17,83 @@
   .mock { color: #d29922; font-size: 0.8rem; }
   pre { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1rem; overflow-x: auto; font-size: 0.75rem; }
   .status { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.75rem; background: #1f6feb33; border: 1px solid #1f6feb; }
+  /* Presentation-gate status colors (README §7.9): judges should read the
+     system's trust level at a glance. */
+  .status-ready { background: #3fb95026; border-color: #3fb950; color: #3fb950; }
+  .status-low_confidence { background: #d2992226; border-color: #d29922; color: #d29922; }
+  .status-stale_market { background: #db6d2826; border-color: #db6d28; color: #db6d28; }
+  .status-no_state, .status-error { background: #f8514926; border-color: #f85149; color: #f85149; }
+  /* Honest-fallback banner: mocked or replayed market data is always labeled
+     (README §13). Prominent by design — judges must always see it. */
+  #mockBanner { display: none; margin: 1rem 0 0; padding: 0.5rem 0.9rem; border-radius: 8px;
+    background: #d2992226; border: 1px solid #d29922; color: #d29922; font-weight: 600; font-size: 0.85rem; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin: 1rem 0; }
+  .controls .label { font-size: 0.75rem; text-transform: uppercase; color: #8b949e; }
+  button { font: inherit; color: #e6edf3; background: #21262d; border: 1px solid #30363d;
+    border-radius: 8px; padding: 0.4rem 0.9rem; cursor: pointer; }
+  button:hover { border-color: #8b949e; }
+  button.active { background: #1f6feb33; border-color: #1f6feb; }
+  label.toggle { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; color: #8b949e; cursor: pointer; }
 </style>
 </head>
 <body>
   <h1>BloomKnights <span class="status" id="status">loading…</span></h1>
+  <div id="mockBanner">⚠ MOCK MARKET DATA — replayed/mock values for the offline demo, not a live market feed</div>
   <div class="headline" id="headline">—</div>
+
+  <div class="controls">
+    <span class="label">Demo moment</span>
+    <button id="moment184" class="active">Q4 2:14</button>
+    <button id="moment260">Q4 0:30</button>
+    <span class="label" style="margin-left:1rem">Audio</span>
+    <!-- Glasses-audio stand-in (README §7.10): backend returns presentation-
+         neutral JSON; this client speaks presentation.spoken_text. -->
+    <button id="speak">🔊 Speak</button>
+    <label class="toggle"><input type="checkbox" id="autoSpeak" /> auto-speak on update</label>
+  </div>
+
   <div class="grid">
     <div class="card"><h2>Game state</h2><div class="big" id="score">—</div><div id="clock"></div></div>
-    <div class="card"><h2>Model</h2><div class="big" id="model">—</div><div id="modelVersion"></div></div>
-    <div class="card"><h2>Market</h2><div class="big" id="market">—</div><div class="mock" id="mock"></div></div>
-    <div class="card"><h2>Gap</h2><div class="big" id="gap">—</div><div id="freshness"></div></div>
+    <div class="card"><h2>Model estimate</h2><div class="big" id="model">—</div><div id="modelVersion"></div></div>
+    <div class="card"><h2>Market-implied</h2><div class="big" id="market">—</div><div class="mock" id="mock"></div></div>
+    <div class="card"><h2>Model-market gap</h2><div class="big" id="gap">—</div><div id="freshness"></div></div>
   </div>
   <h2 style="margin-top:2rem;font-size:0.75rem;text-transform:uppercase;color:#8b949e">Raw pipeline output</h2>
   <pre id="raw">—</pre>
 <script>
+let currentFixture = "frame_000184"; // Q4 2:14 default; frame_000260 is Q4 0:30
+let lastSpokenText = "";
+
+function setStatus(status) {
+  const el = document.getElementById("status");
+  el.textContent = status;
+  el.className = "status status-" + status;
+}
+
+function speak(text) {
+  if (!text || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel(); // never queue overlapping updates
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.05;
+  speechSynthesis.speak(u);
+}
+
 async function refresh() {
-  const r = await fetch("/api/comparison");
+  const r = await fetch("/api/comparison?fixture=" + encodeURIComponent(currentFixture));
   const d = await r.json();
   document.getElementById("raw").textContent = JSON.stringify(d, null, 2);
+  const spoken = d.presentation?.spoken_text || d.presentation?.short_text || "";
   if (d.error || !d.comparison) {
-    document.getElementById("status").textContent = d.presentation?.status || "error";
+    setStatus(d.presentation?.status || "error");
     document.getElementById("headline").textContent = d.presentation?.short_text || d.error;
+    document.getElementById("mockBanner").style.display = "none";
+    lastSpokenText = spoken;
     return;
   }
   const c = d.comparison;
-  document.getElementById("status").textContent = d.presentation.status;
+  setStatus(d.presentation.status);
   document.getElementById("headline").textContent = d.presentation.short_text;
+  document.getElementById("mockBanner").style.display = d.market.is_mock ? "block" : "none";
   document.getElementById("score").textContent = `${d.state.away_score}–${d.state.home_score}`;
   document.getElementById("clock").textContent = `Q${d.state.period} · ${Math.floor(d.state.clock_seconds/60)}:${String(d.state.clock_seconds%60).padStart(2,"0")} · conf ${d.state.confidence}`;
   document.getElementById("model").textContent = `${(c.model_probability*100).toFixed(1)}%`;
@@ -53,7 +104,25 @@ async function refresh() {
   g.textContent = `${c.gap_percentage_points > 0 ? "+" : ""}${c.gap_percentage_points} pts`;
   g.className = "big " + (c.gap_percentage_points >= 0 ? "gap-pos" : "gap-neg");
   document.getElementById("freshness").textContent = `market age ${c.freshness_ms} ms`;
+  // Auto-speak (default off) only when the spoken update actually changed.
+  if (document.getElementById("autoSpeak").checked && spoken && spoken !== lastSpokenText) {
+    speak(spoken);
+  }
+  lastSpokenText = spoken;
 }
+
+function selectMoment(fixture, buttonId) {
+  currentFixture = fixture;
+  for (const id of ["moment184", "moment260"]) {
+    document.getElementById(id).classList.toggle("active", id === buttonId);
+  }
+  refresh();
+}
+
+document.getElementById("moment184").addEventListener("click", () => selectMoment("frame_000184", "moment184"));
+document.getElementById("moment260").addEventListener("click", () => selectMoment("frame_000260", "moment260"));
+document.getElementById("speak").addEventListener("click", () => speak(lastSpokenText));
+
 refresh();
 setInterval(refresh, 5000);
 </script>
