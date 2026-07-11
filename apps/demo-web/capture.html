@@ -152,6 +152,8 @@ let remoteFeedActive = false;
 let remoteAnalysisEnabled = false;
 let lastSpoken = "";
 let lastInboundVideoStats = null;
+let demoStream = null;
+let demoAnimation = null;
 
 const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
 const STEPS = [
@@ -201,6 +203,74 @@ function setRemoteFeedUI(active) {
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
   setStatusPill("idle", "waiting for phone");
+}
+
+function paintDemoBroadcast(context, width, height, now) {
+  const phase = now / 1000;
+  const background = context.createLinearGradient(0, 0, width, height);
+  background.addColorStop(0, "#151d39");
+  background.addColorStop(.55, "#284d6a");
+  background.addColorStop(1, "#112536");
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
+
+  context.fillStyle = "rgba(255,255,255,.07)";
+  for (let x = -height; x < width; x += 150) context.fillRect(x + Math.sin(phase) * 20, 0, 46, height);
+  context.fillStyle = "rgba(12,20,42,.86)";
+  context.fillRect(width * .19, height * .07, width * .62, height * .14);
+  context.strokeStyle = "rgba(255,255,255,.5)";
+  context.lineWidth = 3;
+  context.strokeRect(width * .19, height * .07, width * .62, height * .14);
+  context.fillStyle = "#f5f8ff";
+  context.font = `700 ${Math.round(height * .062)}px system-ui`;
+  context.textAlign = "center";
+  context.fillText("ORBIT   72  —  68   NOVA", width / 2, height * .165);
+  context.font = `600 ${Math.round(height * .028)}px ui-monospace, monospace`;
+  context.fillStyle = "#b9e7ff";
+  context.fillText(`Q4  •  ${String(124 - Math.floor(phase) % 124).padStart(2, "0")}:14  •  LIVE DEMO`, width / 2, height * .245);
+
+  const glow = context.createRadialGradient(width / 2, height * .56, 20, width / 2, height * .56, width * .42);
+  glow.addColorStop(0, "rgba(132,243,209,.26)");
+  glow.addColorStop(1, "rgba(132,243,209,0)");
+  context.fillStyle = glow;
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "rgba(255,255,255,.72)";
+  for (let index = 0; index < 8; index += 1) {
+    const x = width * (.18 + index * .09) + Math.sin(phase * 1.8 + index) * 18;
+    const y = height * (.51 + (index % 2) * .11) + Math.cos(phase * 1.4 + index) * 9;
+    context.beginPath();
+    context.arc(x, y, height * .026, 0, Math.PI * 2);
+    context.fill();
+  }
+}
+
+function stopDemoFeed({ resetUI = true } = {}) {
+  if (demoAnimation) cancelAnimationFrame(demoAnimation);
+  demoAnimation = null;
+  demoStream?.getTracks().forEach((track) => track.stop());
+  demoStream = null;
+  if (resetUI) setRemoteFeedUI(false);
+}
+
+function startDemoFeed() {
+  stopDemoFeed({ resetUI: false });
+  const canvas = document.createElement("canvas");
+  canvas.width = 1920;
+  canvas.height = 1080;
+  const context = canvas.getContext("2d");
+  const draw = (now) => {
+    paintDemoBroadcast(context, canvas.width, canvas.height, now);
+    demoAnimation = requestAnimationFrame(draw);
+  };
+  demoAnimation = requestAnimationFrame(draw);
+  demoStream = canvas.captureStream(30);
+  remotePreview.srcObject = demoStream;
+  remotePreview.style.display = "block";
+  video.style.display = "none";
+  remotePreview.play().catch(() => {});
+  setRemoteFeedUI(true);
+  $("idleHint").textContent = "Local demo stream is active. No camera, relay, or bandwidth is being used.";
+  return "BloomKnights local demo stream started — run bloomDemo.stop() to exit.";
 }
 
 function showWebRtcBlocked(message) {
@@ -268,6 +338,7 @@ async function getPeerConnection() {
     if (candidate) sendSignal("ice", candidate.toJSON()).catch(() => {});
   };
   connection.ontrack = ({ streams }) => {
+    stopDemoFeed({ resetUI: false });
     remotePreview.srcObject = streams[0];
     remotePreview.style.display = "block";
     video.style.display = "none";
@@ -332,6 +403,7 @@ async function pollSignals() {
 
 async function createPairing() {
   clearTimeout(pollTimer);
+  stopDemoFeed({ resetUI: false });
   peerConnection?.close();
   peerConnection = null;
   pendingIce = [];
@@ -418,6 +490,7 @@ $("speak").addEventListener("click", () => {
 $("helpClose").addEventListener("click", () => $("help").removeAttribute("open-panel"));
 $("help").addEventListener("click", (event) => { if (event.target === $("help")) $("help").removeAttribute("open-panel"); });
 window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch(() => {}));
+window.bloomDemo = Object.freeze({ start: startDemoFeed, stop: () => { stopDemoFeed(); return "BloomKnights local demo stream stopped."; } });
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
 $("helpNote").textContent = NOTE;
 setInterval(refreshAnalysis, INSIGHT_POLL_MS);
