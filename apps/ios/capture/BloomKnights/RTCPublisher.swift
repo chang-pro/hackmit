@@ -12,6 +12,11 @@ import CoreVideo
 import Foundation
 import WebRTC
 
+private final class SendablePixelBuffer: @unchecked Sendable {
+    let value: CVImageBuffer
+    init(_ value: CVImageBuffer) { self.value = value }
+}
+
 @MainActor
 final class RTCPublisher: NSObject, ObservableObject {
     enum State: Equatable {
@@ -47,7 +52,9 @@ final class RTCPublisher: NSObject, ObservableObject {
     // Written only on main (connect/disconnect); read from the SDK decode
     // thread in push(). Guard the handoff explicitly: the old unchecked read
     // could race a disconnect while VideoToolbox was returning a frame.
-    private nonisolated(unsafe) let frameLock = NSLock()
+    private let frameLock = NSLock()
+    private let frameQueue = DispatchQueue(label: "com.bloomknights.rtc.frames", qos: .userInitiated)
+    private nonisolated(unsafe) var framePending = false
     private nonisolated(unsafe) var videoSource: RTCVideoSource?
     private var videoTrack: RTCVideoTrack?
     private nonisolated(unsafe) let capturer = RTCVideoCapturer()
@@ -56,7 +63,7 @@ final class RTCPublisher: NSObject, ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var pendingRemoteIce: [[String: Any]] = []
     private var haveRemoteDescription = false
-    // Frame push happens on the SDK decode thread; count on main in batches.
+    // Frame push happens on the SDK delivery thread; count on main in batches.
     private nonisolated(unsafe) var pushCounter = 0
 
     // MARK: - HTTP signaling
@@ -133,9 +140,8 @@ final class RTCPublisher: NSObject, ObservableObject {
             peerConnection = pc
 
             let source = Self.factory.videoSource()
-            frameLock.lock()
-            videoSource = source
-            frameLock.unlock()
+            source.adaptOutputFormat(toWidth: 360, height: 640, fps: 12)
+            frameLock.withLock { videoSource = source }
             let track = Self.factory.videoTrack(with: source, trackId: "glasses-video0")
             videoTrack = track
             pc.add(track, streamIds: ["glasses"])
@@ -168,9 +174,7 @@ final class RTCPublisher: NSObject, ObservableObject {
         }
         peerConnection?.close(); peerConnection = nil
         videoTrack = nil
-        frameLock.lock()
-        videoSource = nil
-        frameLock.unlock()
+        frameLock.withLock { videoSource = nil }
         sessionId = nil
         pendingRemoteIce = []
         haveRemoteDescription = false
@@ -224,14 +228,27 @@ final class RTCPublisher: NSObject, ObservableObject {
         peerConnection?.add(candidate) { _ in }
     }
 
-    // MARK: - Frame input (called from the SDK decode thread)
+    // MARK: - Frame input (called from the SDK delivery thread)
 
     nonisolated func push(_ imageBuffer: CVImageBuffer) {
-        frameLock.lock()
-        guard let source = videoSource else { frameLock.unlock(); return }
-        pushCounter += 1
-        let count = pushCounter
-        frameLock.unlock()
+        let accepted = frameLock.withLock {
+            guard !framePending else { return false }
+            framePending = true
+            return true
+        }
+        guard accepted else { return }
+        let retainedBuffer = SendablePixelBuffer(imageBuffer)
+        frameQueue.async { [weak self] in self?.deliver(retainedBuffer.value) }
+    }
+
+    private nonisolated func deliver(_ imageBuffer: CVImageBuffer) {
+        defer { frameLock.withLock { framePending = false } }
+        let snapshot: (RTCVideoSource, Int)? = frameLock.withLock {
+            guard let source = videoSource else { return nil }
+            pushCounter += 1
+            return (source, pushCounter)
+        }
+        guard let (source, count) = snapshot else { return }
         let rtcBuffer = RTCCVPixelBuffer(pixelBuffer: imageBuffer)
         let timeNs = Int64(CACurrentMediaTime() * 1_000_000_000)
         let frame = RTCVideoFrame(buffer: rtcBuffer, rotation: ._0, timeStampNs: timeNs)

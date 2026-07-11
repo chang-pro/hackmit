@@ -54,47 +54,26 @@ final class KeepAlive {
     }
 }
 
-// Live preview for hvc1: makeUIImage() can't decode compressed HEVC (→ blank
-// screen), so we feed the encoded sample buffers straight to an
-// AVSampleBufferDisplayLayer, which decodes + renders them natively in real time.
-// Sendable so the SDK delivery thread can enqueue without hopping through the
-// @MainActor streamer. Enqueue is marshalled to main (the layer is UI).
+// Meta's supported preview path is VideoFrame.makeUIImage(). Keep at most one
+// conversion in flight so preview work can never back up the SDK delivery queue.
 final class PreviewSink: @unchecked Sendable {
-    let layer = AVSampleBufferDisplayLayer()
     private let lock = NSLock()
-    private var pendingFrame: CMSampleBuffer?
-    private var drainScheduled = false
+    private let work = DispatchQueue(label: "com.bloomknights.preview", qos: .userInitiated)
+    private var busy = false
+    var onImage: @Sendable (UIImage) -> Void = { _ in }
 
-    func enqueue(_ sb: CMSampleBuffer) {
-        // Display immediately (live view — no timebase needed).
-        if let arr = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true),
-           CFArrayGetCount(arr) > 0 {
-            let d = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CFMutableDictionary.self)
-            CFDictionarySetValue(d,
-                Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
-                Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+    func enqueue(_ frame: VideoFrame) {
+        lock.lock()
+        guard !busy else { lock.unlock(); return }
+        busy = true
+        lock.unlock()
+        work.async { [weak self] in
+            guard let self else { return }
+            if let image = frame.makeUIImage() { self.onImage(image) }
+            self.lock.lock()
+            self.busy = false
+            self.lock.unlock()
         }
-        // Keep only the newest frame while the main thread is busy. Scheduling
-        // one main-queue closure per incoming frame makes latency grow without
-        // bound and eventually retains enough compressed buffers to terminate
-        // the app under memory pressure.
-        lock.lock()
-        pendingFrame = sb
-        guard !drainScheduled else { lock.unlock(); return }
-        drainScheduled = true
-        lock.unlock()
-        DispatchQueue.main.async { [weak self] in self?.drainLatestFrame() }
-    }
-
-    private func drainLatestFrame() {
-        lock.lock()
-        let frame = pendingFrame
-        pendingFrame = nil
-        drainScheduled = false
-        lock.unlock()
-        guard let frame else { return }
-        if layer.status == .failed { layer.flush() }
-        if layer.isReadyForMoreMediaData { layer.enqueue(frame) }
     }
 }
 
@@ -132,7 +111,30 @@ final class FrameUplink: @unchecked Sendable {
     var onStatus: @Sendable (String) -> Void = { _ in }
     // Selected decoded frames (12 fps) feed the WebRTC publisher. Called on
     // the VT decode callback thread.
-    var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
+    private var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
+
+    func setFrameTap(_ tap: (@Sendable (CVImageBuffer) -> Void)?) {
+        lock.lock()
+        onDecodedFrame = tap
+        lock.unlock()
+    }
+
+    // The supported `.raw` Meta stream already contains a CVPixelBuffer. Route
+    // it directly to WebRTC; do not mutate or decode the SDK-owned sample.
+    func routeRaw(_ sb: CMSampleBuffer) {
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sb) else { return }
+        lock.lock()
+        guard streaming else { lock.unlock(); return }
+        let now = Date()
+        guard now.timeIntervalSince(lastPublishAt) >= publishInterval else {
+            lock.unlock()
+            return
+        }
+        lastPublishAt = now
+        let tap = onDecodedFrame
+        lock.unlock()
+        tap?(imageBuffer)
+    }
 
     func setStreaming(_ on: Bool) {
         lock.lock()
@@ -236,7 +238,12 @@ final class FrameUplink: @unchecked Sendable {
                                           flags: [],
                                           infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
             guard status == noErr, let imageBuffer, let self else { return }
-            if wantPublish { self.onDecodedFrame?(imageBuffer) }
+            if wantPublish {
+                self.lock.lock()
+                let tap = self.onDecodedFrame
+                self.lock.unlock()
+                tap?(imageBuffer)
+            }
             if wantUpload { self.encodeAndPost(imageBuffer) }
         }
     }
@@ -437,7 +444,10 @@ final class GlassesStreamer: ObservableObject {
         // Full-rate decoded frames feed the WebRTC track (push is nonisolated
         // and thread-safe; no-ops until the publisher is connected).
         let rtc = self.rtc
-        uplink.onDecodedFrame = { buf in rtc.push(buf) }
+        uplink.setFrameTap { buf in rtc.push(buf) }
+        preview.onImage = { [weak self] image in
+            Task { @MainActor in self?.latestFrame = image }
+        }
     }
 
     // Start all the live monitors so the screen always shows current state.
@@ -501,8 +511,7 @@ final class GlassesStreamer: ObservableObject {
     // fully tears down (otherwise pendingStart stays armed and can resume later).
     var isBusy: Bool { isRunning || pendingStart }
 
-    // THE START BUTTON. Does everything: register if needed, open the session,
-    // stream, record video, and snap photos on an interval — one tap.
+    // THE START BUTTON. Registers if needed, opens the session, and streams.
     func start() {
         guard stream == nil else { return }   // already running — ignore double taps
         lastError = ""
@@ -520,14 +529,14 @@ final class GlassesStreamer: ObservableObject {
         }
     }
 
-    // THE STOP BUTTON. Ends everything and saves the video.
+    // THE STOP BUTTON. Ends the stream and all downstream consumers.
     func stop() {
         pendingStart = false
         elapsedTimer?.invalidate(); elapsedTimer = nil
         keepAlive.stop()
         UIApplication.shared.isIdleTimerDisabled = false
         let wasRecording = isRecording
-        recorder.setRecording(false); isRecording = false
+        isRecording = false
         uplink.setStreaming(false)
         rtc.disconnect(); rtcStatus = ""
         stream?.stop(); stream = nil
@@ -537,18 +546,8 @@ final class GlassesStreamer: ObservableObject {
         // listeners are keyed per-device and deduped, so they stay.
         tokens.removeAll()
         latestFrame = nil
-        if wasRecording {
-            recorder.stop { [weak self] url in
-                Task { @MainActor in
-                    self?.savedFile = url?.lastPathComponent ?? ""
-                    self?.status = "Saved \(url?.lastPathComponent ?? "?")"
-                    // mp4-to-Mac-mini upload disabled here: live frames go to the
-                    // BloomKnights backend via FrameUplink instead (PokerAI-only path).
-                }
-            }
-        } else {
-            status = "Stopped"
-        }
+        savedFile = ""
+        status = wasRecording ? "Stream stopped" : "Stopped"
     }
 
     // Send the finished recording to the Mac Mini over Tailscale. If it fails
@@ -609,10 +608,9 @@ final class GlassesStreamer: ObservableObject {
                     }
                 }
 
-                // 504x896 is the device-proven stable profile over Bluetooth.
-                // 720x1280 congested the link and also multiplied decode,
-                // preview, and WebRTC memory pressure on the phone.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 24)
+                // Match Meta's supported CameraAccess sample: raw frames avoid
+                // custom HEVC decoding and are safe to render with makeUIImage().
+                let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 24)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
@@ -620,19 +618,14 @@ final class GlassesStreamer: ObservableObject {
                 }
                 self.stream = stream
 
-                let recorder = self.recorder
                 let preview = self.preview
-                // Record EVERY frame (cheap pass-through) AND feed the live preview
-                // layer, which decodes the encoded HEVC natively. Captured as locals
-                // so the SDK delivery thread never touches the @MainActor streamer.
                 let uplink = self.uplink
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
-                    recorder.append(frame)
-                    preview.enqueue(frame.sampleBuffer)
-                    uplink.ingest(frame.sampleBuffer)
-                    guard recorder.tickPreview() else { return }
-                    recorder.note(frame)
-                    Task { @MainActor in self?.frameSize = recorder.sizeLabel() }
+                    uplink.routeRaw(frame.sampleBuffer)
+                    preview.enqueue(frame)
+                    guard let fmt = CMSampleBufferGetFormatDescription(frame.sampleBuffer) else { return }
+                    let dims = CMVideoFormatDescriptionGetDimensions(fmt)
+                    Task { @MainActor in self?.frameSize = "\(dims.width)x\(dims.height)" }
                 }
                 tokens.append(frameTok)
 
@@ -644,7 +637,7 @@ final class GlassesStreamer: ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         if s == .streaming {
-                            self.status = "RECORDING (hvc1, \(self.elapsed))"
+                            self.status = "STREAMING (raw, \(self.elapsed))"
                         } else if s == .paused {
                             self.status = "Buffering…"          // self-recovers; don't touch it
                         } else if s == .stopped {
@@ -665,10 +658,6 @@ final class GlassesStreamer: ObservableObject {
                 }
                 tokens.append(errTok)
 
-                // Arm the recorder BEFORE starting the stream so the very first
-                // frame/keyframe is never dropped (append() no-ops until armed, and
-                // gates on the first keyframe anyway).
-                recorder.start(); recorder.setRecording(true)
                 uplink.setStreaming(true)
                 // One-button publish: this feed becomes the desktop viewer's
                 // active feed as soon as it starts.
@@ -683,7 +672,7 @@ final class GlassesStreamer: ObservableObject {
                 UIApplication.shared.isIdleTimerDisabled = true
                 self.startElapsedTimer()
                 stream.start()
-                self.status = "RECORDING (hvc1, low latency)"
+                self.status = "STREAMING (raw, low latency)"
             } catch {
                 self.lastError = "\(error)"
                 // Meta SDK #231: a prior hard suspension (e.g. phone locked mid-

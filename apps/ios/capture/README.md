@@ -1,9 +1,9 @@
 # BloomKnights Glasses Capture (the WORKING app)
 
-Minimal iPhone app that connects to the Meta Ray-Ban glasses and shows the
-live stream. Verbatim port of the proven PokerAI capture app — one START/STOP
-button, live hvc1 preview, mp4 recording. **Verified working on the iPhone 15
-on 2026-07-11** (user confirmed live stream on screen).
+Minimal iPhone app that connects to the Meta Ray-Ban glasses, shows the live
+stream, and publishes it to the BloomKnights viewer. The live path follows
+Meta's CameraAccess sample: `.raw` 360x640 frames, `makeUIImage()` preview,
+and direct CVPixelBuffer delivery to a bounded WebRTC queue.
 
 This exists because the bigger app in `apps/ios/BloomKnights/` crashed at
 launch: it touched `Wearables.shared` before `Wearables.configure()` ran, and
@@ -38,6 +38,8 @@ signing = app expires after 7 days, reinstall with the same commands.
 
 - `Wearables.configure()` in app init before anything touches the SDK.
 - `MWDAT` Info.plist block with `MetaAppID: "0"` (dev mode registration).
-- hvc1 codec (raw floods Bluetooth and pauses in background).
+- Meta-supported `.raw`/`.low`/24 fps stream profile; no custom mutation or
+  second decode of SDK-owned sample buffers.
+- At most one preview conversion and one WebRTC frame may be queued.
 - Silent audio-session keep-alive (iOS suspends Meta AI at ~85 s otherwise).
 - Don't restart on `.paused` — SDK self-recovers; debounced nudge on `.stopped` only.

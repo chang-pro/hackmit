@@ -69,7 +69,13 @@ struct GlassesSDKSection: View {
 
     private var previewBlock: some View {
         ZStack {
-            SampleBufferPreview(layer: streamer.preview.layer)
+            Group {
+                if let image = streamer.latestFrame {
+                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+                } else {
+                    Color.black
+                }
+            }
                 .frame(height: 260)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .overlay(

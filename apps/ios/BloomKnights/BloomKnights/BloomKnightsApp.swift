@@ -6,9 +6,19 @@
 import AVFoundation
 import SwiftUI
 import UIKit
+#if canImport(MWDATCore)
+import MWDATCore
+#endif
 
 @main
 struct BloomKnightsApp: App {
+    init() {
+        #if canImport(MWDATCore)
+        do { try Wearables.configure() }
+        catch { NSLog("[BloomKnights] Wearables configuration failed: \(error)") }
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ConnectorView()
@@ -33,9 +43,18 @@ struct ConnectorView: View {
     var body: some View {
         ZStack {
             // FULL-SCREEN live glasses view — edge to edge, always.
-            FullScreenPreview(layer: glasses.preview.layer)
-                .ignoresSafeArea()
-                .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showControls.toggle() } }
+            Group {
+                if let image = glasses.latestFrame {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Color.black
+                }
+            }
+            .ignoresSafeArea()
+            .clipped()
+            .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showControls.toggle() } }
 
             if !glasses.isRunning {
                 VStack(spacing: 10) {
@@ -54,6 +73,9 @@ struct ConnectorView: View {
         }
         .background(Color.black)
         .task { glasses.monitor() }
+        .onOpenURL { url in
+            Task { try? await Wearables.shared.handleUrl(url) }
+        }
         .onChange(of: scenePhase) { _, phase in
             // Locking / backgrounding kills the SDK capture — tear down honestly.
             if phase == .background && glasses.isBusy { stopEverything() }

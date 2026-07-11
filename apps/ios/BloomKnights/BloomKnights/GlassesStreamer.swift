@@ -69,43 +69,26 @@ final class KeepAlive {
     }
 }
 
-// Live preview for hvc1: makeUIImage() can't decode compressed HEVC (→ blank
-// screen), so we feed the encoded sample buffers straight to an
-// AVSampleBufferDisplayLayer, which decodes + renders them natively in real
-// time. Sendable so the SDK delivery thread can enqueue without hopping
-// through the @MainActor streamer. Enqueue is marshalled to main (UI layer).
+// Meta's supported preview path is VideoFrame.makeUIImage(). Keep at most one
+// conversion in flight so preview work can never back up the SDK delivery queue.
 final class PreviewSink: @unchecked Sendable {
-    let layer = AVSampleBufferDisplayLayer()
     private let lock = NSLock()
-    private var pendingFrame: CMSampleBuffer?
-    private var drainScheduled = false
+    private let work = DispatchQueue(label: "com.bloomknights.preview", qos: .userInitiated)
+    private var busy = false
+    var onImage: @Sendable (UIImage) -> Void = { _ in }
 
-    func enqueue(_ sb: CMSampleBuffer) {
-        // Display immediately (live view — no timebase needed).
-        if let arr = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true),
-           CFArrayGetCount(arr) > 0 {
-            let d = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CFMutableDictionary.self)
-            CFDictionarySetValue(d,
-                Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
-                Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+    func enqueue(_ frame: VideoFrame) {
+        lock.lock()
+        guard !busy else { lock.unlock(); return }
+        busy = true
+        lock.unlock()
+        work.async { [weak self] in
+            guard let self else { return }
+            if let image = frame.makeUIImage() { self.onImage(image) }
+            self.lock.lock()
+            self.busy = false
+            self.lock.unlock()
         }
-        lock.lock()
-        pendingFrame = sb
-        guard !drainScheduled else { lock.unlock(); return }
-        drainScheduled = true
-        lock.unlock()
-        DispatchQueue.main.async { [weak self] in self?.drainLatestFrame() }
-    }
-
-    private func drainLatestFrame() {
-        lock.lock()
-        let frame = pendingFrame
-        pendingFrame = nil
-        drainScheduled = false
-        lock.unlock()
-        guard let frame else { return }
-        if layer.status == .failed { layer.flush() }
-        if layer.isReadyForMoreMediaData { layer.enqueue(frame) }
     }
 }
 
@@ -142,7 +125,28 @@ final class FrameUplink: @unchecked Sendable {
     var sportProvider: @Sendable () -> String = { Sport.nba.rawValue }
     // Selected decoded frames (12 fps) feed the WebRTC publisher. Set from the
     // streamer; called on the VT decode callback thread.
-    var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
+    private var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
+
+    func setFrameTap(_ tap: (@Sendable (CVImageBuffer) -> Void)?) {
+        lock.lock()
+        onDecodedFrame = tap
+        lock.unlock()
+    }
+
+    func routeRaw(_ sb: CMSampleBuffer) {
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sb) else { return }
+        lock.lock()
+        guard streaming else { lock.unlock(); return }
+        let now = Date()
+        guard now.timeIntervalSince(lastPublishAt) >= publishInterval else {
+            lock.unlock()
+            return
+        }
+        lastPublishAt = now
+        let tap = onDecodedFrame
+        lock.unlock()
+        tap?(imageBuffer)
+    }
     // The 1 fps JPEG POST to /api/frames is legacy telemetry now that the
     // desktop viewer samples the WebRTC stream itself. Off by default.
     var httpUploadEnabled = false
@@ -259,7 +263,12 @@ final class FrameUplink: @unchecked Sendable {
                                           flags: [],
                                           infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
             guard status == noErr, let imageBuffer, let self else { return }
-            if wantPublish { self.onDecodedFrame?(imageBuffer) }
+            if wantPublish {
+                self.lock.lock()
+                let tap = self.onDecodedFrame
+                self.lock.unlock()
+                tap?(imageBuffer)
+            }
             if wantUpload { self.encodeAndPost(imageBuffer) }
         }
     }
@@ -316,6 +325,7 @@ final class FrameUplink: @unchecked Sendable {
 
 @MainActor
 final class GlassesStreamer: ObservableObject {
+    @Published var latestFrame: UIImage?
     @Published var status = "Ready"
     @Published var isStreaming = false
     // On-screen diagnostics
@@ -343,7 +353,7 @@ final class GlassesStreamer: ObservableObject {
     private var compatTokens: [DeviceIdentifier: any AnyListenerToken] = [:]
     private let uplink = FrameUplink()
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
-    let preview = PreviewSink()           // live on-screen view of the hvc1 stream
+    let preview = PreviewSink()
 
     init() {
         deviceSelector = AutoDeviceSelector(wearables: Wearables.shared)
@@ -356,15 +366,18 @@ final class GlassesStreamer: ObservableObject {
                 self.failed = f
             }
         }
+        preview.onImage = { [weak self] image in
+            Task { @MainActor in self?.latestFrame = image }
+        }
     }
 
     func updateSport(_ sportId: String) {
         uplink.sportProvider = { sportId }
     }
 
-    // Route every decoded frame (full rate) to a consumer — the RTC publisher.
+    // Route selected raw frames to a consumer — the RTC publisher.
     func setFrameTap(_ tap: (@Sendable (CVImageBuffer) -> Void)?) {
-        uplink.onDecodedFrame = tap
+        uplink.setFrameTap(tap)
     }
 
     // Start all the live monitors so the screen always shows current state.
@@ -428,8 +441,7 @@ final class GlassesStreamer: ObservableObject {
     // fully tears down (otherwise pendingStart stays armed and can resume later).
     var isBusy: Bool { isRunning || pendingStart }
 
-    // THE START BUTTON. Registers if needed, opens the session + stream, and
-    // begins the 1 fps uplink to /api/frames — one tap.
+    // THE START BUTTON. Registers if needed, opens the session, and streams.
     func start() {
         guard stream == nil else { return }   // already running — ignore double taps
         lastError = ""
@@ -460,6 +472,7 @@ final class GlassesStreamer: ObservableObject {
         // stack duplicate subscriptions (double callbacks + leak). Compatibility
         // listeners are keyed per-device and deduped, so they stay.
         tokens.removeAll()
+        latestFrame = nil
         status = "Stopped"
     }
 
@@ -499,9 +512,8 @@ final class GlassesStreamer: ObservableObject {
                     }
                 }
 
-                // 504x896 is the device-proven stable profile over Bluetooth.
-                // It also keeps preview + WebRTC memory pressure bounded.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 24)
+                // Match Meta's supported CameraAccess sample exactly.
+                let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 24)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
@@ -511,13 +523,9 @@ final class GlassesStreamer: ObservableObject {
 
                 let uplink = self.uplink
                 let preview = self.preview
-                // Feed EVERY frame to the decoder uplink (P-frame continuity;
-                // ~1/s actually uploads) AND the live preview layer, which
-                // decodes the encoded HEVC natively. Captured as locals so the
-                // SDK delivery thread never touches the @MainActor streamer.
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
-                    uplink.ingest(frame.sampleBuffer)
-                    preview.enqueue(frame.sampleBuffer)
+                    uplink.routeRaw(frame.sampleBuffer)
+                    preview.enqueue(frame)
                     guard uplink.tickDiagnostics() else { return }
                     uplink.note(frame)
                     Task { @MainActor in self?.frameSize = uplink.sizeLabel() }
@@ -533,7 +541,7 @@ final class GlassesStreamer: ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         if s == .streaming {
-                            self.status = "STREAMING (hvc1 → /api/frames, \(self.elapsed))"
+                            self.status = "STREAMING (raw, \(self.elapsed))"
                         } else if s == .paused {
                             self.status = "Buffering…"          // self-recovers; don't touch it
                         } else if s == .stopped {
@@ -568,7 +576,7 @@ final class GlassesStreamer: ObservableObject {
                 UIApplication.shared.isIdleTimerDisabled = true
                 self.startElapsedTimer()
                 stream.start()
-                self.status = "STREAMING (hvc1 → /api/frames)"
+                self.status = "STREAMING (raw, low latency)"
             } catch {
                 self.lastError = "\(error)"
                 // Meta SDK #231: a prior hard suspension (e.g. phone locked

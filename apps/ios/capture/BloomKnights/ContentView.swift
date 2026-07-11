@@ -33,7 +33,15 @@ struct ContentView: View {
                     .font(.largeTitle).bold()
 
                 ZStack {
-                    SampleBufferPreview(layer: streamer.preview.layer)
+                    Group {
+                        if let image = streamer.latestFrame {
+                            Image(uiImage: image)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                        } else {
+                            Color.black
+                        }
+                    }
                         .frame(height: 320)
                         .background(Color.black)
                         .cornerRadius(12)
