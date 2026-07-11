@@ -179,7 +179,6 @@
     </aside>
 
     <footer class="dock">
-      <button class="connect" id="toggle">Refresh live feed</button>
       <span class="stats" id="stats" aria-hidden="true"></span>
     </footer>
 
@@ -681,7 +680,6 @@ async function refreshAnalysis() {
   }
 }
 
-$("toggle").addEventListener("click", () => followActiveFeed().catch(() => setStatusPill("error", "live feed error")));
 analyzeButton.addEventListener("click", async () => {
   const enable = !remoteAnalysisEnabled;
   analyzeButton.disabled = true;
