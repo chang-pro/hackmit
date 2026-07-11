@@ -17,11 +17,27 @@ function publicFrame(frame) {
 const UNKNOWN_TEXT = new Set(["", "unknown", "unidentified", "n-a", "na", "none"]);
 
 function normalized(value) {
-  return String(value ?? "")
+  const tokens = String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const collapsed = [];
+  for (let index = 0; index < tokens.length;) {
+    if (tokens[index].length !== 1) {
+      collapsed.push(tokens[index]);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < tokens.length && tokens[end].length === 1) end += 1;
+    const run = tokens.slice(index, end);
+    collapsed.push(run.length >= 2 ? run.join("") : run[0]);
+    index = end;
+  }
+  return collapsed.join("-");
 }
 
 function known(value) {
@@ -32,22 +48,31 @@ function canonicalSport(value) {
   const sport = normalized(value);
   return {
     nba: "basketball",
+    "nba-basketball": "basketball",
     nfl: "american-football",
     football: "american-football",
+    "nfl-football": "american-football",
+    "american-football": "american-football",
     ufc: "mma",
+    "ufc-mma": "mma",
+    "mixed-martial-arts": "mma",
+    "association-football": "soccer",
     hockey: "ice-hockey",
   }[sport] ?? sport;
 }
 
-function participantNames(observation) {
-  const names = [
-    ...(Array.isArray(observation?.participants)
-      ? observation.participants.map((participant) => participant?.name)
-      : []),
-    observation?.participant_a,
-    observation?.participant_b,
-  ];
-  return new Set(names.filter(known).map(normalized));
+function primaryParticipantPair(observation) {
+  const direct = [observation?.participant_a, observation?.participant_b]
+    .filter(known)
+    .map(normalized);
+  const names = direct.length > 0
+    ? direct
+    : (Array.isArray(observation?.participants) ? observation.participants : [])
+      .slice(0, 2)
+      .map((participant) => participant?.name)
+      .filter(known)
+      .map(normalized);
+  return names.length >= 2 ? names.slice(0, 2).sort() : null;
 }
 
 function eventDescriptor(observation) {
@@ -60,38 +85,64 @@ function eventDescriptor(observation) {
   };
 }
 
-function hasParticipantOverlap(previous, next) {
-  const previousNames = participantNames(previous);
-  return [...participantNames(next)].some((name) => previousNames.has(name));
+function samePair(previous, next) {
+  const prior = primaryParticipantPair(previous);
+  const current = primaryParticipantPair(next);
+  return prior && current && prior[0] === current[0] && prior[1] === current[1];
+}
+
+function yearsIn(value) {
+  return new Set(String(value ?? "").match(/\b(?:19|20)\d{2}\b/g) ?? []);
+}
+
+function explicitlyChangedMetadata(previous, next) {
+  const previousText = [previous?.competition, previous?.event_name, previous?.event_identity]
+    .filter(known)
+    .join(" ");
+  const nextText = [next?.competition, next?.event_name, next?.event_identity]
+    .filter(known)
+    .join(" ");
+  const priorYears = yearsIn(previousText);
+  const nextYears = yearsIn(nextText);
+  if (priorYears.size > 0 && nextYears.size > 0 &&
+      ![...priorYears].some((year) => nextYears.has(year))) return true;
+
+  if (known(previous?.competition) && known(next?.competition)) {
+    const priorCompetition = normalized(previous.competition);
+    const nextCompetition = normalized(next.competition);
+    if (priorCompetition !== nextCompetition &&
+        !priorCompetition.includes(nextCompetition) &&
+        !nextCompetition.includes(priorCompetition)) return true;
+  }
+  return false;
 }
 
 export function detectEventSwitch(previous, next) {
   const unchanged = {
     detected: false,
+    reset_context: false,
     from_event: eventDescriptor(previous),
     to_event: eventDescriptor(next),
     reason: previous ? "same_or_unresolved_event" : "first_observation",
   };
-  if (!previous || !next || Number(next.confidence ?? 0) < 0.55) return unchanged;
+  if (!previous || !next) return unchanged;
+  const confident = Number(next.confidence ?? 0) >= 0.55;
+  const changed = (reason) => ({
+    ...unchanged,
+    detected: confident,
+    reset_context: true,
+    reason: confident ? reason : `low_confidence_${reason}`,
+  });
 
   const previousSport = canonicalSport(previous.sport);
   const nextSport = canonicalSport(next.sport);
   if (known(previousSport) && known(nextSport) && previousSport !== nextSport) {
-    return { ...unchanged, detected: true, reason: "sport_changed" };
+    return changed("sport_changed");
   }
 
   const previousIdentity = normalized(previous.event_identity);
   const nextIdentity = normalized(next.event_identity);
   const sameIdentity = known(previousIdentity) && previousIdentity === nextIdentity;
-  if (sameIdentity) return { ...unchanged, reason: "stable_event_identity" };
-
-  const sameEventName =
-    known(previous.event_name) && normalized(previous.event_name) === normalized(next.event_name);
-  if (sameEventName) return { ...unchanged, reason: "same_event_name" };
-
-  if (known(previousIdentity) && known(nextIdentity) && previousIdentity !== nextIdentity) {
-    return { ...unchanged, detected: true, reason: "event_identity_changed" };
-  }
 
   const sameCompetition =
     known(previous.competition) &&
@@ -105,8 +156,25 @@ export function detectEventSwitch(previous, next) {
     return { ...unchanged, reason: "same_competition_session" };
   }
 
-  if (hasParticipantOverlap(previous, next)) {
-    return { ...unchanged, reason: "participant_overlap" };
+  const previousPair = primaryParticipantPair(previous);
+  const nextPair = primaryParticipantPair(next);
+  if (previousPair && nextPair) {
+    if (samePair(previous, next)) {
+      return explicitlyChangedMetadata(previous, next)
+        ? changed("event_metadata_changed")
+        : { ...unchanged, reason: "stable_participant_pair" };
+    }
+    return changed("participant_pair_changed");
+  }
+
+  if (sameIdentity) return { ...unchanged, reason: "stable_event_identity" };
+
+  const sameEventName =
+    known(previous.event_name) && normalized(previous.event_name) === normalized(next.event_name);
+  if (sameEventName) return { ...unchanged, reason: "same_event_name" };
+
+  if (known(previousIdentity) && known(nextIdentity) && previousIdentity !== nextIdentity) {
+    return changed("event_identity_changed");
   }
 
   if (
@@ -115,7 +183,7 @@ export function detectEventSwitch(previous, next) {
     known(next.event_name) &&
     normalized(previous.event_name) !== normalized(next.event_name)
   ) {
-    return { ...unchanged, detected: true, reason: "event_name_changed" };
+    return changed("event_name_changed");
   }
 
   return unchanged;
@@ -128,6 +196,7 @@ export class LiveEventAnalyzer {
     now = Date.now,
     intervalMs = Number(process.env.CEREBRAS_MODEL_INTERVAL_MS ?? DEFAULT_INTERVAL_MS),
     batchSize = Number(process.env.CEREBRAS_FRAMES_PER_REQUEST ?? DEFAULT_BATCH_SIZE),
+    enrichExactDemo = process.env.CEREBRAS_EXACT_DEMO_ENRICHMENT === "true",
   } = {}) {
     if (!visionBackend || typeof visionBackend.extractEventBatch !== "function") {
       throw new Error("LiveEventAnalyzer requires visionBackend.extractEventBatch(frames)");
@@ -137,12 +206,14 @@ export class LiveEventAnalyzer {
     this.now = now;
     this.intervalMs = Math.max(DEFAULT_INTERVAL_MS, intervalMs);
     this.batchSize = Math.max(1, Math.min(5, batchSize));
+    this.enrichExactDemo = enrichExactDemo === true;
     this.pendingFrames = [];
     this.latestInsight = null;
     this.lastCallAt = null;
     this.inFlight = null;
     this.visionCalls = [];
     this.analyticsCalls = [];
+    this.generation = 0;
   }
 
   async submit(frame, { force = false } = {}) {
@@ -165,41 +236,60 @@ export class LiveEventAnalyzer {
     this.lastCallAt = callStartedAt;
     this.visionCalls.push(callStartedAt);
 
-    this.inFlight = this.#runBatch(batch, callStartedAt);
+    const callGeneration = this.generation;
+    const runPromise = this.#runBatch(batch, callStartedAt, callGeneration);
+    this.inFlight = runPromise;
     let insight;
     try {
-      insight = await this.inFlight;
+      insight = await runPromise;
     } finally {
-      this.inFlight = null;
+      if (this.inFlight === runPromise) this.inFlight = null;
+    }
+    if (callGeneration !== this.generation) {
+      return { analysis_status: "discarded", insight: this.latestInsight, queue: this.status() };
     }
     this.latestInsight = insight;
     insight.rate_limit = this.status();
     return { analysis_status: "analyzed", insight, queue: this.status() };
   }
 
-  async #runBatch(frames, callStartedAt) {
+  async #runBatch(frames, callStartedAt, callGeneration) {
     const observation = await this.visionBackend.extractEventBatch(frames);
+    if (callGeneration !== this.generation) return null;
     const previousObservation = this.latestInsight?.observation ?? null;
     const eventSwitch = detectEventSwitch(previousObservation, observation);
+    const resetContext = eventSwitch.reset_context === true || eventSwitch.detected;
     const demoIntelligence = selectDemoIntelligence(observation, {
-      previous: eventSwitch.detected ? null : this.latestInsight?.demo_intelligence ?? null,
+      previous: resetContext ? null : this.latestInsight?.demo_intelligence ?? null,
     });
     let modelAnalysis = null;
     let analyticsError = null;
-    try {
-      modelAnalysis = await this.analyze({
-        observation,
-        previous_observation: eventSwitch.detected ? null : previousObservation,
-        previous_analysis: eventSwitch.detected ? null : this.latestInsight?.analysis ?? null,
-        event_switch: eventSwitch,
-        precollected_intelligence: demoIntelligence,
-        frame_count: frames.length,
-        captured_from: frames[0].captured_at,
-        captured_to: frames.at(-1).captured_at,
-      });
-      if (modelAnalysis) this.analyticsCalls.push(callStartedAt);
-    } catch (err) {
-      analyticsError = err.message;
+    const exactReady = demoIntelligence?.mode === "precollected_event_replay";
+    const checkpointPending = demoIntelligence?.mode === "precollected_event_pending";
+    const shouldAnalyze = !checkpointPending && (!exactReady || this.enrichExactDemo);
+    const analyticsSkipReason = shouldAnalyze
+      ? null
+      : exactReady
+        ? "exact_deterministic_pack"
+        : "checkpoint_pending";
+    if (shouldAnalyze) {
+      try {
+        modelAnalysis = await this.analyze({
+          observation,
+          previous_observation: resetContext ? null : previousObservation,
+          previous_analysis: resetContext ? null : this.latestInsight?.analysis ?? null,
+          event_switch: eventSwitch,
+          precollected_intelligence: demoIntelligence,
+          frame_count: frames.length,
+          captured_from: frames[0].captured_at,
+          captured_to: frames.at(-1).captured_at,
+        });
+        if (modelAnalysis && callGeneration === this.generation) {
+          this.analyticsCalls.push(callStartedAt);
+        }
+      } catch (err) {
+        analyticsError = err.message;
+      }
     }
     const analysis = analysisFromDemoIntelligence(demoIntelligence, modelAnalysis);
 
@@ -253,9 +343,15 @@ export class LiveEventAnalyzer {
           }
         : null,
       analysis,
-      diagnostics: { analytics_error: analyticsError },
+      diagnostics: {
+        analytics_error: analyticsError,
+        analytics_skipped: !shouldAnalyze,
+        analytics_skip_reason: analyticsSkipReason,
+      },
       presentation: {
-        status: eventSwitch.detected ? "event_switched" : analysis ? "ready" : "vision_only",
+        status: demoIntelligence?.mode === "precollected_event_pending"
+          ? "checkpoint_pending"
+          : eventSwitch.detected ? "event_switched" : analysis ? "ready" : "vision_only",
         short_text: shortText,
         spoken_text: analysis?.event_summary ?? shortText,
       },
@@ -290,6 +386,7 @@ export class LiveEventAnalyzer {
   }
 
   reset() {
+    this.generation += 1;
     this.pendingFrames = [];
     this.latestInsight = null;
     this.lastCallAt = null;

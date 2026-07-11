@@ -41,10 +41,10 @@ curl -fsS https://capture.saicharanramineni.com/api/demo/intelligence
 Pass criteria:
 
 - All tests pass.
-- Health reports `vision.ready: true` and `demo_intelligence_packs: 4`.
+- Health reports `vision.selected: "cerebras"`, `vision.error: null`, and `demo_intelligence_packs: 4`.
 - The pack catalog contains World Cup, NBA Finals, Super Bowl, and UFC.
 - Phone and viewer establish video on separate devices.
-- Pressing **Analyze** shows `Capturing temporal evidence · 1/5` and reaches a first result in roughly four seconds plus model latency.
+- Pressing **Analyze** shows `Capturing temporal evidence · 1/5`; the first five-frame burst takes roughly four seconds before model latency.
 - Exact target footage produces `Historical replay`, not `Sport template`.
 - The probability tile shows Model, Market, Gap, and `MOCK`.
 
@@ -101,7 +101,7 @@ Say:
 
 > “The state representation changes with the sport. There is no basketball-style score here, so the system uses fighter identity, round, clock, and visibly supported control context. It does not invent judge scores or damage.”
 
-The canonical finish-window clock is `1:57 remaining`; `3:03` is elapsed time.
+The canonical terminal clock is `1:57 remaining`; `3:03` is elapsed time. Once the submission is visibly resolved, the historical checkpoint must show a closed 100% result rather than a pre-finish estimate.
 
 ### 2:40–3:00 — Close
 

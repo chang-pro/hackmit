@@ -115,7 +115,9 @@
   .control-tile { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 1.05rem; }
   .control-tile .tile-title { margin-top: .28rem; font-size: .92rem; }.control-tile .tile-note { max-width: 18ch; font-size: .71rem; }
   .control-tile .analyze { flex: none; padding: .7rem .9rem; }
-  body.running .readout { position: static; display: none; width: auto; margin: 0; padding: 1.05rem; border-radius: 1.2rem; opacity: 1; transform: none; }
+  body.running .readout { position: static; display: none; width: auto; min-height: 0; max-height: 100%; margin: 0; padding: 1.05rem; overflow-y: auto; overscroll-behavior: contain; border-radius: 1.2rem; opacity: 1; transform: none; scrollbar-color: rgba(112,126,174,.35) transparent; scrollbar-width: thin; }
+  body.running .readout::-webkit-scrollbar { width: .3rem; }
+  body.running .readout::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(112,126,174,.30); }
   body.running.has-read .readout { display: block; }
   body.running .readout .tile-eyebrow { margin-bottom: .45rem; }
   .prediction-head { display: flex; align-items: center; justify-content: space-between; gap: .55rem; margin-bottom: .45rem; }
@@ -240,6 +242,20 @@
     body.running.ops-mode .theater-shell { right: calc(clamp(18rem, 32vw, 22rem) + 2.4rem); }
     body.running.ops-mode .checkpoint-rail { right: calc(clamp(18rem, 32vw, 22rem) + 2.4rem); }
     body.running.ops-mode .analysis-tiles { width: clamp(18rem, 32vw, 22rem); }
+  }
+  @media (max-height: 800px) and (min-width: 901px) {
+    body.running .analysis-tiles { grid-template-rows: minmax(0, 1.15fr) auto minmax(12.5rem, .85fr); gap: .65rem; }
+    body.running .research-tile { padding: .9rem; }
+    body.running .control-tile { padding: .78rem .9rem; }
+    body.running .readout { padding: .78rem .9rem; }
+    body.running .readout .prediction-head { margin-bottom: .3rem; }
+    body.running .readout .ro-prob { margin-top: .48rem; font-size: clamp(2.2rem, 3.4vw, 2.75rem); }
+    body.running .readout .ro-cap { margin-top: .25rem; }
+    body.running .readout .ro-cmp { margin-top: .55rem; }
+    body.running .readout .ro-say { margin-top: .55rem; font-size: .72rem; line-height: 1.38; }
+    body.running .readout .ro-context { gap: .22rem; margin-top: .5rem; padding-top: .48rem; font-size: .56rem; }
+    body.running .readout .ro-disclosure { margin-top: .4rem; font-size: .49rem; }
+    body.running .readout .ro-speak { margin-top: .55rem; padding: .34rem .58rem; font-size: .68rem; }
   }
   @media (max-width: 900px) {
     body.running .theater-shell { top: 1rem; right: 1rem; bottom: 45vh; left: 1rem; }
@@ -398,7 +414,7 @@
 <script>
 const SIGNAL_POLL_MS = 350;
 const INSIGHT_POLL_MS = 1_000;
-const OPS_MODE = new URLSearchParams(location.search).get("ops") !== "0";
+const OPS_MODE = new URLSearchParams(location.search).get("ops") === "1";
 document.body.classList.toggle("ops-mode", OPS_MODE);
 const $ = (id) => document.getElementById(id);
 const video = $("video");
@@ -416,6 +432,8 @@ let lastInboundVideoStats = null;
 let demoStream = null;
 let demoAnimation = null;
 let demoRehearsalTimer = null;
+let demoRehearsalInsight = null;
+let demoRehearsalGeneration = 0;
 let visualDetections = [];
 let visualDetectionSource = null;
 let activeSessionRefreshInFlight = false;
@@ -435,12 +453,15 @@ const DETECTION_STYLES = {
 
 const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
 const RESEARCH_ITEM_LIMIT = 4;
+const DEFAULT_REHEARSAL_INTERVAL_MS = 10_000;
+const MIN_REHEARSAL_INTERVAL_MS = 5_000;
+const MAX_REHEARSAL_INTERVAL_MS = 30_000;
 const DEMO_REHEARSAL_SEQUENCE = Object.freeze([
   { pack: "world-cup-2022-final", moment: "argentina-two-goal-lead" },
   { pack: "nba-finals-2016-game-7", moment: "late-tie" },
   { pack: "super-bowl-li", moment: "twenty-eight-three" },
   { pack: "super-bowl-li", moment: "game-tied" },
-  { pack: "ufc-229", moment: "round-four-finish-window" },
+  { pack: "ufc-229", moment: "submission-finish" },
 ]);
 const STEPS = [
   "Open <b>/phone</b> or the glasses companion on the camera device.",
@@ -474,6 +495,42 @@ function updateAnalyzeButton() {
   analyzeButton.classList.toggle("active", remoteAnalysisEnabled);
 }
 
+function clearRenderedInsight({ queue = null, resetResearch = true } = {}) {
+  clearTimeout(insightFlashTimer);
+  insightFlashTimer = null;
+  lastInsightKey = "";
+  lastSpoken = "";
+  delete document.body.dataset.detectedSport;
+  document.body.classList.remove("has-read", "ready", "gated", "insight-flash");
+  $("readout").classList.remove("rehearsal");
+  $("readout").scrollTop = 0;
+  setPredictionStatus(null, false);
+  $("roGame").textContent = "—";
+  $("roModel").textContent = "—";
+  $("roModel").dataset.v = "";
+  $("roOutcome").textContent = "Model win probability";
+  $("roMarket").textContent = "MKT —";
+  $("roGap").textContent = "—";
+  $("roGap").className = "gp";
+  $("roSay").textContent = "Reading the event…";
+  $("roContext").hidden = true;
+  $("roChanged").textContent = "";
+  $("roTrigger").textContent = "";
+  $("roDisclosure").hidden = true;
+  $("roDisclosure").textContent = "";
+  $("dualMeter").hidden = true;
+  $("modelBar").style.width = "0";
+  $("marketBar").style.width = "0";
+  $("modelPct").textContent = "—";
+  $("marketPct").textContent = "—";
+  renderSignalExtras(null, null);
+  renderCheckpoints(null);
+  renderTheaterHud(null);
+  if (resetResearch) renderResearchPlan(null, queue);
+  renderOpsBar();
+  renderPipeline(null, queue);
+}
+
 function setRemoteFeedUI(active) {
   remoteFeedActive = active;
   if (active) {
@@ -488,27 +545,21 @@ function setRemoteFeedUI(active) {
     renderOpsBar();
     renderPipeline();
     renderHudTelemetry();
-    if (demoStream) setTrackerState("Local demo tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
+    if (demoStream) setTrackerState("Local tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
     else setTrackerState("YOLO11s loading…", "Continuous player and ball tracking runs on this device.");
     window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: true, demo: Boolean(demoStream) } }));
     return;
   }
-  document.body.classList.remove("running", "remote-feed", "has-read", "ready", "gated", "insight-flash");
+  document.body.classList.remove("running", "remote-feed");
   $("opsBar").hidden = true;
   $("theaterHud").hidden = true;
-  $("checkpointRail").hidden = true;
-  $("dualMeter").hidden = true;
-  $("factorRow").hidden = true;
-  $("altRow").hidden = true;
-  setPredictionStatus(null, false);
   remotePreview.srcObject = null;
   remotePreview.style.display = "none";
   clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
-  lastInsightKey = "";
   setTrackerState("YOLO11s standby", "Player tracking starts automatically with a live camera stream.");
-  renderPipeline();
+  clearRenderedInsight();
   window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: false, demo: false } }));
   setStatusPill("idle", "waiting for phone");
 }
@@ -595,7 +646,7 @@ function renderVisualDetections() {
     ? "YOLO11s · live on this device"
     : visualDetectionSource === "model"
       ? "Vision overlay · latest model pass"
-      : "Vision overlay · local demo tracker";
+      : "Vision overlay · local tracker";
   status.hidden = false;
   renderHudTelemetry();
 }
@@ -629,7 +680,7 @@ function renderOpsBar(insight = null) {
   const observation = insight?.observation;
   const intelligence = insight?.demo_intelligence;
   const chips = [];
-  if (demoStream) chips.push(chip(insight?.rehearsal?.is_rehearsal ? "Rehearsal feed" : "Local demo", "warn"));
+  if (demoStream) chips.push(chip(insight?.rehearsal?.is_rehearsal ? "Rehearsal feed" : "Local feed", "warn"));
   else chips.push(chip(remoteAnalysisEnabled ? "Analysis armed" : "WebRTC only"));
   if (observation?.sport) chips.push(chip((SPORT_LABEL[observation.sport] || observation.sport).toUpperCase(), "accent"));
   if (intelligence?.pack_label) chips.push(chip(intelligence.pack_label));
@@ -675,7 +726,7 @@ function renderPipeline(insight = null, queue = null) {
     title.textContent = busy ? "Cerebras identifying…" : "Collecting temporal window";
     note.textContent = `Frames ${(queue?.pending_frames ?? 0)}/${queue?.frames_per_request ?? 5}`;
   } else if (remoteFeedActive) {
-    title.textContent = demoStream ? "Demo stream active" : "Stream connected";
+    title.textContent = demoStream ? "Local stream active" : "Stream connected";
     note.textContent = "Press Analyze to start model requests";
   } else {
     title.textContent = "Standing by";
@@ -688,7 +739,7 @@ function renderHudTelemetry() {
   if (!row) return;
   const parts = [
     ["Tracks", String(visualDetections.length)],
-    ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "demo" ? "Demo" : visualDetectionSource === "model" ? "Model" : "—"],
+    ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "demo" ? "Synthetic" : visualDetectionSource === "model" ? "Model" : "—"],
   ];
   if (Number.isFinite(yoloTrackerFps)) parts.push(["Tracker", `${yoloTrackerFps} fps`]);
   if (demoStream) parts.push(["Media", "Local canvas"]);
@@ -802,6 +853,7 @@ function renderDualMeter(modelProbability, marketProbability) {
 function flashInsight(key) {
   if (!key || key === lastInsightKey) return;
   lastInsightKey = key;
+  $("readout").scrollTop = 0;
   document.body.classList.add("insight-flash");
   clearTimeout(insightFlashTimer);
   insightFlashTimer = setTimeout(() => document.body.classList.remove("insight-flash"), 700);
@@ -846,7 +898,7 @@ function renderResearchPlan(insight = null, queue = null) {
       ? visibleResearch.map((entry) => ({
           kind: "mock-web",
           category: clippedText(entry.category || "Event context", 42),
-          query: clippedText(entry.query || "Cached demo lookup", 120),
+          query: clippedText(entry.query || "Cached lookup", 120),
           result: clippedText(entry.result || entry.detail || "No cached result", 190),
           ready: entry.status === "ready" || entry.is_mock === true,
         }))
@@ -934,63 +986,122 @@ function renderResearchPlan(insight = null, queue = null) {
   }));
 }
 
+function demoVisualState() {
+  const observation = demoRehearsalInsight?.observation;
+  const rawParticipants = [
+    ...(Array.isArray(observation?.participants) ? observation.participants.map((entry) => entry?.name) : []),
+    observation?.participant_a,
+    observation?.participant_b,
+  ].map((name) => String(name || "").trim()).filter(Boolean);
+  const participants = [...new Set(rawParticipants)].slice(0, 4);
+  const sport = observation?.sport || "rehearsal";
+  return {
+    sport,
+    sportLabel: SPORT_LABEL[sport] || (sport === "rehearsal" ? "Rehearsal" : sport.replaceAll("_", " ")),
+    event: observation?.event_name || demoRehearsalInsight?.demo_intelligence?.pack_label || "Awaiting rehearsal checkpoint",
+    participants: participants.length > 0 ? participants : ["Visible event"],
+    score: observation?.score_display || "Checkpoint loading…",
+    phase: [observation?.phase, observation?.clock].filter(Boolean).join(" · ") || "No model calls",
+  };
+}
+
+function demoDetectionSpecs(now) {
+  const phase = now / 1000;
+  const state = demoVisualState();
+  const isFight = ["mma", "ufc"].includes(state.sport);
+  const isGolf = state.sport === "golf";
+  const count = isFight ? 2 : isGolf ? Math.max(2, Math.min(4, state.participants.length)) : 8;
+  return Array.from({ length: count }, (_, index) => {
+    const spread = count === 2 ? .3 + index * .4 : .16 + (index / Math.max(1, count - 1)) * .68;
+    const centerX = spread + Math.sin(phase * 1.8 + index) * .009;
+    const centerY = (isFight ? .59 : .53 + (index % 2) * .12) + Math.cos(phase * 1.4 + index) * .008;
+    return {
+      centerX,
+      centerY,
+      label: state.participants[index % state.participants.length],
+      kind: isFight ? "fighter" : isGolf ? "golfer" : "player",
+      width: isFight ? .09 : isGolf ? .055 : .042,
+      height: isFight ? .19 : isGolf ? .105 : .074,
+      confidence: .88 + (index % 3) * .03,
+    };
+  });
+}
+
 function paintDemoBroadcast(context, width, height, now) {
   const phase = now / 1000;
+  const state = demoVisualState();
+  const palettes = {
+    soccer: ["#102f29", "#2d6b4f", "#10283a"],
+    basketball: ["#271c45", "#8a4d45", "#182a4e"],
+    nba: ["#271c45", "#8a4d45", "#182a4e"],
+    american_football: ["#152d31", "#315d4d", "#17213d"],
+    football: ["#152d31", "#315d4d", "#17213d"],
+    mma: ["#2f1723", "#663242", "#171a32"],
+    ufc: ["#2f1723", "#663242", "#171a32"],
+    golf: ["#163329", "#427452", "#16283c"],
+    rehearsal: ["#151d39", "#284d6a", "#112536"],
+  };
+  const palette = palettes[state.sport] || palettes.rehearsal;
   const background = context.createLinearGradient(0, 0, width, height);
-  background.addColorStop(0, "#151d39");
-  background.addColorStop(.55, "#284d6a");
-  background.addColorStop(1, "#112536");
+  background.addColorStop(0, palette[0]);
+  background.addColorStop(.55, palette[1]);
+  background.addColorStop(1, palette[2]);
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
-  context.fillStyle = "rgba(255,255,255,.07)";
+  context.fillStyle = "rgba(255,255,255,.06)";
   for (let x = -height; x < width; x += 150) context.fillRect(x + Math.sin(phase) * 20, 0, 46, height);
   context.fillStyle = "rgba(12,20,42,.86)";
-  context.fillRect(width * .19, height * .07, width * .62, height * .14);
+  context.fillRect(width * .13, height * .055, width * .74, height * .235);
   context.strokeStyle = "rgba(255,255,255,.5)";
   context.lineWidth = 3;
-  context.strokeRect(width * .19, height * .07, width * .62, height * .14);
-  context.fillStyle = "#f5f8ff";
-  context.font = `700 ${Math.round(height * .062)}px system-ui`;
+  context.strokeRect(width * .13, height * .055, width * .74, height * .235);
   context.textAlign = "center";
-  context.fillText("ORBIT   72  —  68   NOVA", width / 2, height * .165);
-  context.font = `600 ${Math.round(height * .028)}px ui-monospace, monospace`;
   context.fillStyle = "#b9e7ff";
-  context.fillText(`Q4  •  ${String(124 - Math.floor(phase) % 124).padStart(2, "0")}:14  •  LIVE DEMO`, width / 2, height * .245);
+  context.font = `700 ${Math.round(height * .024)}px ui-monospace, monospace`;
+  context.fillText(`${state.sportLabel.toUpperCase()} · REHEARSAL · NO MODEL CALLS`, width / 2, height * .096, width * .68);
+  context.fillStyle = "#f5f8ff";
+  context.font = `700 ${Math.round(height * .038)}px system-ui`;
+  context.fillText(state.event, width / 2, height * .15, width * .68);
+  context.font = `700 ${Math.round(height * .052)}px system-ui`;
+  context.fillText(state.score, width / 2, height * .22, width * .68);
+  context.fillStyle = "#cbd8ff";
+  context.font = `600 ${Math.round(height * .025)}px ui-monospace, monospace`;
+  context.fillText(`${state.participants.join("  vs  ")} · ${state.phase}`, width / 2, height * .265, width * .68);
 
-  const glow = context.createRadialGradient(width / 2, height * .56, 20, width / 2, height * .56, width * .42);
-  glow.addColorStop(0, "rgba(132,243,209,.26)");
+  const glow = context.createRadialGradient(width / 2, height * .6, 20, width / 2, height * .6, width * .42);
+  glow.addColorStop(0, "rgba(132,243,209,.24)");
   glow.addColorStop(1, "rgba(132,243,209,0)");
   context.fillStyle = glow;
   context.fillRect(0, 0, width, height);
   context.fillStyle = "rgba(255,255,255,.72)";
-  for (let index = 0; index < 8; index += 1) {
-    const x = width * (.18 + index * .09) + Math.sin(phase * 1.8 + index) * 18;
-    const y = height * (.51 + (index % 2) * .11) + Math.cos(phase * 1.4 + index) * 9;
+  for (const spec of demoDetectionSpecs(now)) {
     context.beginPath();
-    context.arc(x, y, height * .026, 0, Math.PI * 2);
+    context.arc(spec.centerX * width, spec.centerY * height, height * (spec.kind === "fighter" ? .038 : .026), 0, Math.PI * 2);
     context.fill();
   }
 }
 
 function renderDemoDetections(now) {
-  const phase = now / 1000;
-  const detections = Array.from({ length: 8 }, (_, index) => {
-    const centerX = 1000 * (.18 + index * .09) + Math.sin(phase * 1.8 + index) * 9.4;
-    const centerY = 1000 * (.51 + (index % 2) * .11) + Math.cos(phase * 1.4 + index) * 8.3;
-    return {
-      label: index < 4 ? "ORBIT PLAYER" : "NOVA PLAYER",
-      kind: "player",
-      bbox: { x: Math.round(centerX - 21), y: Math.round(centerY - 37), width: 42, height: 74 },
-      confidence: .88 + (index % 3) * .03,
-    };
-  });
+  const detections = demoDetectionSpecs(now).map((spec) => ({
+    label: spec.label,
+    kind: spec.kind,
+    bbox: {
+      x: Math.round((spec.centerX - spec.width / 2) * 1000),
+      y: Math.round((spec.centerY - spec.height / 2) * 1000),
+      width: Math.round(spec.width * 1000),
+      height: Math.round(spec.height * 1000),
+    },
+    confidence: spec.confidence,
+  }));
   setVisualDetections(detections, "demo");
 }
 
 function stopDemoFeed({ resetUI = true } = {}) {
   clearTimeout(demoRehearsalTimer);
   demoRehearsalTimer = null;
+  demoRehearsalGeneration += 1;
+  demoRehearsalInsight = null;
   if (demoAnimation) cancelAnimationFrame(demoAnimation);
   demoAnimation = null;
   demoStream?.getTracks().forEach((track) => track.stop());
@@ -1017,35 +1128,68 @@ function startDemoFeed() {
   remotePreview.play().catch(() => {});
   remotePreview.addEventListener("loadedmetadata", renderVisualDetections, { once: true });
   setRemoteFeedUI(true);
+  clearRenderedInsight();
   analyzeButton.hidden = true;
-  $("idleHint").textContent = "Local demo stream is active. No camera, relay, or bandwidth is being used.";
-  return "BloomKnights local demo stream started — run bloomDemo.stop() to exit.";
+  $("idleHint").textContent = "Local stream is active. No camera, relay, or bandwidth is being used.";
+  return "BloomKnights local stream started — run bloomDemo.stop() to exit.";
 }
 
-async function showDemoRehearsal(pack, moment = null) {
+async function showDemoRehearsal(pack, moment = null, { generation } = {}) {
   if (!demoStream) startDemoFeed();
+  const requestGeneration = generation ?? demoRehearsalGeneration;
   const query = new URLSearchParams({ pack });
   if (moment) query.set("moment", moment);
   const insight = await api(`/api/demo/replay?${query}`);
+  if (!demoStream || requestGeneration !== demoRehearsalGeneration) return null;
+  demoRehearsalInsight = insight;
   renderInsight(insight);
   setStatusPill("capturing", "rehearsal · no model calls");
   analyzeButton.hidden = true;
   return `${insight.demo_intelligence.pack_label} · ${insight.demo_intelligence.moment_label}`;
 }
 
-async function cycleDemoRehearsal(intervalMs = 6_500) {
+function normalizedRehearsalInterval(intervalMs) {
+  const requested = Number(intervalMs);
+  if (!Number.isFinite(requested) || requested <= 0) return DEFAULT_REHEARSAL_INTERVAL_MS;
+  return Math.max(MIN_REHEARSAL_INTERVAL_MS, Math.min(MAX_REHEARSAL_INTERVAL_MS, requested));
+}
+
+function reportDemoRehearsalError(error, retryMs) {
+  const message = clippedText(error?.message || "Rehearsal checkpoint could not be loaded", 150);
+  $("detectedSport").textContent = "REHEARSAL RETRY";
+  $("researchStatus").textContent = "Checkpoint temporarily unavailable";
+  $("researchNote").textContent = `${message}. Retrying in ${Math.round(retryMs / 1000)} seconds; no model call was made.`;
+  $("intelBadge").hidden = false;
+  $("intelBadge").textContent = "Rehearsal · retrying · no model calls";
+  const status = $("predictionStatus");
+  status.className = "prediction-status rehearsal";
+  status.textContent = "Rehearsal · retrying";
+  $("pipelineTitle").textContent = "Rehearsal checkpoint retrying";
+  $("pipelineNote").textContent = message;
+}
+
+async function cycleDemoRehearsal(intervalMs = DEFAULT_REHEARSAL_INTERVAL_MS) {
   clearTimeout(demoRehearsalTimer);
   if (!demoStream) startDemoFeed();
+  const delay = normalizedRehearsalInterval(intervalMs);
+  const cycleGeneration = ++demoRehearsalGeneration;
   let index = 0;
   const advance = async () => {
-    if (!demoStream) return;
+    if (!demoStream || cycleGeneration !== demoRehearsalGeneration) return;
     const checkpoint = DEMO_REHEARSAL_SEQUENCE[index % DEMO_REHEARSAL_SEQUENCE.length];
-    await showDemoRehearsal(checkpoint.pack, checkpoint.moment);
-    index += 1;
-    demoRehearsalTimer = setTimeout(advance, Math.max(2_000, Number(intervalMs) || 6_500));
+    try {
+      const rendered = await showDemoRehearsal(checkpoint.pack, checkpoint.moment, { generation: cycleGeneration });
+      if (rendered) index += 1;
+    } catch (error) {
+      if (demoStream && cycleGeneration === demoRehearsalGeneration) reportDemoRehearsalError(error, delay);
+    } finally {
+      if (demoStream && cycleGeneration === demoRehearsalGeneration) {
+        demoRehearsalTimer = setTimeout(advance, delay);
+      }
+    }
   };
   await advance();
-  return "BloomKnights four-event rehearsal cycle started.";
+  return `BloomKnights four-event rehearsal cycle started at ${Math.round(delay / 1000)} second intervals.`;
 }
 
 function showWebRtcBlocked(message) {
@@ -1054,6 +1198,8 @@ function showWebRtcBlocked(message) {
   remotePreview.srcObject = null;
   remotePreview.style.display = "none";
   analyzeButton.hidden = true;
+  clearVisualDetections();
+  clearRenderedInsight();
   setStatusPill("error", "TURN required");
   $("idleHint").textContent = message;
   $("stats").textContent = "WebRTC blocked · TURN relay needed";
@@ -1127,7 +1273,8 @@ async function getPeerConnection() {
     if (peerConnection !== connection) return;
     if (connection.connectionState === "failed") {
       showWebRtcBlocked("This campus network blocked the direct video route. Add a TURN relay, then restart the active camera feed.");
-    } else if (connection.connectionState === "disconnected") {
+    } else if (["disconnected", "closed"].includes(connection.connectionState)) {
+      clearRenderedInsight();
       setStatusPill("low_confidence", "reconnecting…");
       $("stats").textContent = "WebRTC reconnecting";
     }
@@ -1222,12 +1369,18 @@ function setPredictionStatus(insight, hasAnalysis) {
 }
 
 function renderInsight(insight) {
-  if (!insight?.observation) return;
+  if (!insight?.observation) {
+    clearRenderedInsight({ queue: insight?.rate_limit });
+    return;
+  }
   const observation = insight.observation;
   const analysis = insight.analysis;
   const intelligence = insight.demo_intelligence;
   const comparison = insight.comparison;
   const presentation = insight.presentation || {};
+  if (!analysis || ["pending", "vision_only"].includes(presentation.status)) {
+    clearRenderedInsight();
+  }
   renderResearchPlan(insight);
   setPredictionStatus(insight, Boolean(analysis));
   renderOpsBar(insight);
@@ -1287,12 +1440,18 @@ async function refreshAnalysis() {
     if (remoteFeedActive) updateAnalyzeButton();
     renderOpsBar();
     renderPipeline(null, status.queue);
-    if (!remoteAnalysisEnabled) return;
+    if (!remoteAnalysisEnabled) {
+      if (document.body.classList.contains("has-read")) clearRenderedInsight({ queue: status.queue });
+      return;
+    }
     if (!document.body.classList.contains("has-read")) renderResearchPlan(null, status.queue);
     try {
       renderInsight(await api("/api/latest"));
-    } catch {
+    } catch (error) {
       // The first result does not exist until Cerebras has a complete frame window.
+      if (/no analyzed live camera insight/i.test(error.message) && document.body.classList.contains("has-read")) {
+        clearRenderedInsight({ queue: status.queue });
+      }
     }
   } catch {
     // Direct WebRTC video stays up through temporary signaling failures.
@@ -1306,9 +1465,7 @@ analyzeButton.addEventListener("click", async () => {
     const data = await api(enable ? "/api/analysis/start" : "/api/analysis/stop", { method: "POST" });
     remoteAnalysisEnabled = data.analysis_enabled === true;
     updateAnalyzeButton();
-    renderResearchPlan();
-    renderOpsBar();
-    renderPipeline();
+    clearRenderedInsight({ queue: data.queue });
     setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : "WebRTC live");
   } catch {
     setStatusPill("error", "analysis error");
@@ -1338,8 +1495,13 @@ window.bloomDemo = Object.freeze({
   start: startDemoFeed,
   show: showDemoRehearsal,
   cycle: cycleDemoRehearsal,
-  stopCycle: () => { clearTimeout(demoRehearsalTimer); demoRehearsalTimer = null; return "BloomKnights rehearsal cycle stopped."; },
-  stop: () => { stopDemoFeed(); return "BloomKnights local demo stream stopped."; },
+  stopCycle: () => {
+    clearTimeout(demoRehearsalTimer);
+    demoRehearsalTimer = null;
+    demoRehearsalGeneration += 1;
+    return "BloomKnights rehearsal cycle stopped.";
+  },
+  stop: () => { stopDemoFeed(); return "BloomKnights local stream stopped."; },
   sequence: DEMO_REHEARSAL_SEQUENCE,
 });
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
@@ -1350,10 +1512,11 @@ const demoMode = demoParams.get("demo") === "1";
 if (demoMode) {
   setTimeout(() => {
     if (demoParams.get("cycle") === "1") {
-      cycleDemoRehearsal().catch(() => setStatusPill("error", "rehearsal error"));
+      const interval = normalizedRehearsalInterval(demoParams.get("interval"));
+      cycleDemoRehearsal(interval).catch((error) => reportDemoRehearsalError(error, interval));
     } else if (demoParams.get("pack")) {
       showDemoRehearsal(demoParams.get("pack"), demoParams.get("moment"))
-        .catch(() => setStatusPill("error", "rehearsal error"));
+        .catch((error) => reportDemoRehearsalError(error, DEFAULT_REHEARSAL_INTERVAL_MS));
     } else {
       startDemoFeed();
     }
@@ -1584,7 +1747,7 @@ if (idleTitleEl) setInterval(() => {
   function start({ demo = false } = {}) {
     if (demo) {
       stop();
-      bridge.setTrackerState("Local demo tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
+      bridge.setTrackerState("Local tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
       return;
     }
     if (running) return;

@@ -1,55 +1,83 @@
-# Failure modes — top 8 breaks and the 10-second recovery
+# Failure modes — stage recovery in one sentence
 
-Golden rule on stage: **never debug in front of judges.** Every recovery here is one sentence + one click. If a recovery takes longer than 10 seconds, drop a rung and keep talking.
+Rule: do not debug in front of judges. Name the designed boundary, take one recovery action, and continue.
 
-Universal safety net: the dashboard's NBA demo moments run on committed fixtures with the mock market adapter — no camera, no internet, no external service. As long as `node` runs on the laptop, the demo has a floor.
+## 1. Stable URL is unavailable
 
----
+**Symptom:** `/capture`, `/phone`, or `/api/health` does not load.
 
-## 1. Port 3000 is taken when you start the server
+**Recovery:** keep the local server running, restart `npm run phone:tunnel`, and use the local-network URLs printed by the server only if both devices can reach them.
 
-**Symptom:** `npm start` errors with `EADDRINUSE`.
-**Recovery (10s):** `PORT=3001 npm start`, then use `:3001` in the tabs. Do NOT kill whatever owns 3000 — you don't know what it is, and you don't have time to find out.
-**Prevent:** T-60 port check in the setup checklist.
+**Line:** “The wearable and inference pipeline are independent of the public signaling endpoint; I am reconnecting that endpoint now.”
 
-## 2. Server crashes or wasn't started — dashboard shows "API OFFLINE"
+## 2. Camera feed does not appear on the other device
 
-**Symptom:** red dot in the top bar, lens says "Pipeline unreachable."
-**Recovery (10s):** Alt-Tab to the terminal, `npm start`, say "one second — cold start." The dashboard polls every 5 seconds and recovers by itself; no refresh needed.
-**Prevent:** keep the server terminal visible; it prints one startup line and then stays quiet.
+**Symptom:** the phone shows a local preview, but the viewer remains idle.
 
-## 3. Glasses livestream dies mid-demo (Rung 1 fails)
+**Recovery:** stop and start the phone/glasses feed once. The most recently started provider becomes active automatically.
 
-**Symptom:** shared window freezes or the browser fires "stop sharing"; capture counters stop.
-**Recovery (10s):** on `/capture`, click **Webcam** mode → Connect. The webcam is already taped in position pointing at the clip laptop (you did this at T-20). Line: "Glasses, webcam, recording — the pipeline doesn't care where frames come from. That's the point."
-**Prevent:** fully charged glasses, phone hotspot pre-joined, stream started fresh within 10 minutes of the slot.
+**Line:** “The video is a direct WebRTC session, so I am replacing the peer session without restarting the analysis service.”
 
-## 4. Webcam denied or missing (Rung 2 fails)
+If campus NAT still blocks it, verify the configured TURN credentials before the slot. Do not copy IP addresses or use a new temporary tunnel on stage.
 
-**Symptom:** permission popup denied, or `getUserMedia` errors on the venue machine.
-**Recovery (10s):** click **Clip replay** mode → choose the local game clip file (you know the folder) → play. Same counters, same pipeline. If even that fumbles, skip Beat 3 entirely and return to the dashboard — the demo moments never needed a camera.
-**Prevent:** grant camera permission for localhost during T-20 testing; keep the clip file on the desktop.
+## 3. Vision is slow or the request quota is cooling down
 
-## 5. Vision recognizes the sport but not the exact event pack
+**Symptom:** acquisition remains at a partial frame window or the prior result has cleared while the next event is being identified.
 
-**Symptom:** the evidence badge says `Sport template` instead of `Historical replay`.
-**Recovery (10s):** switch the source screen to the matching canonical clip. Line: "The sport is recognized, but we refuse to attach another game's facts. Let me use the event this evidence pack belongs to." Continue when the exact pack appears.
-**Prevent:** use the four clip identities in `runbook.md`, verify them with the pack catalog, and rehearse each event switch before the slot.
+**Recovery:** hold the canonical scorebug steady and narrate the visible acquisition state. Do not repeatedly toggle Analyze; that resets the window.
 
-## 6. Speak button makes no sound
+**Line:** “We deliberately batch temporal evidence and cap calls at five per minute so one replay graphic cannot become a confident prediction.”
 
-**Symptom:** click Speak, silence.
-**Recovery (10s):** read the lens line out loud yourself, verbatim, in a robot-ish deadpan: "Boston's estimated win probability is 88 percent. The market is at 59 percent." It gets a laugh and loses nothing. Then check tab-mute (right-click the tab) during the next beat, not now.
-**Prevent:** T-10 audio check on the actual venue output; auto-speak left OFF so nothing competes with you.
+## 4. Sport is recognized, but the exact event is not
 
-## 7. Projector/layout looks wrong — numbers cut off, fonts ugly, page cramped
+**Symptom:** the badge says `Sport template`, `checkpoint pending`, or no market comparison appears.
 
-**Symptom:** projector is 720p and the three metrics don't fit; or no wifi so Google Fonts fell back to system fonts.
-**Recovery (10s):** Ctrl+Minus once or twice until the compare panel and lens fit; keep talking — never mention fonts, nobody but you can tell.
-**Prevent:** T-30 zoom check on the real projector, F11 full-screen rehearsed.
+**Recovery:** return to a clean frame containing both primary participants, the competition, score, phase, and clock.
 
-## 8. A judge challenges the amber "Simulated market feed" banner or a stale/low-confidence status pill
+**Line:** “The system recognizes the sport but refuses to attach another event's historical facts until the identity and checkpoint are anchored.”
 
-**Symptom:** "Wait, is any of this real?" — or the status pill shows `stale_market` / `low_confidence` instead of `ready`.
-**Recovery (10s):** this is not a failure, it's the designed behavior — say: "Exactly — when data is mocked or unreliable, the system labels it or refuses to show a number. A product that whispers probabilities in your ear has to earn trust, so it never bluffs. Neither do we." Then continue.
-**Prevent:** nothing to prevent. Rehearse the line until it sounds like you planned the question. (You did — it's judge-qa.md Q2 and Q14.)
+Never describe a sport-template result as an exact match.
+
+## 5. The source switches events while an old prediction is visible
+
+**Symptom:** the video changes before the next five-frame window completes.
+
+**Recovery:** stop analysis, frame the new event, then start analysis. Video remains live while the result surface clears.
+
+**Line:** “I am clearing the trusted state before the next event lock so context cannot leak between games.”
+
+## 6. YOLO boxes are slow or absent
+
+**Symptom:** the feed works, but the player overlay says WASM, unavailable, or shows few distant athletes.
+
+**Recovery:** continue. YOLO is a local visual layer; event identification and prediction remain available through Cerebras.
+
+**Line:** “Player tracking runs locally and independently from the scoreboard-to-market analysis.”
+
+## 7. Projector clips the right rail
+
+**Symptom:** the prediction context or research cards extend below a 720p projector viewport.
+
+**Recovery:** use the tested browser zoom once; the prediction card has its own internal scroll. Do not resize individual panels on stage.
+
+**Line:** keep presenting; do not discuss the projector.
+
+## 8. A judge asks whether the market or web research is real
+
+**Symptom:** “Is this live data?”
+
+**Recovery:** point directly at `MOCK`, `Historical replay`, and `MOCK WEB`.
+
+**Line:** “The camera recognition is live. For these historical clips, market prices and web research are precollected simulations and explicitly labeled; funding replaces those adapters with licensed live sources.”
+
+## 9. Everything external fails
+
+Open:
+
+```text
+https://capture.saicharanramineni.com/capture?demo=1&cycle=1
+```
+
+If the public endpoint is also down, use the equivalent localhost URL while `npm start` is running.
+
+**Line:** “This is the quota-free rehearsal layer—same prediction workspace, with an explicit disclosure that camera detection and model calls are not being claimed.”

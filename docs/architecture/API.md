@@ -2,6 +2,8 @@
 
 Everything is served by one zero-dependency Node process: `services/api/server.js` (`npm start`, default `http://localhost:3000`, override with `PORT`). All responses are JSON (pretty-printed, 2-space) except the two HTML pages. Snapshot as of 2026-07-11 — see "Not implemented yet" at the bottom for endpoints clients already call.
 
+> **Live versus legacy.** `POST /api/frames` is user-gated by `/api/analysis/start` and feeds five ordered camera snapshots to the Cerebras-backed `LiveEventAnalyzer`; completed live results are read from `GET /api/latest`. `GET /api/comparison` is the separate deterministic fixture/debug pipeline retained for backward compatibility. Fixture-extraction examples later in this document describe `/api/comparison`, not the current live camera path.
+
 Global behaviors (`server.js`):
 
 - Any unhandled error in a request -> `500 { "error": "<message>" }`. The UI never sees a raw stack.
@@ -80,9 +82,9 @@ Errors:
 | 400 | `{ "error": "width and height must be positive numbers" }` | Bad dimensions |
 | 413 | `{ "error": "request body too large" }` | > 8 MiB |
 
-### Live-session semantics
+### Live-analysis semantics
 
-An accepted frame marks the pipeline "live" for **10 seconds** (`LIVE_SESSION_TTL_MS`). While live, `GET /api/comparison` reports `source: "live"` and carries the live frame's metadata — but extraction still comes from the committed fixture (`extraction: "fixture_parse"`) until Slice 2's real OCR lands behind the seam in `services/api/pipeline.js`.
+Analysis is disabled until the viewer calls `POST /api/analysis/start`. Accepted snapshots accumulate into a five-frame temporal window; `LiveEventAnalyzer` rate-limits Cerebras windows to at most one every 12 seconds. A completed result is stored as the live-only `/api/latest` payload. Stopping analysis clears the trusted result while continuous WebRTC video remains connected.
 
 ---
 
@@ -162,8 +164,8 @@ Real shape from `services/api/pipeline.js runPipeline()` (values from the defaul
 
 Field notes:
 
-- `source`: `"fixture"` or `"live"` (a live session is active — see POST /api/frames).
-- `extraction`: always `"fixture_parse"` today; changes when real OCR replaces the seam.
+- In this legacy `/api/comparison` shape, `source` is `"fixture"` or the retained legacy live marker.
+- In this legacy shape, `extraction` is `"fixture_parse"`. Current camera analysis is served separately by `/api/latest` and reports the Cerebras batch extractor.
 - `state.confidence`: the min over the sport's confidence fields; `state.accepted` / `state.rejection_reason` report the reconciler's verdict for *this* observation (the state itself may be retained from an earlier accepted one). `state.extras` appears for sports that carry extra fields (soccer minute, UFC scheduled rounds, golf holes remaining).
 - `market.probability` = adapter's `display_probability` = bid/ask midpoint (mock always; Polymarket falls back to labeled last-trade).
 - `comparison.gap_percentage_points` = `(model − market) × 100`, one decimal. `direction` ∈ `"model_higher" | "model_lower" | "aligned"`.

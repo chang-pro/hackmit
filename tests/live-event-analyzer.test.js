@@ -43,6 +43,16 @@ const analysis = {
   risk_note: "Limited to visible evidence",
 };
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function frame(index) {
   return {
     frame_id: `f${index}`,
@@ -224,7 +234,7 @@ test("a golf leaderboard changing visible players remains the same event", () =>
 
   const eventSwitch = detectEventSwitch(first, second);
   assert.equal(eventSwitch.detected, false);
-  assert.equal(eventSwitch.reason, "stable_event_identity");
+  assert.equal(eventSwitch.reason, "same_competition_session");
 });
 
 test("switching between two games in the same sport starts a new event", () => {
@@ -246,5 +256,136 @@ test("switching between two games in the same sport starts a new event", () => {
 
   const eventSwitch = detectEventSwitch(first, second);
   assert.equal(eventSwitch.detected, true);
-  assert.equal(eventSwitch.reason, "event_identity_changed");
+  assert.equal(eventSwitch.reset_context, true);
+  assert.equal(eventSwitch.reason, "participant_pair_changed");
+});
+
+test("one shared team is a switch, while identity wording drift for the same pair is stable", () => {
+  const first = {
+    sport: "basketball",
+    competition: "NBA Finals",
+    event_name: "Cavaliers vs Warriors",
+    event_identity: "nba:2016-finals-game-7-cavaliers-warriors",
+    event_format: "team_event",
+    participants: [{ name: "Cleveland Cavaliers" }, { name: "Golden State Warriors" }],
+    participant_a: "Cleveland Cavaliers",
+    participant_b: "Golden State Warriors",
+    confidence: 0.94,
+  };
+  const wordingDrift = {
+    ...first,
+    event_name: "2016 NBA Finals Game Seven",
+    event_identity: "nba:cavaliers-warriors-game-seven",
+    participants: [...first.participants].reverse(),
+    participant_a: "Golden State Warriors",
+    participant_b: "Cleveland Cavaliers",
+  };
+  const stable = detectEventSwitch(first, wordingDrift);
+  assert.equal(stable.detected, false);
+  assert.equal(stable.reset_context, false);
+  assert.equal(stable.reason, "stable_participant_pair");
+
+  const changed = detectEventSwitch(first, {
+    ...first,
+    competition: "NBA",
+    event_name: "Warriors vs Lakers",
+    event_identity: "UNKNOWN",
+    participants: [{ name: "Golden State Warriors" }, { name: "Los Angeles Lakers" }],
+    participant_a: "Golden State Warriors",
+    participant_b: "Los Angeles Lakers",
+  });
+  assert.equal(changed.detected, true);
+  assert.equal(changed.reset_context, true);
+  assert.equal(changed.reason, "participant_pair_changed");
+});
+
+test("a low-confidence cross-sport switch never receives prior-event context", async () => {
+  let now = 0;
+  const observations = [
+    {
+      ...observation,
+      sport: "soccer",
+      competition: "International friendly",
+      event_name: "USA vs Brazil",
+      event_identity: "soccer:usa-vs-brazil",
+      participants: [{ name: "USA" }, { name: "Brazil" }],
+      participant_a: "USA",
+      participant_b: "Brazil",
+    },
+    {
+      ...observation,
+      sport: "basketball",
+      competition: "NBA",
+      event_name: "Celtics vs Knicks",
+      event_identity: "nba:celtics-vs-knicks",
+      participants: [{ name: "Celtics" }, { name: "Knicks" }],
+      participant_a: "Celtics",
+      participant_b: "Knicks",
+      confidence: 0.54,
+    },
+  ];
+  const contexts = [];
+  const analyzer = new LiveEventAnalyzer({
+    batchSize: 1,
+    now: () => now,
+    visionBackend: { name: "test-vision", extractEventBatch: async () => observations.shift() },
+    analyze: async (context) => { contexts.push(context); return analysis; },
+  });
+  await analyzer.submit(frame(1), { force: true });
+  now = 12_000;
+  const result = await analyzer.submit(frame(2), { force: true });
+  assert.equal(result.insight.event_switch.detected, false);
+  assert.equal(result.insight.event_switch.reset_context, true);
+  assert.equal(result.insight.event_switch.reason, "low_confidence_sport_changed");
+  assert.equal(contexts[1].previous_observation, null);
+  assert.equal(contexts[1].previous_analysis, null);
+});
+
+test("reset discards a pre-reset deferred vision result", async () => {
+  const started = deferred();
+  const completion = deferred();
+  let analyticsCalls = 0;
+  const analyzer = new LiveEventAnalyzer({
+    batchSize: 1,
+    visionBackend: {
+      name: "deferred-vision",
+      extractEventBatch: async () => {
+        started.resolve();
+        return completion.promise;
+      },
+    },
+    analyze: async () => { analyticsCalls += 1; return analysis; },
+  });
+  const pending = analyzer.submit(frame(1), { force: true });
+  await started.promise;
+  analyzer.reset();
+  completion.resolve(observation);
+  const result = await pending;
+  assert.equal(result.analysis_status, "discarded");
+  assert.equal(result.insight, null);
+  assert.equal(analyzer.latestInsight, null);
+  assert.equal(analyticsCalls, 0);
+  assert.deepEqual(analyzer.status().calls_last_minute, { vision: 0, analytics: 0 });
+});
+
+test("reset discards a pre-reset deferred analytics result", async () => {
+  const started = deferred();
+  const completion = deferred();
+  const analyzer = new LiveEventAnalyzer({
+    batchSize: 1,
+    visionBackend: { name: "test-vision", extractEventBatch: async () => observation },
+    analyze: async () => {
+      started.resolve();
+      return completion.promise;
+    },
+  });
+  const pending = analyzer.submit(frame(1), { force: true });
+  await started.promise;
+  analyzer.reset();
+  completion.resolve(analysis);
+  const result = await pending;
+  assert.equal(result.analysis_status, "discarded");
+  assert.equal(result.insight, null);
+  assert.equal(analyzer.latestInsight, null);
+  assert.deepEqual(analyzer.status().calls_last_minute, { vision: 0, analytics: 0 });
 });

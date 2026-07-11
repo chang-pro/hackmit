@@ -24,8 +24,21 @@ test("capture viewer exposes quota-free rehearsal controls and explicit data pro
   assert.match(capture, /intelligence\.research/);
   assert.match(capture, /live prediction/i);
   assert.match(capture, /mock web (?:research|search)/i);
-  assert.match(capture, /get\("ops"\)\s*!==\s*"0"/);
+  assert.match(capture, /get\("ops"\)\s*===\s*"1"/);
   assert.match(capture, /body\.running\.ops-mode \.ops-bar/);
+});
+
+test("capture viewer clears stale results and keeps rehearsal visually consistent", () => {
+  assert.match(capture, /function clearRenderedInsight/);
+  assert.match(capture, /clearRenderedInsight\(\{ queue: data\.queue \}\)/);
+  assert.match(capture, /demoRehearsalInsight = insight/);
+  assert.match(capture, /function demoVisualState/);
+  assert.match(capture, /REHEARSAL · NO MODEL CALLS/);
+  assert.match(capture, /DEFAULT_REHEARSAL_INTERVAL_MS = 10_000/);
+  assert.match(capture, /MIN_REHEARSAL_INTERVAL_MS = 5_000/);
+  assert.match(capture, /MAX_REHEARSAL_INTERVAL_MS = 30_000/);
+  assert.match(capture, /demoParams\.get\("interval"\)/);
+  assert.match(capture, /body\.running \.readout[^}]*overflow-y: auto/);
 });
 
 test("first live analysis uses a fast five-frame burst before quota cadence", () => {

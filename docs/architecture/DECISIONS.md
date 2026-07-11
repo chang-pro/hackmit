@@ -19,18 +19,18 @@ Key decisions inferred from the code and README as of 2026-07-11, recorded in th
 
 ---
 
-## D2. Fixture-first extraction seam
+## D2. Fixture-first extraction seam (superseded for the live demo)
 
 **Context.** Real scoreboard OCR (Slice 2) is the riskiest part of the build, but every other slice needs a working pipeline *now*, and the demo needs a deterministic bottom rung on the resilience ladder (README §13).
 
-**Decision.** Vision extraction is a pluggable backend behind one interface (`extractScoreboard(frame, backend, sport)` in `services/vision/index.js`). The `fixture` backend — which reads a saved `parsed_scoreboard` from a committed JSON fixture instead of looking at pixels — is the default and the only one the pipeline currently runs. The `gemini` backend (schema-constrained multimodal JSON) exists as a sibling. The pipeline-level swap point is a single function, `extractState()` in `services/api/pipeline.js`; every payload stamps `extraction: "fixture_parse"` so nobody mistakes replayed state for OCR.
+**Decision.** The deterministic `/api/comparison` path keeps the pluggable fixture extraction seam for model and contract tests. The live `/api/frames` path now uses `LiveEventAnalyzer` and the Cerebras Gemma backend to extract a universal multi-sport observation from real camera pixels; exact historical demo events then resolve through `services/demo/intelligence.js`. Payload provenance distinguishes live vision, historical packs, mock markets/research, and quota-free rehearsal.
 
 **Consequences.**
 - Every downstream component (normalize, resolver, reconciler, models, market, UI, iOS) was built and tested against realistic typed state before any OCR existed.
-- Live camera frames flow through the gateway/selector today but still get fixture-parsed state — honest but temporary; Slice 2 replaces one function body.
-- `scripts/evaluate-fixtures.js` measures both backends per required field against `packages/fixtures/expected/`, and skips (never fakes) the gemini run without a key and real images.
+- Live frames are never silently replaced with NBA fixture state. If event or checkpoint evidence is insufficient, the live UI stays pending or uses a clearly labeled sport template.
+- `scripts/evaluate-fixtures.js` still measures the legacy extraction seam; live four-clip acceptance additionally requires real teammate-footage rehearsal.
 
-**See:** `services/vision/index.js`, `services/vision/backends/fixture.js`, `services/api/pipeline.js` (`extractState`).
+**See:** `services/api/live-event-analyzer.js`, `services/vision/backends/cerebras.js`, `services/demo/intelligence.js`, and `services/api/pipeline.js` for the legacy fixture path.
 
 ---
 

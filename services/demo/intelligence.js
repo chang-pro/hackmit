@@ -22,42 +22,77 @@ const PACKS = PACK_FILES.map((name) =>
   Object.freeze(JSON.parse(readFileSync(join(PACK_DIR, name), "utf8")))
 );
 
+const MIN_VISION_CONFIDENCE = 0.55;
+const MIN_DETERMINISTIC_CONFIDENCE = 0.72;
+const MIN_MOMENT_SCORE = 4;
+const MIN_MOMENT_MARGIN = 0.75;
+const UNKNOWN_TEXT = new Set(["", "unknown", "unidentified", "n a", "na", "none", "null"]);
+
 function normalized(value) {
-  return String(value ?? "")
+  const tokens = String(value ?? "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const collapsed = [];
+  for (let index = 0; index < tokens.length;) {
+    if (tokens[index].length !== 1) {
+      collapsed.push(tokens[index]);
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (end < tokens.length && tokens[end].length === 1) end += 1;
+    const run = tokens.slice(index, end);
+    collapsed.push(run.length >= 2 ? run.join("") : run[0]);
+    index = end;
+  }
+  return collapsed.join(" ");
+}
+
+function known(value) {
+  return !UNKNOWN_TEXT.has(normalized(value));
 }
 
 function canonicalSport(value) {
   const sport = normalized(value).replaceAll(" ", "_");
   return {
     nba: "basketball",
+    nba_basketball: "basketball",
+    pro_basketball: "basketball",
     nfl: "american_football",
     football: "american_football",
     american_football: "american_football",
+    nfl_football: "american_football",
+    gridiron: "american_football",
     ufc: "mma",
+    ufc_mma: "mma",
+    mixed_martial_arts: "mma",
+    association_football: "soccer",
+    fifa_football: "soccer",
   }[sport] ?? sport;
 }
 
-function observationText(observation) {
+function primaryParticipantNames(observation) {
+  const direct = [observation?.participant_a, observation?.participant_b]
+    .filter(known)
+    .map(normalized);
+  if (direct.length > 0) return direct;
+  return (Array.isArray(observation?.participants) ? observation.participants : [])
+    .slice(0, 2)
+    .map((participant) => participant?.name)
+    .filter(known)
+    .map(normalized);
+}
+
+function identityText(observation) {
   return normalized([
     observation?.competition,
     observation?.event_name,
     observation?.event_identity,
-    observation?.participant_a,
-    observation?.participant_b,
-    ...(observation?.participants ?? []).map((participant) => participant?.name),
-  ].join(" "));
-}
-
-function participantNames(observation) {
-  return [
-    observation?.participant_a,
-    observation?.participant_b,
-    ...(observation?.participants ?? []).map((participant) => participant?.name),
-  ].map(normalized).filter(Boolean);
+  ].filter(known).join(" "));
 }
 
 function includesAlias(text, alias) {
@@ -65,46 +100,159 @@ function includesAlias(text, alias) {
   return needle.length > 1 && (` ${text} `).includes(` ${needle} `);
 }
 
-function packMatch(pack, observation) {
-  if (Number(observation?.confidence ?? 0) < 0.55) return null;
-  if (canonicalSport(observation?.sport) !== pack.sport) return null;
-  const text = observationText(observation);
-  const names = participantNames(observation);
-  const groupsMatched = (pack.participant_groups ?? []).filter((group) =>
-    group.some((alias) => names.some((name) => includesAlias(name, alias)))
-  ).length;
-  const competitionMatched = (pack.competition_tokens ?? []).some((token) =>
-    includesAlias(text, token)
-  );
-  const eventMatched = (pack.event_tokens ?? []).filter((token) => includesAlias(text, token)).length;
+function matchedParticipantGroups(pack, names) {
+  return new Set((pack.participant_groups ?? [])
+    .map((group, index) => group.some((alias) => names.some((name) => includesAlias(name, alias)))
+      ? index
+      : null)
+    .filter((index) => index != null));
+}
 
-  if (groupsMatched >= 2) return { score: 100 + eventMatched, basis: "participants", confidence: 0.98 };
-  if (competitionMatched && groupsMatched >= 1) {
-    return { score: 80 + eventMatched, basis: "competition_and_participant", confidence: 0.92 };
+function matchedIdentity(pack, observation) {
+  const text = identityText(observation);
+  return (pack.identity_tokens ?? []).some((token) => includesAlias(text, token));
+}
+
+function yearsIn(value) {
+  return new Set(String(value ?? "").match(/\b(?:19|20)\d{2}\b/g) ?? []);
+}
+
+function firstNumberedIdentity(value, label) {
+  const match = normalized(value).match(new RegExp(`\\b${label}\\s+([0-9]+|[ivxlcdm]+)\\b`));
+  return match?.[1] ?? null;
+}
+
+function metadataConflicts(pack, observation) {
+  const packText = [pack.event_label, ...(pack.identity_tokens ?? []), ...(pack.competition_tokens ?? [])]
+    .join(" ");
+  const observedText = [observation?.competition, observation?.event_name, observation?.event_identity]
+    .filter(known)
+    .join(" ");
+  const packYears = yearsIn(packText);
+  const observedYears = yearsIn(observedText);
+  if (packYears.size > 0 && observedYears.size > 0 &&
+      ![...observedYears].some((year) => packYears.has(year))) return true;
+
+  const competition = normalized(observation?.competition);
+  if (/\bregular season\b/.test(competition) && !/\bregular season\b/.test(normalized(packText))) {
+    return true;
   }
-  if (eventMatched >= 2) {
-    return { score: 60 + eventMatched, basis: "event_context", confidence: 0.84 };
+  for (const label of ["ufc", "super bowl", "game"]) {
+    const expected = firstNumberedIdentity(packText, label);
+    const observed = firstNumberedIdentity(observedText, label);
+    if (expected && observed && expected !== observed) return true;
   }
-  return { score: 10, basis: "sport_fallback", confidence: 0.66 };
+  const roundMarkers = ["group stage", "round of", "quarterfinal", "semifinal", "qualifier", "friendly"];
+  if (roundMarkers.some((marker) => competition.includes(marker)) &&
+      !roundMarkers.some((marker) => normalized(packText).includes(marker))) return true;
+  return false;
+}
+
+function packMatch(pack, observation) {
+  const visionConfidence = Number(observation?.confidence ?? 0);
+  if (!Number.isFinite(visionConfidence) || visionConfidence < MIN_VISION_CONFIDENCE) return null;
+  if (canonicalSport(observation?.sport) !== pack.sport) return null;
+  const primaryNames = primaryParticipantNames(observation);
+  const groups = matchedParticipantGroups(pack, primaryNames);
+  const identityMatched = matchedIdentity(pack, observation);
+  const conflict = metadataConflicts(pack, observation);
+  const participantMatched = groups.size >= Math.min(2, pack.participant_groups?.length ?? 2);
+  const exactEvidence = !conflict && (participantMatched || identityMatched);
+  const deterministic = exactEvidence && visionConfidence >= MIN_DETERMINISTIC_CONFIDENCE;
+  const baseConfidence = identityMatched ? 0.99 : participantMatched ? 0.98 : 0.66;
+  return {
+    score: exactEvidence ? (identityMatched ? 110 : 100) : 10,
+    basis: conflict
+      ? "conflicting_metadata"
+      : identityMatched
+        ? "identity_token"
+        : participantMatched
+          ? "primary_participants"
+          : "sport_fallback",
+    confidence: Math.min(visionConfidence, baseConfidence),
+    exactEvidence,
+    deterministic,
+    pendingReason: conflict
+      ? "conflicting_event_metadata"
+      : exactEvidence && !deterministic
+        ? "vision_confidence_below_deterministic_threshold"
+        : null,
+  };
 }
 
 function clockSeconds(value) {
-  const text = String(value ?? "").trim();
-  const countdown = text.match(/^(\d{1,2}):(\d{2})$/);
-  if (countdown) return Number(countdown[1]) * 60 + Number(countdown[2]);
-  const minute = text.match(/(\d{1,3})/);
+  if (!known(value)) return null;
+  const text = String(value)
+    .trim()
+    .toUpperCase()
+    .replace(/[OQ]/g, "0")
+    .replace(/[IL|]/g, "1")
+    .replace(/Z/g, "2")
+    .replace(/S/g, "5")
+    .replace(/B/g, "8")
+    .replace(/[.;]/g, ":")
+    .replace(/\s+/g, "");
+  const countdown = text.match(/^(\d{1,3}):(\d{2})$/);
+  if (countdown && Number(countdown[2]) < 60) {
+    return Number(countdown[1]) * 60 + Number(countdown[2]);
+  }
+  const minute = text.match(/^(\d{1,3})(?:'|MIN(?:UTE)?S?|M)?$/);
   return minute ? Number(minute[1]) * 60 : null;
 }
 
-function momentScore(moment, observation) {
-  let score = 0;
-  const a = Number(observation?.score_a);
-  const b = Number(observation?.score_b);
-  if (Number.isFinite(a) && Number.isFinite(b) && Array.isArray(moment.scores)) {
-    if (moment.scores.some(([left, right]) => left === a && right === b)) score += 12;
+function numericScore(value) {
+  if (value === null || value === undefined || value === "" || !known(value)) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function scoreMatches(moment, a, b) {
+  return Array.isArray(moment.scores) &&
+    moment.scores.some(([left, right]) => Number(left) === a && Number(right) === b);
+}
+
+function canonicalPhase(value, sport) {
+  const phase = normalized(value);
+  if (!phase) return "";
+  if (sport === "basketball" || sport === "american_football") {
+    if (/\b(?:half time|halftime|end q?2|end 2q)\b/.test(phase)) return "halftime";
+    const quarter = phase.match(/\b(?:q|quarter|qtr)\s*([1-5])\b/) ??
+      phase.match(/\b([1-5])\s*(?:q|quarter|qtr)\b/);
+    if (quarter) return `q${quarter[1]}`;
   }
-  const phase = normalized(observation?.phase);
-  if ((moment.phase_tokens ?? []).some((token) => phase.includes(normalized(token)))) score += 5;
+  if (sport === "mma") {
+    const round = phase.match(/\b(?:round|rd|rnd|r)\s*([1-5])\b/);
+    if (round) return `round ${round[1]}`;
+  }
+  if (sport === "soccer") {
+    if (/\b(?:h2|2h|second half|2nd half|2nd)\b/.test(phase)) return "second half";
+    if (/\b(?:h1|1h|first half|1st half|1st)\b/.test(phase)) return "first half";
+    if (/\b(?:extra time|et|et1|et2|1et|2et)\b/.test(phase)) return "extra time";
+  }
+  return phase;
+}
+
+function phaseMatches(moment, observation, pack) {
+  const observed = canonicalPhase(observation?.phase, pack.sport);
+  if (!observed) return false;
+  return (moment.phase_tokens ?? []).some((token) => {
+    const expected = canonicalPhase(token, pack.sport);
+    return expected === observed || observed.includes(expected) || expected.includes(observed);
+  });
+}
+
+function momentScore(pack, moment, observation) {
+  let score = 0;
+  const a = numericScore(observation?.score_a);
+  const b = numericScore(observation?.score_b);
+  const scoreVisiblySupported = known(observation?.score_display) || a !== 0 || b !== 0;
+  if (a != null && b != null && scoreVisiblySupported) {
+    const matchingMoments = pack.moments.filter((entry) => scoreMatches(entry, a, b)).length;
+    if (scoreMatches(moment, a, b) && matchingMoments > 0 && matchingMoments < pack.moments.length) {
+      score += matchingMoments === 1 ? 12 : 6;
+    }
+  }
+  if (phaseMatches(moment, observation, pack)) score += 5;
   const observedClock = clockSeconds(observation?.clock);
   if (observedClock != null && moment.clock_seconds != null) {
     const tolerance = moment.clock_tolerance_seconds ?? 180;
@@ -122,24 +270,48 @@ function momentScore(moment, observation) {
 
 function selectMoment(pack, observation, previous) {
   const ranked = pack.moments
-    .map((moment, index) => ({ moment, index, score: momentScore(moment, observation) }))
+    .map((moment, index) => ({ moment, index, score: momentScore(pack, moment, observation) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
-  let selected = ranked[0];
-  if (selected.score === 0 && previous?.pack_id === pack.id) {
-    const priorIndex = pack.moments.findIndex((moment) => moment.id === previous.moment_id);
-    if (priorIndex >= 0) selected = { moment: pack.moments[priorIndex], index: priorIndex, score: 0 };
+  const best = ranked[0] ?? null;
+  const runnerUp = ranked[1] ?? null;
+  const margin = best ? best.score - (runnerUp?.score ?? 0) : 0;
+  const priorIndex = previous?.pack_id === pack.id
+    ? pack.moments.findIndex((moment) => moment.id === previous.moment_id)
+    : -1;
+  const ambiguous = !best || best.score < MIN_MOMENT_SCORE || margin < MIN_MOMENT_MARGIN;
+
+  if (ambiguous && priorIndex >= 0 && previous?.mode === "precollected_event_replay") {
+    return {
+      moment: pack.moments[priorIndex],
+      index: priorIndex,
+      score: best?.score ?? 0,
+      status: "held_previous",
+      reason: "ambiguous_observation",
+    };
   }
-  if (previous?.pack_id === pack.id) {
-    const priorIndex = pack.moments.findIndex((moment) => moment.id === previous.moment_id);
-    if (priorIndex > selected.index) {
-      selected = { moment: pack.moments[priorIndex], index: priorIndex, score: selected.score };
-    }
+  if (ambiguous) {
+    return {
+      moment: null,
+      index: -1,
+      score: best?.score ?? 0,
+      status: "pending",
+      reason: best?.score >= MIN_MOMENT_SCORE ? "checkpoint_tie" : "insufficient_checkpoint_evidence",
+    };
   }
-  return selected;
+  if (priorIndex > best.index && previous?.mode === "precollected_event_replay") {
+    return {
+      moment: pack.moments[priorIndex],
+      index: priorIndex,
+      score: best.score,
+      status: "held_previous",
+      reason: "monotonic_replay_guard",
+    };
+  }
+  return { ...best, status: "ready", reason: null };
 }
 
 function detectedFocus(pack, observation, basis) {
-  const names = participantNames(observation);
+  const names = primaryParticipantNames(observation);
   const matched = names.find((name) =>
     (pack.focus_aliases ?? []).some((alias) => includesAlias(name, alias))
   );
@@ -175,58 +347,90 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
   if (!matches.length) return null;
 
   const { pack, match } = matches[0];
-  const { moment, index, score } = selectMoment(pack, observation, previous);
+  const selection = match.exactEvidence
+    ? selectMoment(pack, observation, previous)
+    : {
+        moment: null,
+        index: -1,
+        score: 0,
+        status: "pending",
+        reason: match.pendingReason ?? "event_identity_not_confirmed",
+      };
+  const { moment, index, score } = selection;
   const focus = detectedFocus(pack, observation, match.basis);
-  const modelProbability = moment.model_probability;
-  const marketProbability = moment.market_probability;
-  const gap = Number(((modelProbability - marketProbability) * 100).toFixed(1));
+  const checkpointReady = Boolean(moment) && selection.status !== "pending";
+  const deterministicReady = match.deterministic && checkpointReady;
+  const mode = deterministicReady
+    ? "precollected_event_replay"
+    : match.exactEvidence
+      ? "precollected_event_pending"
+      : "illustrative_sport_template";
+  const modelProbability = deterministicReady ? moment.model_probability : null;
+  const marketProbability = deterministicReady ? moment.market_probability : null;
+  const gap = deterministicReady
+    ? Number(((modelProbability - marketProbability) * 100).toFixed(1))
+    : null;
 
   return {
-    mode: match.basis === "sport_fallback" ? "illustrative_sport_template" : "precollected_event_replay",
+    mode,
     pack_id: pack.id,
-    pack_label: match.basis === "sport_fallback"
-      ? `${pack.sport.replaceAll("_", " ")} demo intelligence template`
+    pack_label: mode === "illustrative_sport_template"
+      ? `${pack.sport.replaceAll("_", " ")} intelligence template`
       : pack.event_label,
     detected_sport: canonicalSport(observation?.sport),
     detected_event: observation?.event_name || observation?.event_identity || "Recognized broadcast",
     match_basis: match.basis,
     match_confidence: match.confidence,
-    moment_id: moment.id,
-    moment_label: moment.label,
+    checkpoint_status: deterministicReady ? selection.status : "pending",
+    pending_reason: deterministicReady ? null : match.pendingReason ?? selection.reason,
+    moment_id: moment?.id ?? null,
+    moment_label: moment?.label ?? "Waiting for a stable scoreboard checkpoint",
     moment_index: index,
-    moment_count: pack.moments.length,
+    moment_count: match.exactEvidence ? pack.moments.length : 0,
     moment_match_score: Number(score.toFixed(2)),
-    checkpoints: pack.moments.map((entry, entryIndex) => ({
-      id: entry.id,
-      label: entry.label,
-      model_probability: entry.model_probability,
-      market_probability: entry.market_probability,
-      active: entryIndex === index,
-    })),
+    checkpoints: match.exactEvidence
+      ? pack.moments.map((entry, entryIndex) => ({
+          id: entry.id,
+          label: entry.label,
+          model_probability: entry.model_probability,
+          market_probability: entry.market_probability,
+          active: entryIndex === index,
+        }))
+      : [],
     focus,
-    evidence: (moment.evidence ?? []).map((item) => ({ ...item, status: "ready" })),
-    research: (pack.research ?? []).map((item) => ({
-      ...item,
-      query: template(item.query, focus),
-      result: template(item.result, focus),
-      status: "ready",
-      is_mock: true,
-    })),
-    market: {
-      question: template(moment.market_question, focus),
-      outcome: template(moment.outcome, focus),
-      model_probability: modelProbability,
-      market_probability: marketProbability,
-      gap_percentage_points: gap,
-      is_mock: true,
-      provider: "precollected_demo_market",
-    },
-    confidence: moment.confidence,
-    key_factors: moment.key_factors.map((factor) => template(factor, focus)),
-    what_changed: template(moment.what_changed, focus),
-    next_probability_trigger: template(moment.next_trigger, focus),
-    summary: template(moment.summary, focus),
-    alternate_markets: (moment.alternate_markets ?? []).map((market) => ({
+    evidence: match.exactEvidence
+      ? (moment?.evidence ?? []).map((item) => ({ ...item, status: "ready" }))
+      : [],
+    research: match.exactEvidence
+      ? (pack.research ?? []).map((item) => ({
+          ...item,
+          query: template(item.query, focus),
+          result: template(item.result, focus),
+          status: "ready",
+          is_mock: true,
+        }))
+      : [],
+    market: deterministicReady
+      ? {
+          question: template(moment.market_question, focus),
+          outcome: template(moment.outcome, focus),
+          model_probability: modelProbability,
+          market_probability: marketProbability,
+          gap_percentage_points: gap,
+          is_mock: true,
+          provider: "precollected_demo_market",
+        }
+      : null,
+    confidence: deterministicReady
+      ? Math.min(Number(moment.confidence ?? 0), match.confidence)
+      : match.confidence,
+    key_factors: (moment?.key_factors ?? []).map((factor) => template(factor, focus)),
+    what_changed: template(moment?.what_changed, focus),
+    next_probability_trigger: template(moment?.next_trigger, focus),
+    summary: deterministicReady
+      ? template(moment.summary, focus)
+      : "Event candidate identified. Waiting for a stable score, phase, or clock before loading replay probabilities.",
+    alternate_markets: (moment?.alternate_markets ?? []).map((market) => ({
       ...market,
       question: template(market.question, focus),
       outcome: template(market.outcome, focus),
@@ -237,7 +441,8 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
 
 export function analysisFromDemoIntelligence(intelligence, modelAnalysis = null) {
   if (!intelligence) return modelAnalysis;
-  if (intelligence.mode === "illustrative_sport_template") {
+  if (intelligence.mode === "precollected_event_pending") return null;
+  if (intelligence.mode !== "precollected_event_replay" || !intelligence.market) {
     if (!modelAnalysis) return null;
     return {
       ...modelAnalysis,
@@ -264,7 +469,6 @@ export function analysisFromDemoIntelligence(intelligence, modelAnalysis = null)
   return {
     ...modelAnalysis,
     ...deterministic,
-    event_summary: modelAnalysis.event_summary || deterministic.event_summary,
     key_factors: [...new Set([...deterministic.key_factors, ...(modelAnalysis.key_factors ?? [])])].slice(0, 6),
     model: `${modelAnalysis.model ?? "cerebras"}+bloom-demo-intelligence-v1`,
   };
@@ -325,7 +529,8 @@ export function getDemoRehearsalInsight(packId, momentId = null) {
   }
   const observation = rehearsalObservation(pack, moment);
   const intelligence = selectDemoIntelligence(observation);
-  if (!intelligence || intelligence.pack_id !== pack.id || intelligence.moment_id !== moment.id) {
+  if (!intelligence || intelligence.mode !== "precollected_event_replay" ||
+      intelligence.pack_id !== pack.id || intelligence.moment_id !== moment.id) {
     throw new Error(`demo checkpoint "${pack.id}/${moment.id}" does not resolve to itself`);
   }
   const analysis = analysisFromDemoIntelligence(intelligence);
@@ -366,7 +571,11 @@ export function getDemoRehearsalInsight(packId, momentId = null) {
       confidence: intelligence.confidence,
     },
     analysis,
-    diagnostics: { analytics_error: null },
+    diagnostics: {
+      analytics_error: null,
+      analytics_skipped: true,
+      analytics_skip_reason: "quota_free_rehearsal",
+    },
     presentation: {
       status: "demo_rehearsal",
       short_text: `Rehearsal only. ${analysis.event_summary}`,
