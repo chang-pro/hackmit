@@ -12,6 +12,12 @@ const testVision = {
       sport: "soccer",
       competition: "FIFA World Cup",
       event_name: "USA vs Brazil",
+      event_identity: "soccer:usa-vs-brazil-world-cup-2026",
+      event_format: "team_event",
+      participants: [
+        { name: "USA", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
+        { name: "Brazil", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
+      ],
       participant_a: "USA",
       participant_b: "Brazil",
       score_a: 1,

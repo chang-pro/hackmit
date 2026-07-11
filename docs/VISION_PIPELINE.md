@@ -8,10 +8,11 @@ Our service owns everything after camera capture:
 
 ```text
 phone/app JPEG -> capture gateway -> five-frame window -> Gemma 4 event extraction
--> GPT OSS/GLM prediction analysis -> confidence gate -> presentation-ready JSON
+-> automatic event-switch check -> GPT OSS/GLM prediction analysis
+-> confidence gate -> presentation-ready JSON
 ```
 
-The native app owns camera permissions and frame delivery. The Next.js frontend owns rendering. Neither client should implement OCR, game-state correction, probability calculation, or market comparison.
+The native app owns camera permissions and frame delivery. The Next.js frontend owns rendering. Neither client should implement OCR, game-state correction, probability calculation, market comparison, or sport selection. The camera feed is the selector.
 
 ## Fastest phone test
 
@@ -32,7 +33,7 @@ npm start
 The server prints the exact phone URL. On the current machine it will resemble:
 
 ```text
-http://10.32.242.101:3000/capture
+http://10.32.242.101:3000/phone
 ```
 
 Open that URL on the phone and choose **Take photo**. This invokes the phone's rear camera through the file-capture control and works on an ordinary local HTTP connection. Fill most of the photo with the television or monitor, keep the scoreboard unobstructed, and avoid glare.
@@ -54,7 +55,7 @@ The command starts the analyzer and prints a random public URL similar to:
 https://random-words.trycloudflare.com
 ```
 
-Open `https://random-words.trycloudflare.com/capture` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. The glasses/native app can use the same origin as its API base and send frames to `POST /api/frames`.
+Open `https://random-words.trycloudflare.com/phone` on the phone. Because this is a public HTTPS origin, continuous camera capture works and no local-network connection is required. The glasses/native app can use the same origin as its API base and send frames to `POST /api/frames`.
 
 Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
@@ -109,9 +110,15 @@ The first four live-feed frames normally return HTTP `202` with `analysis_status
       "sport": "soccer",
       "competition": "FIFA World Cup 2026",
       "event_name": "USA vs Brazil",
+      "event_identity": "soccer:usa-vs-brazil-world-cup-2026",
+      "event_format": "team_event",
       "score_display": "1-1",
       "phase": "Second half",
       "clock": "72:14"
+    },
+    "event_switch": {
+      "detected": false,
+      "reason": "first_observation"
     },
     "analysis": {
       "primary_market_question": "Who will win the match?",
@@ -133,7 +140,7 @@ Other endpoints:
 - `GET /api/latest` — most recent live insight, with fixture fallback after the live TTL.
 - `GET /api/comparison` — compatibility alias for `/api/latest`.
 - `POST /api/reset` — clears buffered frames and canonical game state.
-- `GET /capture` — phone-first capture and result page.
+- `GET /phone` — phone-first capture and result page.
 
 ## Frame cadence
 
@@ -143,8 +150,9 @@ Do not stream full video to the service. Send one compressed JPEG every 2.4 seco
 
 The live provider is intentionally simple:
 
-1. `gemma-4-31b` receives up to five ordered JPEGs and emits a strict universal event schema for soccer, American football, MMA/UFC, basketball, or unknown content.
-2. `gpt-oss-120b` receives the trusted event observation plus the previous analysis and emits the primary prediction-market question, probability, alternate markets, key factors, changes, and the next probability-moving trigger.
+1. `gemma-4-31b` receives up to five ordered JPEGs and emits a strict universal event schema. Sport is open-ended; head-to-head games, tournaments, leaderboards, and races share one contract.
+2. The backend compares stable `event_identity`, sport, competition, and participants with the last trusted observation. A real event change clears the old context; a leaderboard showing another player does not.
+3. `gpt-oss-120b` receives the trusted event observation plus same-event context and emits the primary prediction-market question, probability, alternate markets, key factors, changes, and the next probability-moving trigger.
 
 Set `CEREBRAS_ANALYTICS_MODEL=zai-glm-4.7` to use GLM 4.7 for the second pass. `CEREBRAS_MODEL_INTERVAL_MS` may be increased but is clamped to a minimum of 12,000 ms, and `CEREBRAS_FRAMES_PER_REQUEST` is capped at five. The API key stays server-side and must never be sent by the phone or frontend.
 
@@ -164,6 +172,7 @@ The app team only needs to reproduce the `/api/frames` request. Recommended app 
 1. Capture rear-camera JPEG at 720p or 1080p.
 2. Downscale so the longest edge is at most 1600 pixels.
 3. Send every 2.4 seconds while the user is analyzing a screen; the server performs batching and quota enforcement.
-4. Never overlap analysis requests.
-5. Speak or render `insight.presentation`.
-6. Expose the remaining fields only in a developer/debug panel.
+4. Do not send a sport selector value; detection and event switching are server-owned.
+5. Never overlap analysis requests.
+6. Speak or render `insight.presentation`.
+7. Expose the remaining fields only in a developer/debug panel.

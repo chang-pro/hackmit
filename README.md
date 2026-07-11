@@ -6,7 +6,9 @@ BloomKnights is a wearable visual-intelligence system for live sports and event 
 
 The hackathon version is focused on one cross-sport experience:
 
-> Point Meta glasses at a live World Cup, American football, UFC, or NBA broadcast and receive the most relevant prediction-market probability without searching for the event.
+> Point Meta glasses at a live sports broadcast and receive the most relevant prediction-market probability without selecting a sport or searching for the event.
+
+Sport and event selection are automatic. If the viewer changes from an NBA game to a golf tournament—or to another recognizable sport—the next analyzed frame window identifies the new event and starts fresh analytical context. Ordinary cuts within one event, including a golf leaderboard cycling through different players, do not reset the session.
 
 Example output:
 
@@ -26,7 +28,7 @@ This README is the source of truth for humans and AI coding tools working on the
 
 ```bash
 npm start        # zero-dependency Node server on http://localhost:3000
-npm test         # 130 tests, node:test, no install needed
+npm test         # full node:test suite, no install needed
 npm run evaluate # run the vision fixtures evaluation
 node scripts/pull-stats.js   # pull live stats snapshots
 ```
@@ -55,7 +57,7 @@ Full documentation index: [docs/README.md](docs/README.md).
 - `services/` — api (server + pipeline), capture, vision, sports (5 sports), probability, market, analytics, cerebras
 - `packages/fixtures/` — demo frames, expected states, market and stats fixtures
 - `scripts/` — evaluate-fixtures, evaluate-model, pull-stats, extract-clip-frames, start-phone-tunnel
-- `tests/` — 130 node:test tests covering pipeline, sports, probability, market, capture
+- `tests/` — node:test coverage for pipeline, sports, probability, market, and capture
 - `models/metadata/` — model version and calibration info
 - `tools/` — dataset viewer
 - `docs/` — all documentation; start at [docs/README.md](docs/README.md)
@@ -95,7 +97,7 @@ The sports demo is the wedge, not the ceiling. The same visual-to-probability ar
 
 1. A user watches a major live sporting event on a television or laptop.
 2. The user looks at the broadcast through Meta glasses.
-3. BloomKnights identifies the teams and reads the scoreboard.
+3. BloomKnights identifies the sport, competition, event format, participants, and visible scoreboard or leaderboard.
 4. It constructs a sport-aware state: score, clock, period/round, visible cards, down and distance, or other reliably available features.
 5. It selects the most relevant prediction-market question and estimates its outcomes.
 6. It finds the matching prediction-market contract and reads the latest price.
@@ -114,7 +116,7 @@ A bad response is a dashboard full of unexplained numbers, an uncalibrated claim
 
 ### Primary use case
 
-Live prediction-market analysis for World Cup soccer, American football, UFC/MMA, and NBA basketball visible on a screen.
+Live prediction-market analysis for any recognizable sport visible on a screen, with optimized prompts for World Cup soccer, American football, UFC/MMA, NBA basketball, and golf.
 
 ### Required inputs
 
@@ -135,6 +137,8 @@ Live prediction-market analysis for World Cup soccer, American football, UFC/MMA
 ### Must-have capabilities
 
 - Ingest still frames or a low-rate video stream.
+- Detect the sport and event automatically, with no client-side sport picker required.
+- Detect a switch to a different event and clear prior analytical context before producing its probability.
 - Locate and parse the scoreboard region.
 - Normalize team names or abbreviations to stable internal IDs.
 - Reject or retain the previous state when a frame is unreadable.

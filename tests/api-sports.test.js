@@ -95,7 +95,7 @@ test("GET /api/comparison validates sport and per-sport fixture allowlists", asy
   });
 });
 
-test("POST /api/frames accepts an optional sport and stays backward compatible", async () => {
+test("POST /api/frames auto-detects by default and treats sport only as an optional hint", async () => {
   await withServer(async (base) => {
     const submit = (body) =>
       fetch(`${base}/api/frames`, {
@@ -115,7 +115,7 @@ test("POST /api/frames accepts an optional sport and stays backward compatible",
     // 201 once a batch is analyzed. Both mean "ingested".
     assert.ok([201, 202].includes(noSport.status), `got ${noSport.status}`);
     const noSportBody = await noSport.json();
-    assert.equal(noSportBody.sport, "nba", "omitted sport defaults to nba");
+    assert.equal(noSportBody.sport, "auto", "omitted sport leaves detection to vision");
     assert.equal(noSportBody.selection.accepted, true);
 
     const tagged = await submit({ ...frame, image_base64: "b3RoZXItYnl0ZXM=", sport: "ufc" });
@@ -123,9 +123,9 @@ test("POST /api/frames accepts an optional sport and stays backward compatible",
     const taggedBody = await tagged.json();
     assert.equal(taggedBody.sport, "ufc");
 
-    const badSport = await submit({ ...frame, sport: "cricket" });
-    assert.equal(badSport.status, 400);
-    assert.match((await badSport.json()).error, /Unknown sport/);
+    const openEndedSport = await submit({ ...frame, image_base64: "Y3JpY2tldA==", sport: "cricket" });
+    assert.ok([200, 201, 202].includes(openEndedSport.status));
+    assert.equal((await openEndedSport.json()).sport, "cricket");
   });
 });
 
