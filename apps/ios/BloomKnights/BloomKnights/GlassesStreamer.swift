@@ -76,6 +76,9 @@ final class KeepAlive {
 // through the @MainActor streamer. Enqueue is marshalled to main (UI layer).
 final class PreviewSink: @unchecked Sendable {
     let layer = AVSampleBufferDisplayLayer()
+    private let lock = NSLock()
+    private var pendingFrame: CMSampleBuffer?
+    private var drainScheduled = false
 
     func enqueue(_ sb: CMSampleBuffer) {
         // Display immediately (live view — no timebase needed).
@@ -86,11 +89,23 @@ final class PreviewSink: @unchecked Sendable {
                 Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
                 Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
         }
-        let l = layer
-        DispatchQueue.main.async {
-            if l.status == .failed { l.flush() }
-            if l.isReadyForMoreMediaData { l.enqueue(sb) }
-        }
+        lock.lock()
+        pendingFrame = sb
+        guard !drainScheduled else { lock.unlock(); return }
+        drainScheduled = true
+        lock.unlock()
+        DispatchQueue.main.async { [weak self] in self?.drainLatestFrame() }
+    }
+
+    private func drainLatestFrame() {
+        lock.lock()
+        let frame = pendingFrame
+        pendingFrame = nil
+        drainScheduled = false
+        lock.unlock()
+        guard let frame else { return }
+        if layer.status == .failed { layer.flush() }
+        if layer.isReadyForMoreMediaData { layer.enqueue(frame) }
     }
 }
 
@@ -100,14 +115,20 @@ final class PreviewSink: @unchecked Sendable {
 //
 // HEVC P-frames depend on prior frames, so we cannot decode "one frame per
 // second" by skipping input — EVERY sample buffer is fed to the hardware
-// VTDecompressionSession (cheap at 720p/24), and only ~1 decoded frame per
+// VTDecompressionSession, and only ~1 decoded frame per
 // second is JPEG-encoded and POSTed to /api/frames.
 final class FrameUplink: @unchecked Sendable {
     private let lock = NSLock()
+    private let work = DispatchQueue(label: "com.bloomknights.uplink", qos: .userInitiated)
+    private let maxQueuedFrames = 4
+    private var queuedFrames = 0
+    private var waitForKeyframe = false
     private var decodeSession: VTDecompressionSession?
     private var streaming = false
     private var lastUploadAt = Date.distantPast
+    private var lastPublishAt = Date.distantPast
     private let uploadInterval: TimeInterval = 1.0   // ~1 fps to the backend
+    private let publishInterval: TimeInterval = 1.0 / 12.0
     private let jpegQuality: CGFloat = 0.7
     private let ciContext = CIContext()
 
@@ -119,8 +140,8 @@ final class FrameUplink: @unchecked Sendable {
     private var failed = 0
     var onCounters: @Sendable (Int, Int, Int, Int) -> Void = { _, _, _, _ in }
     var sportProvider: @Sendable () -> String = { Sport.nba.rawValue }
-    // EVERY decoded frame (full rate) — feeds the WebRTC publisher. Set from
-    // the streamer; called on the VT decode callback thread.
+    // Selected decoded frames (12 fps) feed the WebRTC publisher. Set from the
+    // streamer; called on the VT decode callback thread.
     var onDecodedFrame: (@Sendable (CVImageBuffer) -> Void)?
     // The 1 fps JPEG POST to /api/frames is legacy telemetry now that the
     // desktop viewer samples the WebRTC stream itself. Off by default.
@@ -145,7 +166,11 @@ final class FrameUplink: @unchecked Sendable {
     func setStreaming(_ on: Bool) {
         lock.lock()
         streaming = on
-        if on { sent = 0; accepted = 0; skipped = 0; failed = 0; lastUploadAt = .distantPast }
+        if on {
+            sent = 0; accepted = 0; skipped = 0; failed = 0
+            lastUploadAt = .distantPast; lastPublishAt = .distantPast
+            waitForKeyframe = false
+        }
         if !on, let s = decodeSession {
             VTDecompressionSessionInvalidate(s)
             decodeSession = nil
@@ -164,6 +189,35 @@ final class FrameUplink: @unchecked Sendable {
     }
 
     func ingest(_ sb: CMSampleBuffer) {
+        let keyframe = Self.isKeyframe(sb)
+        lock.lock()
+        guard streaming else { lock.unlock(); return }
+        if waitForKeyframe {
+            guard keyframe, queuedFrames == 0 else { lock.unlock(); return }
+            if let session = decodeSession { VTDecompressionSessionInvalidate(session) }
+            decodeSession = nil
+            waitForKeyframe = false
+        }
+        guard queuedFrames < maxQueuedFrames else {
+            waitForKeyframe = true
+            lock.unlock()
+            return
+        }
+        queuedFrames += 1
+        lock.unlock()
+        work.async { [weak self] in
+            self?.ingestSync(sb)
+            self?.finishedQueuedFrame()
+        }
+    }
+
+    private func finishedQueuedFrame() {
+        lock.lock()
+        queuedFrames = max(0, queuedFrames - 1)
+        lock.unlock()
+    }
+
+    private func ingestSync(_ sb: CMSampleBuffer) {
         guard let fmt = CMSampleBufferGetFormatDescription(sb) else { return }
 
         lock.lock()
@@ -174,7 +228,9 @@ final class FrameUplink: @unchecked Sendable {
         }
         if decodeSession == nil {
             guard Self.isKeyframe(sb) else { lock.unlock(); return }   // wait for the first keyframe
-            let attrs: [CFString: Any] = [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA]
+            let attrs: [CFString: Any] = [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+            ]
             var session: VTDecompressionSession?
             let status = VTDecompressionSessionCreate(
                 allocator: kCFAllocatorDefault,
@@ -191,17 +247,19 @@ final class FrameUplink: @unchecked Sendable {
         let now = Date()
         let wantUpload = httpUploadEnabled && now.timeIntervalSince(lastUploadAt) >= uploadInterval
         if wantUpload { lastUploadAt = now }
+        let wantPublish = now.timeIntervalSince(lastPublishAt) >= publishInterval
+        if wantPublish { lastPublishAt = now }
         lock.unlock()
 
-        // Decode every frame (required for P-frame continuity). Every decoded
-        // frame goes to the WebRTC publisher; the ~1/second "wantUpload"
-        // frames additionally get JPEG-encoded and POSTed when enabled.
+        // Decode every frame (required for P-frame continuity). Publish at a
+        // bounded 12 fps; the ~1/second "wantUpload" frames additionally get
+        // JPEG-encoded and POSTed when enabled.
         VTDecompressionSessionDecodeFrame(session,
                                           sampleBuffer: sb,
                                           flags: [],
                                           infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
             guard status == noErr, let imageBuffer, let self else { return }
-            self.onDecodedFrame?(imageBuffer)
+            if wantPublish { self.onDecodedFrame?(imageBuffer) }
             if wantUpload { self.encodeAndPost(imageBuffer) }
         }
     }
@@ -441,12 +499,9 @@ final class GlassesStreamer: ObservableObject {
                     }
                 }
 
-                // .high (720x1280) so broadcast scoreboards are readable at
-                // TV distance. SDK 0.8 added automatic WiFi transport at high
-                // resolution (frames go over WiFi/softAP instead of Bluetooth),
-                // so 720p runs stable where it used to stall on BT. If it
-                // still cuts out, fall back to .medium 504x896.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 24)
+                // 504x896 is the device-proven stable profile over Bluetooth.
+                // It also keeps preview + WebRTC memory pressure bounded.
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 24)
                 guard let stream = try session.addStream(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
