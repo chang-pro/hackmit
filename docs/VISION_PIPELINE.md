@@ -50,15 +50,15 @@ Campus networks commonly prevent two wireless clients from reaching each other, 
 npm run phone:tunnel
 ```
 
-The command starts the analyzer and prints a random public URL similar to:
+The command starts the analyzer and serves the stable demo URL:
 
 ```text
-https://random-name.trycloudflare.com
+https://capture.saicharanramineni.com
 ```
 
-Open `https://random-name.trycloudflare.com/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider. Unlike the previous LocalTunnel and Tunnelmole paths, the public URL opens with a trusted certificate—there is no IP/password interstitial for the camera user.
+Open `https://capture.saicharanramineni.com/capture` on the desktop, copy its generated pairing link to the phone, and then start the phone camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the paired browser peers or through the configured TURN provider. Unlike the previous LocalTunnel and Tunnelmole paths, the public URL opens with a trusted certificate—there is no IP/password interstitial for the camera user.
 
-Cloudflare Quick Tunnel URLs are temporary development endpoints: the URL changes when the command restarts and the process must remain running. Do not publish the URL broadly because anyone with it can submit analysis requests.
+The stable hostname is backed by the named `bloomknights-capture` Cloudflare Tunnel. Its credentials JSON lives only at `~/.cloudflared/<tunnel-id>.json`; never commit it. The hostname survives restarts, but the connector process must be running for the route to answer. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
 ## Plumbing-only test without a model key
 

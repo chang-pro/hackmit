@@ -48,7 +48,20 @@ if ! command -v cloudflared >/dev/null 2>&1; then
   exit 1
 fi
 
-# Quick Tunnel: no account, no DNS configuration, and no browser interstitial.
+# Named tunnel for the stable demo endpoint:
+# https://capture.saicharanramineni.com
+# The credentials file is local-only and is deliberately never committed.
+TUNNEL_ID="${CLOUDFLARE_TUNNEL_ID:-0a4fd677-f4b8-4d44-9d57-53c9b974e4c5}"
+CREDENTIALS_FILE="${CLOUDFLARE_TUNNEL_CREDENTIALS_FILE:-$HOME/.cloudflared/${TUNNEL_ID}.json}"
+if [[ ! -f "$CREDENTIALS_FILE" ]]; then
+  echo "Named tunnel credentials are missing: $CREDENTIALS_FILE" >&2
+  echo "Set CLOUDFLARE_TUNNEL_CREDENTIALS_FILE to the local tunnel credentials JSON." >&2
+  exit 1
+fi
+
 # The server exposes only signaling plus user-gated sparse snapshots; the
 # phone's continuous WebRTC media path does not traverse Cloudflare.
-cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:${PORT}"
+cloudflared tunnel --no-autoupdate run \
+  --credentials-file "$CREDENTIALS_FILE" \
+  --url "http://127.0.0.1:${PORT}" \
+  "$TUNNEL_ID"
