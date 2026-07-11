@@ -143,6 +143,7 @@ test("sport-only fallback is labeled and does not overwrite a real model answer"
   assert.equal(intelligence.moment_id, "argentina-two-goal-lead");
   const realModel = { primary_probability: 0.42, risk_note: "Visual model" };
   assert.equal(analysisFromDemoIntelligence(intelligence, realModel).primary_probability, 0.42);
+  assert.equal(analysisFromDemoIntelligence(intelligence, null), null);
 });
 
 test("timeline selection cannot rewind after a noisy later observation", () => {
