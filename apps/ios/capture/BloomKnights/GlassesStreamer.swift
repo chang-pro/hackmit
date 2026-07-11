@@ -2,7 +2,9 @@ import Foundation
 import SwiftUI
 import UIKit
 import AVFoundation
+import CoreImage
 import CoreMedia
+import VideoToolbox
 import MWDATCore
 import MWDATCamera
 
@@ -74,6 +76,143 @@ final class PreviewSink: @unchecked Sendable {
             if l.status == .failed { l.flush() }
             if l.isReadyForMoreMediaData { l.enqueue(sb) }
         }
+    }
+}
+
+// FrameUplink — sends ~1 frame/second to the BloomKnights backend as JPEG
+// (POST /api/frames). Same proven decode pattern as before: HEVC P-frames
+// depend on prior frames, so EVERY sample buffer feeds the hardware
+// VTDecompressionSession (cheap at 720p/24); only ~1 decoded frame per second
+// is JPEG-encoded and uploaded. Purely additive — recording and preview are
+// untouched if the backend is down.
+final class FrameUplink: @unchecked Sendable {
+    private let lock = NSLock()
+    private var decodeSession: VTDecompressionSession?
+    private var streaming = false
+    private var lastUploadAt = Date.distantPast
+    private let uploadInterval: TimeInterval = 1.0   // ~1 fps to the backend
+    private let jpegQuality: CGFloat = 0.7
+    private let ciContext = CIContext()
+
+    // The tunnel to the laptop backend (tunnelmole). Changes when the tunnel
+    // restarts — update + rebuild.
+    private let framesURL = URL(string: "https://wcfox9-ip-132-170-212-21.tunnelmole.net/api/frames")!
+
+    private var sentCount = 0
+    private var okCount = 0
+    private var failCount = 0
+    var onStatus: @Sendable (String) -> Void = { _ in }
+
+    func setStreaming(_ on: Bool) {
+        lock.lock()
+        streaming = on
+        if on { sentCount = 0; okCount = 0; failCount = 0; lastUploadAt = .distantPast }
+        if !on, let s = decodeSession {
+            VTDecompressionSessionInvalidate(s)
+            decodeSession = nil
+        }
+        lock.unlock()
+    }
+
+    // A sample is a keyframe unless it is explicitly flagged NotSync. The
+    // decoder must start on a keyframe or the first GOP is undecodable.
+    private static func isKeyframe(_ sb: CMSampleBuffer) -> Bool {
+        guard let arr = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false),
+              CFArrayGetCount(arr) > 0 else { return true }
+        let dict = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CFDictionary.self) as NSDictionary
+        if let notSync = dict[kCMSampleAttachmentKey_NotSync as String] as? Bool { return !notSync }
+        return true
+    }
+
+    func ingest(_ sb: CMSampleBuffer) {
+        guard let fmt = CMSampleBufferGetFormatDescription(sb) else { return }
+
+        lock.lock()
+        guard streaming else { lock.unlock(); return }
+        if let s = decodeSession, !VTDecompressionSessionCanAcceptFormatDescription(s, formatDescription: fmt) {
+            VTDecompressionSessionInvalidate(s)
+            decodeSession = nil
+        }
+        if decodeSession == nil {
+            guard Self.isKeyframe(sb) else { lock.unlock(); return }   // wait for the first keyframe
+            let attrs: [CFString: Any] = [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA]
+            var session: VTDecompressionSession?
+            let status = VTDecompressionSessionCreate(
+                allocator: kCFAllocatorDefault,
+                formatDescription: fmt,
+                decoderSpecification: nil,
+                imageBufferAttributes: attrs as CFDictionary,
+                outputCallback: nil,
+                decompressionSessionOut: &session
+            )
+            guard status == noErr, let session else { lock.unlock(); return }
+            decodeSession = session
+        }
+        guard let session = decodeSession else { lock.unlock(); return }
+        let now = Date()
+        let wantUpload = now.timeIntervalSince(lastUploadAt) >= uploadInterval
+        if wantUpload { lastUploadAt = now }
+        lock.unlock()
+
+        // Decode every frame (required for P-frame continuity); only the
+        // ~1/second "wantUpload" frames get JPEG-encoded and POSTed.
+        VTDecompressionSessionDecodeFrame(session,
+                                          sampleBuffer: sb,
+                                          flags: [],
+                                          infoFlagsOut: nil) { [weak self] status, _, imageBuffer, _, _ in
+            guard status == noErr, let imageBuffer, let self, wantUpload else { return }
+            self.encodeAndPost(imageBuffer)
+        }
+    }
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private func encodeAndPost(_ imageBuffer: CVImageBuffer) {
+        let ciImage = CIImage(cvImageBuffer: imageBuffer)
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent),
+              let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: jpegQuality) else { return }
+
+        // Server contract (services/capture/gateway.js): snake_case fields;
+        // source + image_base64 + positive width/height are required.
+        let body: [String: Any] = [
+            "source": "rayban_sdk",
+            "sport": "auto",
+            "captured_at": Self.isoFormatter.string(from: Date()),
+            "image_base64": jpeg.base64EncodedString(),
+            "mime_type": "image/jpeg",
+            "width": Int(ciImage.extent.width),
+            "height": Int(ciImage.extent.height),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+
+        var req = URLRequest(url: framesURL)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 15
+        bump(sent: 1)
+        let task = URLSession.shared.uploadTask(with: req, from: data) { [weak self] _, resp, err in
+            guard let self else { return }
+            if let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                // 202 = server up but analysis not started on the capture page.
+                self.bump(ok: 1, note: http.statusCode == 202 ? "analysis OFF on server" : nil)
+            } else {
+                self.bump(fail: 1, note: err?.localizedDescription ?? "HTTP error")
+            }
+        }
+        task.resume()
+    }
+
+    private func bump(sent: Int = 0, ok: Int = 0, fail: Int = 0, note: String? = nil) {
+        lock.lock()
+        sentCount += sent; okCount += ok; failCount += fail
+        var line = "backend: sent \(sentCount) ok \(okCount) fail \(failCount)"
+        if let note { line += " — \(note)" }
+        lock.unlock()
+        onStatus(line)
     }
 }
 
@@ -185,6 +324,7 @@ final class GlassesStreamer: ObservableObject {
     @Published var frameSize = "-"
     @Published var elapsed = "00:00"
     @Published var uploadStatus = ""
+    @Published var uplinkStatus = ""   // live /api/frames counters
 
     // Mac Mini on the HOME LAN — recordings auto-upload here after STOP whenever
     // the phone is on home Wi-Fi. No Tailscale/VPN (that double-burns cellular);
@@ -204,11 +344,15 @@ final class GlassesStreamer: ObservableObject {
     private var tokens: [any AnyListenerToken] = []
     private var compatTokens: [DeviceIdentifier: any AnyListenerToken] = [:]
     private let recorder = RecorderBox()
+    private let uplink = FrameUplink()    // ~1 fps JPEG → backend /api/frames
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
     let preview = PreviewSink()   // live on-screen view of the hvc1 stream
 
     init() {
         deviceSelector = AutoDeviceSelector(wearables: Wearables.shared)
+        uplink.onStatus = { [weak self] line in
+            Task { @MainActor in self?.uplinkStatus = line }
+        }
     }
 
     // Start all the live monitors so the screen always shows current state.
@@ -299,6 +443,7 @@ final class GlassesStreamer: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         let wasRecording = isRecording
         recorder.setRecording(false); isRecording = false
+        uplink.setStreaming(false)
         stream?.stop(); stream = nil
         session?.stop(); session = nil
         // Drop the stream's frame/state/error listeners so a restart doesn't
@@ -311,7 +456,8 @@ final class GlassesStreamer: ObservableObject {
                 Task { @MainActor in
                     self?.savedFile = url?.lastPathComponent ?? ""
                     self?.status = "Saved \(url?.lastPathComponent ?? "?")"
-                    if let url { self?.uploadToMac(url) }
+                    // mp4-to-Mac-mini upload disabled here: live frames go to the
+                    // BloomKnights backend via FrameUplink instead (PokerAI-only path).
                 }
             }
         } else {
@@ -398,9 +544,11 @@ final class GlassesStreamer: ObservableObject {
                 // Record EVERY frame (cheap pass-through) AND feed the live preview
                 // layer, which decodes the encoded HEVC natively. Captured as locals
                 // so the SDK delivery thread never touches the @MainActor streamer.
+                let uplink = self.uplink
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
                     recorder.append(frame)
                     preview.enqueue(frame.sampleBuffer)
+                    uplink.ingest(frame.sampleBuffer)
                     guard recorder.tickPreview() else { return }
                     recorder.note(frame)
                     Task { @MainActor in self?.frameSize = recorder.sizeLabel() }
@@ -440,6 +588,7 @@ final class GlassesStreamer: ObservableObject {
                 // frame/keyframe is never dropped (append() no-ops until armed, and
                 // gates on the first keyframe anyway).
                 recorder.start(); recorder.setRecording(true)
+                uplink.setStreaming(true)
                 self.isRecording = true
                 self.lastRestartAt = .distantPast   // fresh session: clear stale debounce
                 // Keep Meta AI + the glasses audio route alive (or iOS suspends it
