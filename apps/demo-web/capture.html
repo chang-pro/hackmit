@@ -52,7 +52,9 @@
   .idle { position: absolute; left: 50%; top: 48%; width: min(430px, calc(100vw - 2rem)); padding: 2rem 1.75rem 1.45rem; border-radius: 2rem; text-align: center; transform: translate(-50%, -50%); transition: opacity .45s var(--ease), transform .45s var(--ease); }
   body.running .idle { opacity: 0; transform: translate(-50%,-46%) scale(.96); pointer-events: none; }
   .idle-glyph { width: 5.1rem; height: 5.1rem; margin: 0 auto 1.1rem; }
-  .idle-title { font-size: clamp(1.7rem, 4vw, 2.25rem); font-weight: 650; letter-spacing: -.055em; }
+  @keyframes glyph-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .idle-glyph.spin { animation: glyph-spin 0.6s var(--ease); }
+  .idle-title { font-size: clamp(1.7rem, 4vw, 2.25rem); font-weight: 650; letter-spacing: -.055em; transition: opacity 0.4s var(--ease); }
   .idle-sub { max-width: 32ch; margin: .75rem auto 0; color: var(--ink-muted); font-size: .92rem; line-height: 1.55; }
   .pairing { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .46rem; width: 100%; margin: 1.35rem auto 0; padding: .62rem .65rem .62rem .8rem; border: 1px solid rgba(255,255,255,.13); border-radius: 1.05rem; background: rgba(5,7,18,.26); text-align: left; }
   .pairing-label { color: var(--ink-faint); font: .57rem var(--mono); letter-spacing: .16em; }.pairing-code { color: #e9e4ff; font: .78rem var(--mono); letter-spacing: .12em; }.pairing-copy { border: 1px solid rgba(255,255,255,.24); border-radius: .7rem; padding: .42rem .58rem; color: var(--ink); background: linear-gradient(135deg, rgba(255,255,255,.30), rgba(255,255,255,.08)), rgba(152,171,255,.16); box-shadow: inset 0 1px 0 rgba(255,255,255,.36), 0 6px 18px rgba(89,104,198,.16); backdrop-filter: blur(14px) saturate(170%); -webkit-backdrop-filter: blur(14px) saturate(170%); cursor: pointer; font: 700 .68rem "Outfit", sans-serif; transition: transform .25s var(--ease), background .25s var(--ease); }.pairing-copy:hover { transform: translateY(-1px); background: linear-gradient(135deg, rgba(255,255,255,.38), rgba(255,255,255,.12)), rgba(152,171,255,.22); }.pairing-link { grid-column: 1/-1; overflow: hidden; color: var(--ink-faint); font: .62rem var(--mono); text-overflow: ellipsis; white-space: nowrap; }
@@ -150,7 +152,7 @@
 
     <div class="idle glass-card" id="idle">
       <div class="idle-glyph" aria-hidden="true"></div>
-      <div class="idle-title">Look at the game</div>
+      <div class="idle-title" id="idleTitle">Every game, quantified</div>
       <div class="idle-sub" id="idleHint">Create a private WebRTC pairing link, then open it on the phone or glasses companion.</div>
       <div class="pairing" id="pairing">
         <span class="pairing-label">PAIR CODE</span>
@@ -675,6 +677,13 @@ async function refreshAnalysis() {
 
 $("toggle").addEventListener("click", () => createPairing().catch(() => setStatusPill("error", "pairing error")));
 $("copyPhoneLink").addEventListener("click", async () => {
+  const glyph = document.querySelector(".idle-glyph");
+  if (glyph) {
+    glyph.classList.remove("spin");
+    void glyph.offsetWidth; // restart the animation on repeat clicks
+    glyph.classList.add("spin");
+    glyph.addEventListener("animationend", () => glyph.classList.remove("spin"), { once: true });
+  }
   try {
     await navigator.clipboard.writeText($("phoneLink").href);
     $("copyPhoneLink").textContent = "Copied";
@@ -717,6 +726,23 @@ if (new URLSearchParams(location.search).get("demo") === "1") setTimeout(startDe
 setInterval(refreshAnalysis, INSIGHT_POLL_MS);
 setInterval(refreshVideoStats, INSIGHT_POLL_MS);
 createPairing().catch(() => setStatusPill("error", "pairing error"));
+// Rotate the idle headline through the calm/confident lines with a 2.5s fade-out.
+const IDLE_TITLES = [
+  "Every game, quantified",
+  "Live odds, in your lens",
+];
+let idleTitleIdx = 0;
+const idleTitleEl = $("idleTitle");
+if (idleTitleEl) setInterval(() => {
+  idleTitleEl.style.transition = "opacity 2.5s var(--ease)";
+  idleTitleEl.style.opacity = "0";
+  setTimeout(() => {
+    idleTitleIdx = (idleTitleIdx + 1) % IDLE_TITLES.length;
+    idleTitleEl.textContent = IDLE_TITLES[idleTitleIdx];
+    idleTitleEl.style.transition = "opacity 0.4s var(--ease)";
+    idleTitleEl.style.opacity = "1";
+  }, 2500);
+}, 4500);
 </script>
 </body>
 </html>
