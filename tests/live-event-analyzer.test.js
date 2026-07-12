@@ -65,7 +65,7 @@ function frame(index) {
   };
 }
 
-test("queues four frames and packs the fifth into one model request", async () => {
+test("analyzes the first frame immediately, then batches later model windows", async () => {
   let now = 0;
   const batches = [];
   const analyzer = new LiveEventAnalyzer({
@@ -80,19 +80,25 @@ test("queues four frames and packs the fifth into one model request", async () =
     analyze: async () => analysis,
   });
 
-  for (let index = 1; index <= 4; index += 1) {
-    const result = await analyzer.submit(frame(index));
-    assert.equal(result.analysis_status, "queued");
-    now += 2400;
-  }
-  const result = await analyzer.submit(frame(5));
-  assert.equal(result.analysis_status, "analyzed");
+  const first = await analyzer.submit(frame(1));
+  assert.equal(first.analysis_status, "analyzed");
   assert.equal(batches.length, 1);
-  assert.equal(batches[0].length, 5);
+  assert.equal(batches[0].length, 1);
+
+  for (let index = 2; index <= 5; index += 1) {
+    now += 2400;
+    const queued = await analyzer.submit(frame(index));
+    assert.equal(queued.analysis_status, "queued");
+  }
+  now = 12_000;
+  const result = await analyzer.submit(frame(6));
+  assert.equal(result.analysis_status, "analyzed");
+  assert.equal(batches.length, 2);
+  assert.equal(batches[1].length, 5);
   assert.equal(result.insight.observation.sport, "mma");
   assert.equal(result.insight.analysis.primary_probability, 0.62);
-  assert.equal(result.queue.calls_last_minute.vision, 1);
-  assert.equal(result.queue.calls_last_minute.analytics, 1);
+  assert.equal(result.queue.calls_last_minute.vision, 2);
+  assert.equal(result.queue.calls_last_minute.analytics, 2);
 });
 
 test("never starts another model window before twelve seconds", async () => {

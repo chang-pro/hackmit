@@ -5,6 +5,7 @@ import {
   CEREBRAS_VISION_MODEL,
   createCerebrasBackend,
 } from "../services/vision/backends/cerebras.js";
+import { selectDemoIntelligence } from "../services/demo/intelligence.js";
 
 test("Gemma 4 backend sends a base64 phone image with strict scoreboard output", async () => {
   let request;
@@ -39,36 +40,13 @@ test("Gemma 4 backend sends a base64 phone image with strict scoreboard output",
   assert.equal(result.clock_text, "2:14");
 });
 
-test("Gemma 4 compresses a five-frame window to its earliest and latest images", async () => {
+test("Gemma 4 classifies only the newest frame into one of four demo sports", async () => {
   let request;
   const backend = createCerebrasBackend({
     complete: async (args) => {
       request = args;
       return {
-        data: {
-          sport: "soccer",
-          competition: "FIFA World Cup",
-          event_name: "USA vs Brazil",
-          event_identity: "soccer:usa-vs-brazil-world-cup-2026",
-          event_format: "team_event",
-          participants: [
-            { name: "USA", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
-            { name: "Brazil", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
-          ],
-          participant_a: "USA",
-          participant_b: "Brazil",
-          score_a: 1,
-          score_b: 1,
-          score_display: "1-1",
-          phase: "Second half",
-          clock: "72:14",
-          event_status: "live",
-          possession_or_control: "Brazil",
-          situation: "Open play",
-          visible_facts: ["Score tied"],
-          changes_across_frames: ["Clock advanced"],
-          confidence: 0.93,
-        },
+        data: { classification: "soccer", confidence: 0.93 },
         meta: { model: CEREBRAS_VISION_MODEL },
       };
     },
@@ -79,17 +57,47 @@ test("Gemma 4 compresses a five-frame window to its earliest and latest images",
   }));
   const result = await backend.extractEventBatch(frames);
   const imageParts = request.messages[1].content.filter((part) => part.type === "image_url");
-  assert.equal(request.schemaName, "multisport_live_event_window");
-  assert.equal(imageParts.length, 2);
-  assert.equal(imageParts[0].image_url.url, "data:image/jpeg;base64,ZnJhbWUt0");
-  assert.equal(imageParts[1].image_url.url, "data:image/jpeg;base64,ZnJhbWUt4");
-  assert.match(request.messages[1].content[0].text, /window of 5 ordered camera frame/);
-  assert.match(request.messages[1].content[0].text, /2 representative image/);
-  assert.equal(request.schema.properties.sport.enum, undefined);
-  assert.equal(request.schema.properties.event_identity.type, "string");
-  assert.equal(request.schema.properties.participants.type, "array");
-  assert.match(request.messages[0].content, /phase must be the explicit numbered round/);
+  assert.equal(request.schemaName, "demo_stream_sport_classification");
+  assert.equal(request.maxCompletionTokens, 80);
+  assert.equal(imageParts.length, 1);
+  assert.equal(imageParts[0].image_url.url, "data:image/jpeg;base64,ZnJhbWUt4");
+  assert.deepEqual(request.schema.properties.classification.enum, [
+    "basketball", "american_football", "soccer", "mma", "unclear",
+  ]);
+  assert.match(request.messages[0].content, /Do not identify teams, players, score, clock, league, or exact event/);
   assert.equal(result.sport, "soccer");
+  assert.equal(result.event_identity, "world-cup-2022-final");
+  assert.equal(result.classification, "soccer");
+});
+
+test("each classifier label maps directly to its one allowed replay, while unclear maps to none", async () => {
+  const expected = new Map([
+    ["basketball", "nba-celtics-knicks-2026"],
+    ["american_football", "super-bowl-li"],
+    ["soccer", "world-cup-2022-final"],
+    ["mma", "ufc-229"],
+  ]);
+  for (const [classification, streamId] of expected) {
+    const backend = createCerebrasBackend({
+      complete: async () => ({ data: { classification, confidence: 0.9 } }),
+    });
+    const observation = await backend.extractEventBatch([{
+      mime_type: "image/jpeg",
+      image_base64: "c2NyZWVu",
+    }]);
+    const intelligence = selectDemoIntelligence(observation);
+    assert.equal(intelligence.playback.stream_id, streamId);
+    assert.equal(intelligence.mode, "precollected_event_replay");
+  }
+
+  const unclearBackend = createCerebrasBackend({
+    complete: async () => ({ data: { classification: "unclear", confidence: 0.99 } }),
+  });
+  const unclear = await unclearBackend.extractEventBatch([{
+    mime_type: "image/jpeg",
+    image_base64: "c2NyZWVu",
+  }]);
+  assert.equal(selectDemoIntelligence(unclear), null);
 });
 
 test("Cerebras client uses chat completions and parses strict JSON", async () => {
