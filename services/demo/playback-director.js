@@ -1,6 +1,4 @@
-export const MIN_PLAYBACK_CONFIDENCE = 0.72;
-export const STRONG_PLAYBACK_CONFIDENCE = 0.92;
-export const REQUIRED_SWITCH_CONFIRMATIONS = 2;
+export const MIN_PLAYBACK_CONFIDENCE = 0.70;
 
 function boundedConfidence(value) {
   const confidence = Number(value);
@@ -10,8 +8,10 @@ function boundedConfidence(value) {
 export function playbackCandidateFromInsight(insight) {
   const intelligence = insight?.demo_intelligence;
   const playback = intelligence?.playback;
-  if (insight?.source !== "live" || intelligence?.mode !== "precollected_event_replay" ||
-      intelligence?.checkpoint_status !== "ready" || !playback) return null;
+  const exactCheckpoint = intelligence?.mode === "precollected_event_replay" &&
+    intelligence?.checkpoint_status === "ready";
+  const approximateEventSync = playback?.match_mode === "approximate_event_sync";
+  if (insight?.source !== "live" || (!exactCheckpoint && !approximateEventSync) || !playback) return null;
   const confidence = Math.min(
     boundedConfidence(insight?.observation?.confidence),
     boundedConfidence(intelligence?.match_confidence),
@@ -26,7 +26,8 @@ export function playbackCandidateFromInsight(insight) {
     mime_type: playback.mime_type || "video/mp4",
     muted: playback.muted !== false,
     filename: playback.filename,
-    moment_id: intelligence.moment_id,
+    moment_id: intelligence.moment_id ?? playback.moment_id,
+    match_mode: playback.match_mode ?? "exact_checkpoint",
     available_in_media: playback.available_in_media !== false,
     calibrated: playback.calibrated === true && Number.isFinite(playback.playback_start_seconds),
     seek_seconds: Number.isFinite(playback.playback_start_seconds) ? playback.playback_start_seconds : null,
@@ -72,7 +73,6 @@ export class PlaybackDirector {
     this.revision = 0;
     this.active = null;
     this.candidate = null;
-    this.pendingSwitch = null;
     this.reason = "awaiting_exact_stream_detection";
   }
 
@@ -80,49 +80,28 @@ export class PlaybackDirector {
     const candidate = playbackCandidateFromInsight(insight);
     if (!candidate) {
       this.candidate = null;
-      this.pendingSwitch = null;
       this.reason = this.active ? "current_stream_continues" : "awaiting_exact_stream_detection";
       return this.snapshot();
     }
     if (this.active?.stream_id === candidate.stream_id) {
       this.candidate = null;
-      this.pendingSwitch = null;
       this.reason = "same_stream_continues_without_reseek";
       return this.snapshot();
     }
     if (!candidate.available_in_media) {
-      this.pendingSwitch = null;
       this.candidate = { ...candidate, reason: "checkpoint_not_in_media" };
       this.reason = "detected_checkpoint_not_in_local_edit";
       return this.snapshot();
     }
     if (!candidate.calibrated) {
-      this.pendingSwitch = null;
       this.candidate = { ...candidate, reason: "checkpoint_offset_not_calibrated" };
       this.reason = "detected_stream_checkpoint_not_calibrated";
       return this.snapshot();
     }
     if (!assetAvailable) {
-      this.pendingSwitch = null;
       this.candidate = { ...candidate, reason: "media_file_missing" };
       this.reason = "detected_stream_media_unavailable";
       return this.snapshot();
-    }
-    if (candidate.event_confidence < STRONG_PLAYBACK_CONFIDENCE) {
-      const confirmations = this.pendingSwitch?.stream_id === candidate.stream_id
-        ? this.pendingSwitch.confirmations + 1
-        : 1;
-      this.pendingSwitch = { stream_id: candidate.stream_id, confirmations };
-      if (confirmations < REQUIRED_SWITCH_CONFIRMATIONS) {
-        this.candidate = {
-          ...candidate,
-          reason: "awaiting_stream_confirmation",
-          confirmations,
-          confirmations_required: REQUIRED_SWITCH_CONFIRMATIONS,
-        };
-        this.reason = "awaiting_stream_confirmation";
-        return this.snapshot();
-      }
     }
     this.revision += 1;
     this.active = {
@@ -131,7 +110,6 @@ export class PlaybackDirector {
       locked_at: new Date(this.now()).toISOString(),
     };
     this.candidate = null;
-    this.pendingSwitch = null;
     this.reason = this.revision === 1 ? "initial_stream_lock" : "new_stream_detected";
     return this.snapshot();
   }
@@ -160,7 +138,6 @@ export class PlaybackDirector {
     this.revision += 1;
     this.active = null;
     this.candidate = null;
-    this.pendingSwitch = null;
     this.reason = "explicit_reset";
     return this.snapshot();
   }

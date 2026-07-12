@@ -359,16 +359,18 @@ test("unresolved checkpoints and ambiguous MMA phases stay pending without odds"
     participants: [{ name: "Boston Celtics" }, { name: "New York Knicks" }],
     participant_a: "Boston Celtics",
     participant_b: "New York Knicks",
-    score_a: 50,
-    score_b: 55,
-    score_display: "BOS 50 - NYK 55",
-    phase: "Q2",
-    clock: "8:00",
+    score_a: 17,
+    score_b: 12,
+    score_display: "17-12",
+    phase: "1st Quarter",
+    clock: "4:10",
   }));
   assert.equal(offCheckpoint.mode, "precollected_event_pending");
   assert.equal(offCheckpoint.pending_reason, "visible_score_not_in_calibrated_checkpoints");
   assert.equal(offCheckpoint.moment_id, null);
-  assert.equal(offCheckpoint.playback, null);
+  assert.equal(offCheckpoint.playback.match_mode, "approximate_event_sync");
+  assert.equal(offCheckpoint.playback.stream_id, "nba-celtics-knicks-2026");
+  assert.ok(Math.abs(offCheckpoint.playback.playback_start_seconds - 176.54) < 1);
   assert.equal(offCheckpoint.market, null);
 
   const mma = selectDemoIntelligence(observation({

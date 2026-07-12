@@ -25,6 +25,7 @@ const PACKS = PACK_FILES.map((name) =>
 
 const MIN_VISION_CONFIDENCE = 0.55;
 const MIN_DETERMINISTIC_CONFIDENCE = 0.72;
+const MIN_STREAM_SWITCH_CONFIDENCE = 0.70;
 const MIN_MOMENT_SCORE = 4;
 const MIN_MOMENT_MARGIN = 0.75;
 const UNKNOWN_TEXT = new Set(["", "unknown", "unidentified", "n a", "na", "none", "null"]);
@@ -218,8 +219,9 @@ function canonicalPhase(value, sport) {
   if (sport === "basketball" || sport === "american_football") {
     if (/\b(?:half time|halftime|end q?2|end 2q)\b/.test(phase)) return "halftime";
     const quarter = phase.match(/\b(?:q|quarter|qtr)\s*([1-5])\b/) ??
-      phase.match(/\b([1-5])\s*(?:q|quarter|qtr)\b/);
+      phase.match(/\b([1-5])(?:st|nd|rd|th)?\s*(?:q|quarter|qtr)\b/);
     if (quarter) return `q${quarter[1]}`;
+    if (/\b(?:ot|overtime)\b/.test(phase)) return "q5";
   }
   if (sport === "mma") {
     const round = phase.match(/\b(?:round|rd|rnd|r)\s*([1-5])\b/);
@@ -324,6 +326,74 @@ function selectMoment(pack, observation, previous) {
   return { ...best, status: "ready", reason: null };
 }
 
+function phaseNumber(values, sport) {
+  for (const value of values) {
+    const phase = canonicalPhase(value, sport);
+    const match = sport === "mma"
+      ? phase.match(/^round ([1-5])$/)
+      : phase.match(/^q([1-5])$/);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+function timelineProgress(sport, phaseValues, clockValue) {
+  const remaining = typeof clockValue === "number" ? clockValue : clockSeconds(clockValue);
+  if (remaining == null) return null;
+  if (sport === "soccer") return remaining;
+  const period = phaseNumber(phaseValues, sport);
+  if (!period) return null;
+  const periodSeconds = sport === "mma" ? 300 : sport === "american_football" ? 900 : 720;
+  return (period - 1) * periodSeconds + Math.max(0, periodSeconds - remaining);
+}
+
+function approximatePlaybackTarget(pack, observation) {
+  const targets = pack.moments
+    .map((moment) => ({ moment, target: getDemoPlaybackTarget(pack.id, moment.id) }))
+    .filter(({ target }) => target?.calibrated);
+  const base = targets[0]?.target;
+  if (!base) return null;
+  const observedProgress = timelineProgress(pack.sport, [observation?.phase], observation?.clock);
+  const anchors = targets
+    .map(({ moment, target }) => ({
+      progress: timelineProgress(pack.sport, moment.phase_tokens ?? [], moment.clock_seconds),
+      media: target.anchor_media_seconds,
+    }))
+    .filter((point) => Number.isFinite(point.progress) && Number.isFinite(point.media))
+    .sort((left, right) => left.progress - right.progress);
+
+  let anchor = 0;
+  if (Number.isFinite(observedProgress) && anchors.length > 0) {
+    let left = anchors[0];
+    let right = anchors[1] ?? left;
+    for (let index = 1; index < anchors.length; index += 1) {
+      if (observedProgress <= anchors[index].progress) {
+        right = anchors[index];
+        left = anchors[index - 1];
+        break;
+      }
+      left = anchors[index];
+      right = anchors[index];
+    }
+    if (observedProgress < anchors[0].progress && anchors.length > 1) {
+      left = anchors[0];
+      right = anchors[1];
+    }
+    const span = right.progress - left.progress;
+    const ratio = span > 0 ? (observedProgress - left.progress) / span : 0;
+    anchor = Math.max(0, left.media + ratio * (right.media - left.media));
+  }
+  return {
+    ...base,
+    moment_id: null,
+    match_mode: "approximate_event_sync",
+    anchor_media_seconds: anchor,
+    playback_start_seconds: Math.max(0, anchor - 2.5),
+    available_in_media: true,
+    calibrated: true,
+  };
+}
+
 function detectedFocus(pack, observation, basis) {
   const names = primaryParticipantNames(observation);
   const matched = names.find((name) =>
@@ -384,9 +454,13 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
   const gap = deterministicReady
     ? Number(((modelProbability - marketProbability) * 100).toFixed(1))
     : null;
-  const playback = deterministicReady && selection.status === "ready"
+  const checkpointPlayback = deterministicReady && selection.status === "ready"
     ? getDemoPlaybackTarget(pack.id, moment.id)
     : null;
+  const playback = checkpointPlayback ??
+    (match.exactEvidence && match.confidence >= MIN_STREAM_SWITCH_CONFIDENCE
+      ? approximatePlaybackTarget(pack, observation)
+      : null);
 
   return {
     mode,
