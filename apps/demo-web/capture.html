@@ -29,8 +29,12 @@
   .stage::before, .stage::after { content: ""; position: absolute; pointer-events: none; z-index: 0; filter: blur(1px); }
   .stage::before { width: 44vmax; height: 44vmax; left: -18vmax; top: 23%; border-radius: 40% 60% 52% 48%; background: rgba(214,187,255,.34); transform: rotate(24deg); }
   .stage::after { width: 48vmax; height: 32vmax; right: -19vmax; bottom: -13vmax; border-radius: 50%; background: rgba(132,210,255,.29); transform: rotate(-15deg); }
-  #video, #remotePreview { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; background: transparent; }
+  #video, #videoStandby, #remotePreview { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; background: transparent; }
+  .program-video { display: block; opacity: 0; pointer-events: none; transition: opacity .38s var(--ease); }
+  .program-video.program-active { opacity: 1; pointer-events: auto; }
   #remotePreview { display: none; filter: saturate(1.08) contrast(1.03); }
+  body.remote-feed:not(.playback-active) #remotePreview { display: block; }
+  body.playback-active #remotePreview { display: none !important; }
   .scrim { position: absolute; z-index: 2; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(248,250,255,.80), transparent 29%, transparent 56%, rgba(248,250,255,.86)); }
   body.running .scrim { background: linear-gradient(180deg, rgba(250,252,255,.52), transparent 27%, transparent 58%, rgba(250,252,255,.62)); }
   .ambient { position: absolute; z-index: 3; inset: 0; pointer-events: none; overflow: hidden; mix-blend-mode: normal; opacity: .64; }
@@ -87,12 +91,15 @@
   .analysis-tiles { display: none; }
   body.running .theater-shell { top: 1.5rem; right: calc(clamp(18rem, 25vw, 23rem) + 3rem); bottom: 1.5rem; left: 1.5rem; }
   body.running .theater-screen { overflow: hidden; border: 1px solid rgba(255,255,255,.82); border-radius: 1.45rem; background: #101624; box-shadow: 0 24px 60px rgba(40,54,94,.20), inset 0 1px 0 rgba(255,255,255,.20); }
-  body.running #video, body.running #remotePreview { border-radius: inherit; }
-  body.running #remotePreview { object-fit: contain; }
+  body.running #video, body.running #videoStandby, body.running #remotePreview { border-radius: inherit; object-fit: contain; }
   body.running .scrim { display: none; }
   body.running .ambient { opacity: .22; }
   body.running .reticle, body.running .dock { display: none; }
   body.running .analysis-tiles { position: absolute; z-index: 5; top: 1.5rem; right: 1.5rem; bottom: 1.5rem; display: grid; width: clamp(18rem, 25vw, 23rem); grid-template-rows: minmax(0, 1.35fr) auto minmax(0, .9fr); gap: .9rem; align-content: stretch; }
+  .program-status { position: absolute; z-index: 7; top: 1rem; left: 1rem; max-width: min(31rem, calc(100% - 2rem)); overflow: hidden; padding: .48rem .7rem; border: 1px solid rgba(255,255,255,.5); border-radius: 999px; color: rgba(244,248,255,.95); background: rgba(13,23,48,.46); box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 8px 24px rgba(3,13,35,.2); backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%); opacity: 0; transform: translateY(-.4rem); transition: opacity .3s var(--ease), transform .3s var(--ease); font: 600 .58rem var(--mono); letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
+  body.running .program-status { opacity: 1; transform: none; }
+  .program-status.locked { color: #cbffe9; background: rgba(13,55,48,.5); }
+  .program-status.error { color: #ffe2aa; background: rgba(71,45,17,.5); }
   .analysis-tile { min-width: 0; border: 1px solid rgba(255,255,255,.78); border-radius: 1.2rem; background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(255,255,255,.34)); box-shadow: 0 16px 38px rgba(86,104,162,.14), inset 0 1px 0 rgba(255,255,255,.82); backdrop-filter: blur(26px) saturate(165%); -webkit-backdrop-filter: blur(26px) saturate(165%); }
   .research-tile { display: flex; min-height: 0; flex-direction: column; overflow: hidden; padding: 1.15rem; }
   .tile-eyebrow { color: #66708f; font: .58rem var(--mono); letter-spacing: .15em; text-transform: uppercase; }
@@ -282,6 +289,67 @@
     body.ops-mode .pipeline { grid-template-columns: repeat(5, minmax(3.2rem, 1fr)); overflow-x: auto; }
   }
   @media (max-width: 640px) { .dock { bottom: max(.85rem, env(safe-area-inset-bottom)); }.connect { min-width: 9.75rem; } }
+
+  .analyst-chat { display: none; }
+  body.running .analyst-chat {
+    position: absolute; z-index: 6; left: auto; right: 1.5rem; bottom: 1.5rem;
+    display: flex; flex-direction: column; width: clamp(18rem, 25vw, 23rem);
+    max-height: min(34vh, 20rem); padding: .9rem .95rem .85rem;
+    border: 1px solid rgba(255,255,255,.78); border-radius: 1.15rem;
+    background: linear-gradient(135deg, rgba(255,255,255,.86), rgba(255,255,255,.42));
+    box-shadow: 0 18px 42px rgba(72,89,143,.16), inset 0 1px 0 rgba(255,255,255,.9);
+    backdrop-filter: blur(24px) saturate(170%); -webkit-backdrop-filter: blur(24px) saturate(170%);
+  }
+  body.running .analysis-tiles { bottom: calc(1.5rem + min(34vh, 20rem) + .75rem); }
+  body.running.ops-mode .analyst-chat { left: auto; right: 1.5rem; bottom: 1.15rem; width: clamp(20rem, 28vw, 26rem); }
+  body.running.ops-mode .analysis-tiles { bottom: calc(1.15rem + min(34vh, 20rem) + .75rem); }
+  .chat-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
+  .chat-head .tile-title { margin-top: .18rem; font-size: .92rem; }
+  .chat-model { color: #66708f; font: 600 .5rem var(--mono); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+  .chat-log {
+    display: flex; flex-direction: column; gap: .55rem; min-height: 0; flex: 1;
+    margin-top: .7rem; padding-right: .2rem; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: rgba(112,126,174,.35) transparent;
+  }
+  .chat-log::-webkit-scrollbar { width: .3rem; }
+  .chat-log::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(112,126,174,.30); }
+  .chat-bubble {
+    max-width: 100%; padding: .55rem .65rem; border-radius: .8rem;
+    font: .74rem/1.45 "Outfit", sans-serif; white-space: pre-wrap; word-break: break-word;
+  }
+  .chat-bubble.user { align-self: flex-end; color: #24304d; background: rgba(169,155,255,.18); border: 1px solid rgba(169,155,255,.22); }
+  .chat-bubble.assistant { align-self: flex-start; color: #303a58; background: rgba(255,255,255,.62); border: 1px solid rgba(84,94,132,.12); }
+  .chat-bubble.pending { color: #66708f; font-family: var(--mono); font-size: .62rem; letter-spacing: .04em; }
+  .chat-bubble.error { color: #8a4b1f; background: rgba(255,224,186,.42); border-color: rgba(255,186,120,.35); }
+  .chat-form { display: grid; grid-template-columns: 1fr auto; gap: .45rem; margin-top: .7rem; }
+  .chat-form input {
+    min-width: 0; padding: .62rem .75rem; border: 1px solid rgba(84,94,132,.16); border-radius: .8rem;
+    color: var(--ink); background: rgba(255,255,255,.72); font: .78rem "Outfit", sans-serif; outline: none;
+  }
+  .chat-form input:focus { border-color: rgba(121,200,255,.55); box-shadow: 0 0 0 3px rgba(121,200,255,.14); }
+  .chat-form button {
+    padding: .62rem .9rem; border: 1px solid transparent; border-radius: .8rem; cursor: pointer;
+    color: #252b40; background: linear-gradient(135deg, rgba(255,255,255,.86), rgba(255,255,255,.36)) padding-box, var(--spectrum) border-box;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.96), 0 8px 18px rgba(91,113,191,.14);
+    font: 700 .76rem "Outfit", sans-serif;
+  }
+  .chat-form button:disabled { opacity: .6; cursor: default; }
+  .chat-empty { color: #6d7692; font: .68rem/1.45 "Outfit", sans-serif; }
+  @media (max-width: 1100px) {
+    body.running.ops-mode .analyst-chat { width: clamp(18rem, 32vw, 22rem); }
+  }
+  @media (max-width: 900px) {
+    body.running .analyst-chat, body.running.ops-mode .analyst-chat {
+      left: .85rem; right: .85rem; bottom: .85rem; width: auto; max-height: 28vh;
+    }
+    body.running .analysis-tiles,
+    body.running.ops-mode .analysis-tiles { bottom: calc(.85rem + 28vh + .55rem); }
+  }
+  @media (max-width: 720px) {
+    body.running .analyst-chat, body.running.ops-mode .analyst-chat { max-height: 24vh; }
+    body.running .analysis-tiles,
+    body.running.ops-mode .analysis-tiles { bottom: calc(.85rem + 24vh + .45rem); }
+  }
   @media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
 </style>
 </head>
@@ -289,8 +357,10 @@
 <div class="stage">
   <div class="theater-shell">
     <div class="theater-screen">
-      <video id="video" autoplay playsinline muted></video>
+      <video id="video" class="program-video" autoplay playsinline muted controls preload="metadata"></video>
+      <video id="videoStandby" class="program-video" autoplay playsinline muted controls preload="metadata"></video>
       <video id="remotePreview" autoplay playsinline muted></video>
+      <div class="program-status" id="programStatus" aria-live="polite">Camera preview · searching four local broadcasts</div>
       <div class="vision-overlay" id="visionOverlay" aria-hidden="true" hidden></div>
       <div class="vision-overlay-status" id="visionOverlayStatus" hidden></div>
       <div class="theater-hud" id="theaterHud" hidden>
@@ -388,6 +458,24 @@
       </section>
     </aside>
 
+
+    <section class="analyst-chat" id="analystChat" hidden aria-label="Analyst chat">
+      <div class="chat-head">
+        <div>
+          <div class="tile-eyebrow">Analyst</div>
+          <div class="tile-title">Ask about this moment</div>
+        </div>
+        <div class="chat-model" id="chatModel">Gemini 3.1 Flash-Lite</div>
+      </div>
+      <div class="chat-log" id="chatLog" aria-live="polite">
+        <div class="chat-empty" id="chatEmpty">Ask why the probability moved, what the gap means, or what to watch next.</div>
+      </div>
+      <form class="chat-form" id="chatForm">
+        <input id="chatInput" type="text" maxlength="1200" autocomplete="off" placeholder="Why did the model diverge from the market?" />
+        <button type="submit" id="chatSend">Ask</button>
+      </form>
+    </section>
+
     <nav class="checkpoint-rail" id="checkpointRail" hidden aria-label="Event checkpoints">
       <div class="rail-label">Timeline</div>
       <div class="rail-track" id="checkpointTrack"></div>
@@ -411,13 +499,16 @@
   <canvas id="canvas" hidden></canvas>
 </div>
 
-<script>
+<script type="module">
+import { playbackDirectiveTarget } from "/playback-policy.js";
+
 const SIGNAL_POLL_MS = 350;
 const INSIGHT_POLL_MS = 1_000;
 const OPS_MODE = new URLSearchParams(location.search).get("ops") === "1";
 document.body.classList.toggle("ops-mode", OPS_MODE);
 const $ = (id) => document.getElementById(id);
 const video = $("video");
+const videoStandby = $("videoStandby");
 const remotePreview = $("remotePreview");
 const analyzeButton = $("analyze");
 let sessionId = null;
@@ -437,9 +528,24 @@ let demoRehearsalGeneration = 0;
 let visualDetections = [];
 let visualDetectionSource = null;
 let activeSessionRefreshInFlight = false;
+let latestChatInsight = null;
+let chatHistory = [];
+let chatBusy = false;
 let lastInsightKey = "";
 let insightFlashTimer = null;
 let yoloTrackerFps = null;
+let activeProgramVideo = null;
+let latestPlaybackEpoch = 0;
+let activePlaybackEpoch = 0;
+let activePlaybackRevision = 0;
+let activePlaybackStreamId = null;
+let activePlaybackLabel = null;
+let pendingPlaybackEpoch = 0;
+let pendingPlaybackRevision = 0;
+let playbackLoadGeneration = 0;
+let theaterSourceGeneration = 0;
+let lastTheaterSource = "none";
+let analysisRefreshInFlight = false;
 
 const DETECTION_STYLES = {
   athlete: { stroke: "#83e9ff", fill: "rgba(87, 188, 255, .14)", glow: "rgba(87, 188, 255, .32)" },
@@ -458,7 +564,7 @@ const MIN_REHEARSAL_INTERVAL_MS = 5_000;
 const MAX_REHEARSAL_INTERVAL_MS = 30_000;
 const DEMO_REHEARSAL_SEQUENCE = Object.freeze([
   { pack: "world-cup-2022-final", moment: "argentina-two-goal-lead" },
-  { pack: "nba-finals-2016-game-7", moment: "late-tie" },
+  { pack: "nba-celtics-knicks-2026", moment: "late-tie" },
   { pack: "super-bowl-li", moment: "twenty-eight-three" },
   { pack: "super-bowl-li", moment: "game-tied" },
   { pack: "ufc-229", moment: "submission-finish" },
@@ -467,10 +573,54 @@ const STEPS = [
   "Open <b>/phone</b> or the glasses companion on the camera device.",
   "Press <b>Start live feed</b> and allow camera access.",
   "The most recently started camera becomes this viewer's source automatically.",
-  "The camera video connects directly to this browser with WebRTC; the public tunnel carries signaling only.",
-  "Press <b>Analyze</b> here only when you want to start model requests.",
+  "Press <b>Analyze</b>. Cerebras identifies one of the four indexed broadcasts and its calibrated checkpoint.",
+  "The theater loads that local MP4 once, then continues playing it without reseeking until a different broadcast is detected.",
 ];
-const NOTE = "If this campus network blocks a direct peer connection, configure a TURN server with WEBRTC_ICE_SERVERS_JSON. Video never passes through the public HTTP tunnel.";
+const NOTE = "Use localhost for the desktop viewer so the predownloaded broadcasts stay on the laptop. The phone/glasses can keep using the stable public /phone URL; its WebRTC detector remains connected behind the local replay.";
+
+function theaterVideo() {
+  return activeProgramVideo || remotePreview;
+}
+
+function theaterMediaActive() {
+  return Boolean(activeProgramVideo || remoteFeedActive);
+}
+
+function dispatchTheaterSource({ forceRestart = false } = {}) {
+  const source = activeProgramVideo
+    ? `local-replay:${activeProgramVideo.id}`
+    : demoStream
+      ? "demo"
+      : remoteFeedActive
+        ? "remote"
+        : "none";
+  const changed = source !== lastTheaterSource;
+  if (changed || forceRestart) theaterSourceGeneration += 1;
+  lastTheaterSource = source;
+  window.dispatchEvent(new CustomEvent("bloom-live-feed", {
+    detail: {
+      active: theaterMediaActive(),
+      demo: Boolean(demoStream) && !activeProgramVideo,
+      source,
+      generation: theaterSourceGeneration,
+      restart: changed || forceRestart,
+    },
+  }));
+}
+
+function updateTheaterState() {
+  document.body.classList.toggle("running", theaterMediaActive());
+  document.body.classList.toggle("remote-feed", remoteFeedActive);
+  document.body.classList.toggle("playback-active", Boolean(activeProgramVideo));
+  $("opsBar").hidden = !theaterMediaActive();
+  $("theaterHud").hidden = !theaterMediaActive();
+}
+
+function setProgramStatus(label, kind = "") {
+  const status = $("programStatus");
+  status.textContent = label;
+  status.className = `program-status${kind ? ` ${kind}` : ""}`;
+}
 
 function setStatusPill(kind, label) {
   // Status remains available in the underlying WebRTC state, but the display
@@ -500,6 +650,7 @@ function clearRenderedInsight({ queue = null, resetResearch = true } = {}) {
   insightFlashTimer = null;
   lastInsightKey = "";
   lastSpoken = "";
+  latestChatInsight = null;
   delete document.body.dataset.detectedSport;
   document.body.classList.remove("has-read", "ready", "gated", "insight-flash");
   $("readout").classList.remove("rehearsal");
@@ -531,37 +682,192 @@ function clearRenderedInsight({ queue = null, resetResearch = true } = {}) {
   renderPipeline(null, queue);
 }
 
+function mediaReady(element, eventName, predicate, timeoutMs = 10_000) {
+  if (predicate()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let timeout;
+    const onReady = () => finish();
+    const onError = () => finish(new Error("Local broadcast could not be loaded"));
+    const finish = (error = null) => {
+      clearTimeout(timeout);
+      element.removeEventListener(eventName, onReady);
+      element.removeEventListener("error", onError);
+      if (error) reject(error);
+      else resolve();
+    };
+    timeout = setTimeout(() => finish(new Error(`Timed out waiting for ${eventName}`)), timeoutMs);
+    element.addEventListener(eventName, onReady, { once: true });
+    element.addEventListener("error", onError, { once: true });
+  });
+}
+
+function inactiveProgramVideo() {
+  return activeProgramVideo === video ? videoStandby : video;
+}
+
+function clearProgramPlayback({ epoch = activePlaybackEpoch, revision = activePlaybackRevision } = {}) {
+  playbackLoadGeneration += 1;
+  for (const element of [video, videoStandby]) {
+    element.pause();
+    element.classList.remove("program-active");
+    element.removeAttribute("src");
+    element.load();
+  }
+  activeProgramVideo = null;
+  latestPlaybackEpoch = Math.max(latestPlaybackEpoch, epoch);
+  activePlaybackEpoch = epoch;
+  activePlaybackRevision = revision;
+  activePlaybackStreamId = null;
+  activePlaybackLabel = null;
+  pendingPlaybackEpoch = 0;
+  pendingPlaybackRevision = 0;
+  if ($("analystChat")) $("analystChat").hidden = !remoteFeedActive;
+  clearVisualDetections();
+  updateTheaterState();
+  setProgramStatus(remoteFeedActive
+    ? "Camera preview · searching four local broadcasts"
+    : "Camera preview · waiting for phone or glasses");
+  dispatchTheaterSource();
+  renderOpsBar();
+  renderPipeline();
+  renderHudTelemetry();
+}
+
+function playbackCandidateStatus(directive) {
+  const candidate = directive?.candidate;
+  if (!candidate) return;
+  const action = candidate.reason === "awaiting_stream_confirmation"
+    ? `confirming detection ${candidate.confirmations}/${candidate.confirmations_required}`
+    : candidate.reason === "checkpoint_offset_not_calibrated"
+    ? `calibrate ${candidate.moment_id} in the stream manifest`
+    : candidate.reason === "checkpoint_not_in_media"
+      ? `${candidate.moment_id} is not present in this local edit`
+    : `install ${candidate.filename || "the local MP4"}`;
+  setProgramStatus(`Detected ${candidate.label || candidate.stream_id} · ${action}`, "error");
+}
+
+async function applyPlaybackDirective(directive) {
+  playbackCandidateStatus(directive);
+  const directiveEpoch = Number(directive?.epoch);
+  const directiveRevision = Number(directive?.revision);
+  const newestEpoch = Math.max(latestPlaybackEpoch, activePlaybackEpoch, pendingPlaybackEpoch);
+  if (!Number.isInteger(directiveEpoch) || directiveEpoch <= 0 ||
+      !Number.isInteger(directiveRevision) || directiveRevision < 0 ||
+      directiveEpoch < newestEpoch) return false;
+  latestPlaybackEpoch = Math.max(latestPlaybackEpoch, directiveEpoch);
+  if (directive?.status !== "locked") {
+    if (directive.reason === "explicit_reset" &&
+        (directiveEpoch > activePlaybackEpoch || directiveRevision > activePlaybackRevision)) {
+      clearProgramPlayback({ epoch: directiveEpoch, revision: directiveRevision });
+    }
+    return false;
+  }
+  const target = playbackDirectiveTarget(directive, {
+    activeRevision: activePlaybackRevision,
+    pendingRevision: pendingPlaybackRevision,
+    activeEpoch: activePlaybackEpoch,
+    pendingEpoch: pendingPlaybackEpoch,
+  });
+  if (!target) return false;
+
+  pendingPlaybackEpoch = target.epoch;
+  pendingPlaybackRevision = target.revision;
+  const generation = ++playbackLoadGeneration;
+  const staging = inactiveProgramVideo();
+  const previous = activeProgramVideo;
+  staging.pause();
+  staging.classList.remove("program-active");
+  staging.muted = target.muted;
+  staging.src = target.mediaUrl;
+  staging.load();
+  setProgramStatus(`Matching ${target.label} · loading local broadcast`);
+  try {
+    await mediaReady(
+      staging,
+      "loadedmetadata",
+      () => staging.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(staging.duration)
+    );
+    if (generation !== playbackLoadGeneration) return false;
+    const end = Number.isFinite(staging.duration) ? Math.max(0, staging.duration - .1) : target.seekSeconds;
+    staging.currentTime = Math.min(target.seekSeconds, end);
+    await mediaReady(
+      staging,
+      "canplay",
+      () => staging.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+    );
+    if (generation !== playbackLoadGeneration) return false;
+    await staging.play();
+    if (generation !== playbackLoadGeneration) {
+      staging.pause();
+      return false;
+    }
+
+    staging.classList.add("program-active");
+    previous?.classList.remove("program-active");
+    previous?.pause();
+    activeProgramVideo = staging;
+    latestPlaybackEpoch = target.epoch;
+    activePlaybackEpoch = target.epoch;
+    activePlaybackRevision = target.revision;
+    activePlaybackStreamId = target.streamId;
+    activePlaybackLabel = target.label;
+    pendingPlaybackEpoch = 0;
+    pendingPlaybackRevision = 0;
+    if ($("analystChat")) $("analystChat").hidden = false;
+    updateTheaterState();
+    setProgramStatus(`Local replay · ${target.label} · synced once at ${target.seekSeconds.toFixed(1)}s`, "locked");
+    clearVisualDetections();
+    renderOpsBar();
+    renderPipeline();
+    renderHudTelemetry();
+    renderVisualDetections();
+    dispatchTheaterSource();
+    return true;
+  } catch (error) {
+    if (generation !== playbackLoadGeneration) return false;
+    pendingPlaybackEpoch = 0;
+    pendingPlaybackRevision = 0;
+    staging.pause();
+    staging.removeAttribute("src");
+    staging.load();
+    setProgramStatus(`Detected ${target.label} · ${error.message}; keeping current view`, "error");
+    return false;
+  }
+}
+
 function setRemoteFeedUI(active) {
   remoteFeedActive = active;
+  updateTheaterState();
   if (active) {
-    document.body.classList.add("running", "remote-feed");
-    $("opsBar").hidden = false;
-    $("theaterHud").hidden = false;
-    setStatusPill("capturing", "WebRTC live");
-    $("idleHint").textContent = "Direct camera connection established. Analysis remains off until you choose it.";
+    if ($("analystChat")) $("analystChat").hidden = false;
+    setStatusPill("capturing", "WebRTC detector live");
+    $("idleHint").textContent = activeProgramVideo
+      ? "Camera detector connected behind the local replay."
+      : "Camera connected. Analyze to identify and replace it with the matching local broadcast.";
     analyzeButton.hidden = false;
     updateAnalyzeButton();
+    if (!activeProgramVideo) setProgramStatus("Camera preview · searching four local broadcasts");
     renderResearchPlan();
     renderOpsBar();
     renderPipeline();
     renderHudTelemetry();
     if (demoStream) setTrackerState("Local tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
     else setTrackerState("YOLO11s loading…", "Continuous player and ball tracking runs on this device.");
-    window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: true, demo: Boolean(demoStream) } }));
+    dispatchTheaterSource({ forceRestart: !activeProgramVideo });
     return;
   }
-  document.body.classList.remove("running", "remote-feed");
-  $("opsBar").hidden = true;
-  $("theaterHud").hidden = true;
+  if ($("analystChat")) $("analystChat").hidden = !activeProgramVideo;
   remotePreview.srcObject = null;
-  remotePreview.style.display = "none";
-  clearVisualDetections();
+  if (!activeProgramVideo) clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
-  setTrackerState("YOLO11s standby", "Player tracking starts automatically with a live camera stream.");
+  setTrackerState(
+    activeProgramVideo ? "YOLO11s local replay" : "YOLO11s standby",
+    activeProgramVideo ? "The local replay continues while the detector reconnects." : "Player tracking starts automatically with a live camera stream."
+  );
   clearRenderedInsight();
-  window.dispatchEvent(new CustomEvent("bloom-live-feed", { detail: { active: false, demo: false } }));
-  setStatusPill("idle", "waiting for phone");
+  dispatchTheaterSource();
+  setStatusPill("idle", activeProgramVideo ? "local replay continues" : "waiting for phone");
 }
 
 function setTrackerState(title, note) {
@@ -569,7 +875,7 @@ function setTrackerState(title, note) {
   $("trackerNote").textContent = note;
   const match = String(title || "").match(/(\d+(?:\.\d+)?)\s*Hz/i);
   yoloTrackerFps = match ? Math.round(Number(match[1])) : yoloTrackerFps;
-  if (remoteFeedActive) {
+  if (theaterMediaActive()) {
     renderHudTelemetry();
     renderPipeline();
   }
@@ -594,7 +900,7 @@ function boundedDetection(detection) {
 }
 
 function activeVideoDimensions() {
-  const activeVideo = remotePreview.style.display !== "none" ? remotePreview : video;
+  const activeVideo = theaterVideo();
   return { width: activeVideo.videoWidth || 16, height: activeVideo.videoHeight || 9 };
 }
 
@@ -602,7 +908,7 @@ function renderVisualDetections() {
   const overlay = $("visionOverlay");
   const status = $("visionOverlayStatus");
   const screen = document.querySelector(".theater-screen");
-  if (!remoteFeedActive || visualDetections.length === 0 || !screen) {
+  if (!theaterMediaActive() || visualDetections.length === 0 || !screen) {
     overlay.replaceChildren();
     overlay.hidden = true;
     status.hidden = true;
@@ -680,8 +986,9 @@ function renderOpsBar(insight = null) {
   const observation = insight?.observation;
   const intelligence = insight?.demo_intelligence;
   const chips = [];
-  if (demoStream) chips.push(chip(insight?.rehearsal?.is_rehearsal ? "Rehearsal feed" : "Local feed", "warn"));
-  else chips.push(chip(remoteAnalysisEnabled ? "Analysis armed" : "WebRTC only"));
+  if (activeProgramVideo) chips.push(chip("Local replay", "accent"));
+  else if (demoStream) chips.push(chip(insight?.rehearsal?.is_rehearsal ? "Rehearsal feed" : "Local feed", "warn"));
+  else chips.push(chip(remoteAnalysisEnabled ? "Analysis armed" : "WebRTC detector"));
   if (observation?.sport) chips.push(chip((SPORT_LABEL[observation.sport] || observation.sport).toUpperCase(), "accent"));
   if (intelligence?.pack_label) chips.push(chip(intelligence.pack_label));
   else if (observation?.event_name) chips.push(chip(observation.event_name));
@@ -690,8 +997,9 @@ function renderOpsBar(insight = null) {
   const stats = $("opsStats");
   if (!stats) return;
   if ($("stats")?.textContent) stats.textContent = $("stats").textContent;
+  else if (activeProgramVideo) stats.textContent = `Local replay · revision ${activePlaybackRevision}`;
   else if (demoStream) stats.textContent = "Synthetic 1920×1080 · 30 fps";
-  else stats.textContent = remoteFeedActive ? "Link live" : "Standby";
+  else stats.textContent = remoteFeedActive ? "Detector live" : "Standby";
 }
 
 function renderPipeline(insight = null, queue = null) {
@@ -701,8 +1009,8 @@ function renderPipeline(insight = null, queue = null) {
   const analysis = insight?.analysis;
   const intelligence = insight?.demo_intelligence;
   const stages = {
-    stream: remoteFeedActive,
-    track: visualDetections.length > 0 || Boolean(demoStream),
+    stream: theaterMediaActive(),
+    track: visualDetections.length > 0 || Boolean(demoStream) || Boolean(activeProgramVideo),
     identify: Boolean(observation) || Boolean(queue?.analysis_in_flight),
     pack: Boolean(intelligence) || Boolean(analysis),
     compare: Boolean(analysis?.primary_probability != null || insight?.comparison),
@@ -725,8 +1033,8 @@ function renderPipeline(insight = null, queue = null) {
   } else if (remoteAnalysisEnabled) {
     title.textContent = busy ? "Cerebras identifying…" : "Collecting temporal window";
     note.textContent = `Frames ${(queue?.pending_frames ?? 0)}/${queue?.frames_per_request ?? 5}`;
-  } else if (remoteFeedActive) {
-    title.textContent = demoStream ? "Local stream active" : "Stream connected";
+  } else if (theaterMediaActive()) {
+    title.textContent = activeProgramVideo ? "Local replay continuing" : demoStream ? "Local stream active" : "Detector connected";
     note.textContent = "Press Analyze to start model requests";
   } else {
     title.textContent = "Standing by";
@@ -742,8 +1050,9 @@ function renderHudTelemetry() {
     ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "demo" ? "Synthetic" : visualDetectionSource === "model" ? "Model" : "—"],
   ];
   if (Number.isFinite(yoloTrackerFps)) parts.push(["Tracker", `${yoloTrackerFps} fps`]);
-  if (demoStream) parts.push(["Media", "Local canvas"]);
-  else if (remoteFeedActive) parts.push(["Media", "WebRTC P2P"]);
+  if (activeProgramVideo) parts.push(["Media", `Replay r${activePlaybackRevision}`]);
+  else if (demoStream) parts.push(["Media", "Local canvas"]);
+  else if (remoteFeedActive) parts.push(["Media", "WebRTC detector"]);
   row.replaceChildren(...parts.map(([label, value]) => {
     const el = document.createElement("span");
     el.className = "hud-tel";
@@ -756,7 +1065,7 @@ function renderHudTelemetry() {
 function renderTheaterHud(insight = null) {
   const observation = insight?.observation;
   if (!observation) {
-    $("hudKicker").textContent = remoteFeedActive ? "Feed live · awaiting lock" : "Awaiting event lock";
+    $("hudKicker").textContent = activeProgramVideo ? "Local replay continuing" : remoteFeedActive ? "Detector live · awaiting lock" : "Awaiting event lock";
     $("hudScore").textContent = "Point the camera at a broadcast";
     $("hudSub").textContent = "Visible scoreboard state will appear here";
     return;
@@ -1123,8 +1432,6 @@ function startDemoFeed() {
   demoAnimation = requestAnimationFrame(draw);
   demoStream = canvas.captureStream(30);
   remotePreview.srcObject = demoStream;
-  remotePreview.style.display = "block";
-  video.style.display = "none";
   remotePreview.play().catch(() => {});
   remotePreview.addEventListener("loadedmetadata", renderVisualDetections, { once: true });
   setRemoteFeedUI(true);
@@ -1194,15 +1501,16 @@ async function cycleDemoRehearsal(intervalMs = DEFAULT_REHEARSAL_INTERVAL_MS) {
 
 function showWebRtcBlocked(message) {
   remoteFeedActive = false;
-  document.body.classList.remove("running", "remote-feed");
+  updateTheaterState();
   remotePreview.srcObject = null;
-  remotePreview.style.display = "none";
   analyzeButton.hidden = true;
-  clearVisualDetections();
+  if ($("analystChat")) $("analystChat").hidden = !activeProgramVideo;
+  if (!activeProgramVideo) clearVisualDetections();
   clearRenderedInsight();
-  setStatusPill("error", "TURN required");
-  $("idleHint").textContent = message;
+  setStatusPill("error", activeProgramVideo ? "detector offline · replay continues" : "TURN required");
+  $("idleHint").textContent = activeProgramVideo ? "The local replay continues while the camera detector reconnects." : message;
   $("stats").textContent = "WebRTC blocked · TURN relay needed";
+  dispatchTheaterSource();
 }
 
 async function refreshVideoStats() {
@@ -1263,8 +1571,6 @@ async function getPeerConnection() {
     stopDemoFeed({ resetUI: false });
     clearVisualDetections();
     remotePreview.srcObject = streams[0];
-    remotePreview.style.display = "block";
-    video.style.display = "none";
     remotePreview.play().catch(() => {});
     remotePreview.addEventListener("loadedmetadata", renderVisualDetections, { once: true });
     setRemoteFeedUI(true);
@@ -1369,10 +1675,12 @@ function setPredictionStatus(insight, hasAnalysis) {
 }
 
 function renderInsight(insight) {
+  if (insight?.playback) applyPlaybackDirective(insight.playback).catch(() => {});
   if (!insight?.observation) {
     clearRenderedInsight({ queue: insight?.rate_limit });
     return;
   }
+  latestChatInsight = insight;
   const observation = insight.observation;
   const analysis = insight.analysis;
   const intelligence = insight.demo_intelligence;
@@ -1433,9 +1741,14 @@ function renderInsight(insight) {
 }
 
 async function refreshAnalysis() {
-  if (demoStream) return;
+  if (demoStream || analysisRefreshInFlight) return;
+  analysisRefreshInFlight = true;
   try {
-    const status = await api("/api/analysis/status");
+    const [status, playback] = await Promise.all([
+      api("/api/analysis/status"),
+      api("/api/playback"),
+    ]);
+    applyPlaybackDirective(playback).catch(() => {});
     remoteAnalysisEnabled = status.analysis_enabled === true;
     if (remoteFeedActive) updateAnalyzeButton();
     renderOpsBar();
@@ -1455,6 +1768,8 @@ async function refreshAnalysis() {
     }
   } catch {
     // Direct WebRTC video stays up through temporary signaling failures.
+  } finally {
+    analysisRefreshInFlight = false;
   }
 }
 
@@ -1466,13 +1781,69 @@ analyzeButton.addEventListener("click", async () => {
     remoteAnalysisEnabled = data.analysis_enabled === true;
     updateAnalyzeButton();
     clearRenderedInsight({ queue: data.queue });
-    setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : "WebRTC live");
+    setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : activeProgramVideo ? "local replay continues" : "WebRTC detector live");
   } catch {
     setStatusPill("error", "analysis error");
   } finally {
     analyzeButton.disabled = false;
   }
 });
+
+function appendChatBubble(role, text, className = "") {
+  const log = $("chatLog");
+  const empty = $("chatEmpty");
+  if (empty) empty.remove();
+  const bubble = document.createElement("div");
+  bubble.className = `chat-bubble ${role}${className ? ` ${className}` : ""}`;
+  bubble.textContent = text;
+  log.append(bubble);
+  log.scrollTop = log.scrollHeight;
+  return bubble;
+}
+
+async function askAnalyst(question) {
+  if (chatBusy) return;
+  const cleaned = String(question ?? "").trim();
+  if (!cleaned) return;
+  chatBusy = true;
+  $("chatSend").disabled = true;
+  $("chatInput").value = "";
+  appendChatBubble("user", cleaned);
+  const pending = appendChatBubble("assistant", "Thinking…", "pending");
+  try {
+    const data = await api("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: cleaned,
+        insight: latestChatInsight,
+        history: chatHistory,
+      }),
+    });
+    pending.classList.remove("pending");
+    pending.textContent = data.answer;
+    if (data.model) $("chatModel").textContent = data.model.replaceAll("-", " ");
+    chatHistory = [
+      ...chatHistory,
+      { role: "user", text: cleaned },
+      { role: "model", text: data.answer },
+    ].slice(-8);
+  } catch (error) {
+    pending.classList.remove("pending");
+    pending.classList.add("error");
+    pending.textContent = error.message || "Analyst chat failed";
+  } finally {
+    chatBusy = false;
+    $("chatSend").disabled = false;
+    $("chatInput").focus();
+  }
+}
+
+$("chatForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  askAnalyst($("chatInput").value);
+});
+
 $("speak").addEventListener("click", () => {
   if (!lastSpoken || !("speechSynthesis" in window)) return;
   speechSynthesis.cancel();
@@ -1485,11 +1856,27 @@ $("help").addEventListener("click", (event) => { if (event.target === $("help"))
 window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch(() => {}));
 new ResizeObserver(renderVisualDetections).observe(document.querySelector(".theater-screen"));
 window.bloomYoloInput = Object.freeze({
-  video: remotePreview,
+  get video() { return theaterVideo(); },
+  sourceGeneration: () => theaterSourceGeneration,
   setDetections: setVisualDetections,
   setTrackerState,
-  isFeedActive: () => remoteFeedActive,
-  isDemo: () => Boolean(demoStream),
+  isFeedActive: theaterMediaActive,
+  isDemo: () => Boolean(demoStream) && !activeProgramVideo,
+});
+window.bloomPlayback = Object.freeze({
+  apply: applyPlaybackDirective,
+  refresh: async () => applyPlaybackDirective(await api("/api/playback")),
+  status: () => ({
+    active: Boolean(activeProgramVideo),
+    latest_epoch: latestPlaybackEpoch,
+    epoch: activePlaybackEpoch,
+    revision: activePlaybackRevision,
+    stream_id: activePlaybackStreamId,
+    label: activePlaybackLabel,
+    pending_epoch: pendingPlaybackEpoch,
+    pending_revision: pendingPlaybackRevision,
+    current_time: activeProgramVideo?.currentTime ?? null,
+  }),
 });
 window.bloomDemo = Object.freeze({
   start: startDemoFeed,
@@ -1711,21 +2098,31 @@ if (idleTitleEl) setInterval(() => {
   }
 
   async function detect(token) {
-    if (!running || token !== runToken || !bridge.isFeedActive() || bridge.isDemo()) return;
-    if (bridge.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !bridge.video.videoWidth) {
+    if (!running || token !== runToken) return;
+    if (!bridge.isFeedActive() || bridge.isDemo()) {
+      running = false;
+      return;
+    }
+    const sourceVideo = bridge.video;
+    const sourceGeneration = bridge.sourceGeneration();
+    if (sourceVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !sourceVideo.videoWidth) {
       schedule(token, 100);
       return;
     }
     const started = performance.now();
     try {
       const session = await getSession();
+      if (!running || token !== runToken || sourceGeneration !== bridge.sourceGeneration() ||
+          sourceVideo !== bridge.video) return;
       const candidates = [];
-      for (const tile of broadcastTiles(bridge.video)) {
-        const transform = makeTensor(bridge.video, tile);
+      for (const tile of broadcastTiles(sourceVideo)) {
+        const transform = makeTensor(sourceVideo, tile);
         const outputs = await session.run({ [session.inputNames[0]]: transform.tensor });
+        if (!running || token !== runToken || sourceGeneration !== bridge.sourceGeneration() ||
+            sourceVideo !== bridge.video) return;
         candidates.push(...decode(outputs[session.outputNames[0]], transform));
       }
-      bridge.setDetections(serializeDetections(candidates, bridge.video.videoWidth, bridge.video.videoHeight), "yolo");
+      bridge.setDetections(serializeDetections(candidates, sourceVideo.videoWidth, sourceVideo.videoHeight), "yolo");
       const elapsed = performance.now() - started;
       const targetInterval = executionBackend === "WebGPU" ? WEBGPU_INTERVAL_MS : WASM_INTERVAL_MS;
       if (started - lastFpsUpdate > 1_000) {
@@ -1763,7 +2160,10 @@ if (idleTitleEl) setInterval(() => {
   }
 
   window.addEventListener("bloom-live-feed", (event) => {
-    if (event.detail?.active) start(event.detail);
+    if (event.detail?.active) {
+      if (event.detail?.restart) stop();
+      start(event.detail);
+    }
     else stop();
   });
   window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11s", backend: executionBackend, input_size: INPUT_SIZE }) });

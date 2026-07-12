@@ -10,6 +10,7 @@
     "start:fixture": "VISION_BACKEND=fixture ALLOW_FIXTURE_LIVE=true node services/api/server.js",
     "test": "node --test \"tests/*.test.js\"",
     "evaluate": "node scripts/evaluate-fixtures.js",
+    "streams:validate": "node scripts/validate-demo-streams.js",
     "pull-stats": "node scripts/pull-stats.js"
   }
 }

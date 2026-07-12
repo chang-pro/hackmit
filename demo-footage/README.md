@@ -9,12 +9,12 @@ has a visible scoreboard/leaderboard that the vision stack can read.
 > limit), not the raw downloads. Raw full-resolution footage lives in the
 > git-ignored `footage/` folder.
 
-| File | Sport | Match | Fixture event_id |
+| File | Sport | Match | Demo pack |
 |---|---|---|---|
-| `sb51_ne_atl__football_2017_02_05.mp4` | Football | Super Bowl LI — Patriots vs Falcons | `football_2017_02_05_ne_atl` |
-| `ufc229_khabib_mcgregor__ufc_2018_10_06.mp4` | UFC | UFC 229 — Khabib vs McGregor (full fight) | `ufc_2018_10_06_khabib_mcgregor` |
-| `wc22_final_arg_fra__soccer_2022_12_18.mp4` | Soccer | 2022 World Cup Final — Argentina vs France | `soccer_2022_12_18_arg_fra` |
-| `nba_bos_nyk__celtics_at_knicks_2026.mp4` | NBA | Celtics @ Knicks (stand-in for the `nba_2026_07_11_bos_nyk` fixture) | `nba_2026_07_11_bos_nyk` |
+| `sb51_ne_atl__football_2017_02_05.mp4` | Football | Super Bowl LI — Patriots vs Falcons | `super-bowl-li` |
+| `ufc229_khabib_mcgregor__ufc_2018_10_06.mp4` | UFC | UFC 229 — Khabib vs McGregor (full fight) | `ufc-229` |
+| `wc22_final_arg_fra__soccer_2022_12_18.mp4` | Soccer | 2022 World Cup Final — Argentina vs France | `world-cup-2022-final` |
+| `nba_bos_nyk__celtics_at_knicks_2026.mp4` | NBA | Celtics @ Knicks — April 9, 2026, NBA game `0022501168` | `nba-celtics-knicks-2026` |
 
 Golf (`golf_2019_04_14_tiger_molinari`) was intentionally skipped.
 

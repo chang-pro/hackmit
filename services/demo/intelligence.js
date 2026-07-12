@@ -8,12 +8,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { getDemoPlaybackTarget } from "./streams.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACK_DIR = join(HERE, "..", "..", "packages", "fixtures", "demo-intelligence");
 const PACK_FILES = [
   "world-cup-2022-final.json",
-  "nba-finals-2016-game-7.json",
+  "nba-celtics-knicks-2026.json",
   "super-bowl-li.json",
   "ufc-229.json",
 ];
@@ -269,6 +270,19 @@ function momentScore(pack, moment, observation) {
 }
 
 function selectMoment(pack, observation, previous) {
+  const scoreA = numericScore(observation?.score_a);
+  const scoreB = numericScore(observation?.score_b);
+  const visibleScore = known(observation?.score_display) || scoreA !== 0 || scoreB !== 0;
+  if (scoreA != null && scoreB != null && visibleScore &&
+      !pack.moments.some((moment) => scoreMatches(moment, scoreA, scoreB))) {
+    return {
+      moment: null,
+      index: -1,
+      score: 0,
+      status: "pending",
+      reason: "visible_score_not_in_calibrated_checkpoints",
+    };
+  }
   const ranked = pack.moments
     .map((moment, index) => ({ moment, index, score: momentScore(pack, moment, observation) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
@@ -370,6 +384,9 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
   const gap = deterministicReady
     ? Number(((modelProbability - marketProbability) * 100).toFixed(1))
     : null;
+  const playback = deterministicReady && selection.status === "ready"
+    ? getDemoPlaybackTarget(pack.id, moment.id)
+    : null;
 
   return {
     mode,
@@ -383,11 +400,13 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
     match_confidence: match.confidence,
     checkpoint_status: deterministicReady ? selection.status : "pending",
     pending_reason: deterministicReady ? null : match.pendingReason ?? selection.reason,
+    moment_selection_reason: selection.reason,
     moment_id: moment?.id ?? null,
     moment_label: moment?.label ?? "Waiting for a stable scoreboard checkpoint",
     moment_index: index,
     moment_count: match.exactEvidence ? pack.moments.length : 0,
     moment_match_score: Number(score.toFixed(2)),
+    playback,
     checkpoints: match.exactEvidence
       ? pack.moments.map((entry, entryIndex) => ({
           id: entry.id,

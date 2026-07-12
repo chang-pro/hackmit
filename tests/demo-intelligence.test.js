@@ -43,20 +43,20 @@ const TARGETS = [
   [
     observation({
       sport: "basketball",
-      competition: "NBA Finals",
-      event_name: "Cavaliers vs Warriors",
-      event_identity: "nba:cavaliers-vs-warriors-finals-game-7",
-      participants: [{ name: "Cleveland Cavaliers" }, { name: "Golden State Warriors" }],
-      participant_a: "Cleveland Cavaliers",
-      participant_b: "Golden State Warriors",
-      score_a: 92,
-      score_b: 89,
-      score_display: "CLE 92–89 GSW",
+      competition: "NBA Regular Season",
+      event_name: "Boston Celtics at New York Knicks",
+      event_identity: "nba:2026-04-09-boston-celtics-new-york-knicks",
+      participants: [{ name: "Boston Celtics" }, { name: "New York Knicks" }],
+      participant_a: "Boston Celtics",
+      participant_b: "New York Knicks",
+      score_a: 104,
+      score_b: 109,
+      score_display: "BOS 104–109 NYK",
       phase: "Q4",
-      clock: "0:53",
+      clock: "0:41",
     }),
-    "nba-finals-2016-game-7",
-    "irving-three",
+    "nba-celtics-knicks-2026",
+    "hart-clutch-lead",
   ],
   [
     observation({
@@ -250,12 +250,12 @@ test("one target side, ticker pollution, and conflicting metadata never unlock e
     event_identity: "nba:lakers-vs-celtics",
     participants: [
       { name: "Los Angeles Lakers" },
-      { name: "Boston Celtics" },
-      { name: "Cleveland Cavaliers", role_or_position: "ticker" },
-      { name: "Golden State Warriors", role_or_position: "ticker" },
+      { name: "Golden State Warriors" },
+      { name: "Boston Celtics", role_or_position: "ticker" },
+      { name: "New York Knicks", role_or_position: "ticker" },
     ],
     participant_a: "Los Angeles Lakers",
-    participant_b: "Boston Celtics",
+    participant_b: "Golden State Warriors",
     score_a: 89,
     score_b: 89,
     phase: "Q4",
@@ -269,11 +269,11 @@ test("one target side, ticker pollution, and conflicting metadata never unlock e
   const conflicting = selectDemoIntelligence(observation({
     sport: "basketball",
     competition: "NBA Regular Season",
-    event_name: "Cavaliers vs Warriors 2025",
-    event_identity: "nba:2025-cle-gsw",
-    participants: [{ name: "Cleveland Cavaliers" }, { name: "Golden State Warriors" }],
-    participant_a: "Cleveland Cavaliers",
-    participant_b: "Golden State Warriors",
+    event_name: "Celtics at Knicks 2025",
+    event_identity: "nba:2025-bos-nyk",
+    participants: [{ name: "Boston Celtics" }, { name: "New York Knicks" }],
+    participant_a: "Boston Celtics",
+    participant_b: "New York Knicks",
     score_a: 42,
     score_b: 49,
     phase: "Halftime",
@@ -289,37 +289,37 @@ test("one target side, ticker pollution, and conflicting metadata never unlock e
 test("unique identity wording and dotted primary abbreviations survive normalization", () => {
   const identityOnly = selectDemoIntelligence(observation({
     sport: "NBA Basketball",
-    competition: "NBA Finals",
+    competition: "NBA Regular Season",
     event_name: "",
-    event_identity: "NBA:2016.FINALS.GAME.7.CAVALIERS.WARRIORS",
+    event_identity: "NBA:2026.04.09.BOSTON.CELTICS.NEW.YORK.KNICKS",
     participants: [],
     participant_a: "",
     participant_b: "",
-    score_a: 92,
-    score_b: 89,
+    score_a: 104,
+    score_b: 109,
     phase: "4Q",
-    clock: "O:53",
+    clock: "O:41",
   }));
   assert.equal(identityOnly.mode, "precollected_event_replay");
-  assert.equal(identityOnly.pack_id, "nba-finals-2016-game-7");
-  assert.equal(identityOnly.moment_id, "irving-three");
+  assert.equal(identityOnly.pack_id, "nba-celtics-knicks-2026");
+  assert.equal(identityOnly.moment_id, "hart-clutch-lead");
   assert.equal(identityOnly.match_basis, "identity_token");
 
   const dotted = selectDemoIntelligence(observation({
     sport: "NBA Basketball",
-    competition: "NBA Finals",
+    competition: "NBA Regular Season",
     event_name: "",
     event_identity: "",
-    participants: [{ name: "C.L.E." }, { name: "G.S.W." }],
-    participant_a: "C.L.E.",
-    participant_b: "G.S.W.",
-    score_a: 92,
-    score_b: 89,
+    participants: [{ name: "B.O.S." }, { name: "N.Y.K." }],
+    participant_a: "B.O.S.",
+    participant_b: "N.Y.K.",
+    score_a: 104,
+    score_b: 109,
     phase: "4Q",
-    clock: "O:53",
+    clock: "O:41",
   }));
   assert.equal(dotted.mode, "precollected_event_replay");
-  assert.equal(dotted.moment_id, "irving-three");
+  assert.equal(dotted.moment_id, "hart-clutch-lead");
 });
 
 test("deterministic matching clamps confidence and stays pending below 0.72", () => {
@@ -350,6 +350,26 @@ test("unresolved checkpoints and ambiguous MMA phases stay pending without odds"
   assert.equal(unresolved.moment_id, null);
   assert.equal(unresolved.market, null);
   assert.equal(analysisFromDemoIntelligence(unresolved, { primary_probability: 0.99 }), null);
+
+  const offCheckpoint = selectDemoIntelligence(observation({
+    sport: "basketball",
+    competition: "NBA",
+    event_name: "Boston Celtics at New York Knicks",
+    event_identity: "nba-celtics-knicks-2026",
+    participants: [{ name: "Boston Celtics" }, { name: "New York Knicks" }],
+    participant_a: "Boston Celtics",
+    participant_b: "New York Knicks",
+    score_a: 50,
+    score_b: 55,
+    score_display: "BOS 50 - NYK 55",
+    phase: "Q2",
+    clock: "8:00",
+  }));
+  assert.equal(offCheckpoint.mode, "precollected_event_pending");
+  assert.equal(offCheckpoint.pending_reason, "visible_score_not_in_calibrated_checkpoints");
+  assert.equal(offCheckpoint.moment_id, null);
+  assert.equal(offCheckpoint.playback, null);
+  assert.equal(offCheckpoint.market, null);
 
   const mma = selectDemoIntelligence(observation({
     sport: "mma",

@@ -1,8 +1,8 @@
 # BloomKnights HTTP API
 
-Everything is served by one zero-dependency Node process: `services/api/server.js` (`npm start`, default `http://localhost:3000`, override with `PORT`). All responses are JSON (pretty-printed, 2-space) except the two HTML pages. Snapshot as of 2026-07-11 — see "Not implemented yet" at the bottom for endpoints clients already call.
+Everything is served by one zero-dependency Node process: `services/api/server.js` (`npm start`, default `http://localhost:3000`, override with `PORT`). API responses are pretty-printed JSON; page, model, image, JavaScript, and allowlisted MP4 routes return their corresponding media types.
 
-> **Live versus legacy.** `POST /api/frames` is user-gated by `/api/analysis/start` and feeds five ordered camera snapshots to the Cerebras-backed `LiveEventAnalyzer`; completed live results are read from `GET /api/latest`. `GET /api/comparison` is the separate deterministic fixture/debug pipeline retained for backward compatibility. Fixture-extraction examples later in this document describe `/api/comparison`, not the current live camera path.
+> **Live versus legacy.** `POST /api/frames` is user-gated by `/api/analysis/start` and feeds a five-snapshot temporal window to the Cerebras-backed `LiveEventAnalyzer`; the vision backend sends its earliest and latest representatives to Gemma's two-image input. Completed live results are read from `GET /api/latest`. `GET /api/comparison` is the separate deterministic fixture/debug pipeline retained for backward compatibility. Fixture-extraction examples later in this document describe `/api/comparison`, not the current live camera path.
 
 Global behaviors (`server.js`):
 
@@ -84,7 +84,49 @@ Errors:
 
 ### Live-analysis semantics
 
-Analysis is disabled until the viewer calls `POST /api/analysis/start`. Accepted snapshots accumulate into a five-frame temporal window; `LiveEventAnalyzer` rate-limits Cerebras windows to at most one every 12 seconds. A completed result is stored as the live-only `/api/latest` payload. Stopping analysis clears the trusted result while continuous WebRTC video remains connected.
+Analysis is disabled until the viewer calls `POST /api/analysis/start`. Accepted snapshots accumulate into a five-frame temporal window; its earliest and latest images are the two representatives sent to Gemma. `LiveEventAnalyzer` rate-limits Cerebras windows to at most one every 12 seconds. A completed result is stored as the live-only `/api/latest` payload. Stopping analysis clears the trusted insight while continuous WebRTC detection and any locked local playback remain connected. Only `POST /api/reset` clears playback.
+
+---
+
+## GET /api/playback — authoritative theater revision
+
+Returns the server-owned prerecorded playback state. Clients must load or seek only when the ordered `(epoch, revision)` pair advances; lower epochs and lower/equal revisions are stale.
+
+```json
+{
+  "status": "locked",
+  "epoch": 1783814400000,
+  "revision": 2,
+  "stream_id": "nba-celtics-knicks-2026",
+  "pack_id": "nba-celtics-knicks-2026",
+  "label": "April 9, 2026 NBA · Celtics at Knicks",
+  "media_url": "/demo-streams/nba-celtics-knicks-2026",
+  "mime_type": "video/mp4",
+  "muted": true,
+  "initial_moment_id": "late-tie",
+  "initial_seek_seconds": 817.5,
+  "event_confidence": 0.94,
+  "locked_at": "2026-07-11T20:14:32.491Z",
+  "reason": "new_stream_detected",
+  "candidate": null
+}
+```
+
+`status` is `camera`, `candidate`, or `locked`. An exact but missing or uncalibrated file appears as `candidate` and does not unload the current `locked` stream. Repeated detections of the active stream keep the same revision and return `reason: "same_stream_continues_without_reseek"`.
+
+---
+
+## GET /api/demo/streams — local media readiness
+
+Returns exactly four allowlisted stream definitions. Each reports `file_available`, `calibrated_checkpoints`, `checkpoint_count`, `coverage_status`, `calibration_complete`, `playback_ready`, `ready`, and `readiness_reason`. Files come from `DEMO_STREAMS_DIR` or the repository's `demo-footage/` directory; filesystem paths are never returned. The World Cup edit is honestly marked `coverage_status: "partial"` because its kickoff and 2–0 checkpoints are absent, while its five present checkpoints remain playable.
+
+---
+
+## GET or HEAD /demo-streams/:stream_id — seekable local MP4
+
+Serves only a manifest stream id whose installed file passes the pinned size and SHA-256, never an arbitrary path. A full request returns `200`; a valid single byte range returns `206` with `Accept-Ranges: bytes`, `Content-Range`, and exact `Content-Length`; an invalid range returns `416`. Missing files and unknown ids return `404`; a wrong edit returns `409`.
+
+The intended demo topology is localhost `/capture` plus public `/phone`, keeping these large VOD bytes off the public tunnel.
 
 ---
 

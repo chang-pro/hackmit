@@ -1,8 +1,8 @@
-# Demo-day runbook — four-stream funding demo
+# Demo-day runbook — camera-guided four-stream theater
 
 The one-line claim this demo proves:
 
-> Look at a game through Meta glasses. BloomKnights identifies it, retrieves the matching event intelligence, and shows the model probability beside the prediction-market probability without a search or sport picker.
+> Look at a game through Meta glasses. BloomKnights identifies the exact broadcast and moment, replaces the camera view with its synchronized local stream, and shows the model probability beside the prediction-market probability without a search or sport picker.
 
 ## Canonical stage setup
 
@@ -12,21 +12,21 @@ Run the named tunnel connector:
 npm run phone:tunnel
 ```
 
-Open these stable pages:
+Open:
 
-- Viewer: `https://capture.saicharanramineni.com/capture`
-- Phone fallback: `https://capture.saicharanramineni.com/phone`
+- Desktop viewer: `http://localhost:3000/capture`
+- Phone/glasses fallback: `https://capture.saicharanramineni.com/phone`
 
-Use current Chrome or Edge for the viewer so YOLO uses WebGPU. The live-vision tile must eventually read `YOLO11s WebGPU`; Safari intentionally falls back to WASM.
+The desktop uses localhost so the large predownloaded MP4s remain on the laptop. The phone still uses the stable public endpoint for page delivery, signaling, and sparse analysis frames.
 
-Prepare the four teammate clips in this order:
+Install and calibrate these exact files:
 
-1. 2022 World Cup Final — Argentina vs France.
-2. 2016 NBA Finals Game 7 — Cavaliers vs Warriors.
-3. Super Bowl LI — Patriots vs Falcons.
-4. UFC 229 — Khabib Nurmagomedov vs Conor McGregor.
+1. `wc22_final_arg_fra__soccer_2022_12_18.mp4` — Argentina vs France.
+2. `nba_bos_nyk__celtics_at_knicks_2026.mp4` — Celtics at Knicks, April 9, 2026.
+3. `sb51_ne_atl__football_2017_02_05.mp4` — Patriots vs Falcons.
+4. `ufc229_khabib_mcgregor__ufc_2018_10_06.mp4` — Khabib Nurmagomedov vs Conor McGregor.
 
-Those identities match the committed intelligence packs. If the extracted footage differs, update the matching JSON under `packages/fixtures/demo-intelligence/` before stage day; never silently attach one event's facts to another.
+The compressed files are committed under `demo-footage/`; `DEMO_STREAMS_DIR` can override that location. Their exact hashes, durations, and offsets live in `packages/fixtures/demo-streams/manifest.json`. Never infer file time from the game clock and never attach one event's facts to another edit.
 
 ## Preflight gate
 
@@ -34,100 +34,100 @@ Run:
 
 ```bash
 npm test
-curl -fsS https://capture.saicharanramineni.com/api/health
-curl -fsS https://capture.saicharanramineni.com/api/demo/intelligence
+curl -fsS https://capture.saicharanramineni.com/api/health | jq .
+curl -fsS http://localhost:3000/api/demo/streams | jq .
+curl -fsS http://localhost:3000/api/playback | jq .
 ```
 
 Pass criteria:
 
 - All tests pass.
-- Health reports `vision.selected: "cerebras"`, `vision.error: null`, and `demo_intelligence_packs: 4`.
-- The pack catalog contains World Cup, NBA Finals, Super Bowl, and UFC.
-- Phone and viewer establish video on separate devices.
-- Pressing **Analyze** shows `Capturing temporal evidence · 1/5`; the first five-frame burst takes roughly four seconds before model latency.
-- Exact target footage produces `Historical replay`, not `Sport template`.
+- Health reports `vision.selected: "cerebras"`, no vision error, four intelligence packs, and four ready demo streams.
+- Every stream reports `file_available: true`, `calibration_complete: true`, and `ready: true`; the World Cup edit separately reports `coverage_status: "partial"` and two omitted checkpoints.
+- Phone and viewer establish the camera detector preview on separate devices.
+- Pressing **Analyze** fills the first five-frame window.
+- Exact footage produces `Historical replay`, then crossfades to its local MP4.
+- `/api/playback.revision` increments once per changed game and never for a later detection from the same game.
 - The probability tile shows Model, Market, Gap, and `MOCK`.
 
 ## Three-minute stage sequence
 
 ### 0:00–0:20 — Hook
 
-Show the live viewer before analysis.
+Show the camera detector preview before analysis.
 
 Say:
 
-> “Prediction markets know their contracts, but they do not know what I am looking at. BloomKnights starts with the physical world. I look at a broadcast and it finds the event, state, and relevant market for me.”
+> “Prediction markets know their contracts, but they do not know what I am looking at. I look at a broadcast, BloomKnights identifies the exact moment, and then the clean broadcast takes over automatically.”
 
-### 0:20–1:05 — World Cup recognition
+### 0:20–1:05 — World Cup recognition and handoff
 
-Play the Argentina–France clip, start the phone/glasses feed, then press **Analyze**.
+Show the calibrated Argentina–France checkpoint to the phone/glasses, then press **Analyze**.
 
-Point to the right rail as it progresses:
+Point to the stages:
 
-1. Direct camera connected.
+1. Camera detector connected.
 2. Five-frame temporal window collected.
-3. Soccer and the World Cup Final detected.
-4. Official timeline, state model, and replay market cache loaded.
+3. Soccer, both teams, and the World Cup Final detected.
+4. The exact checkpoint resolved.
+5. The local World Cup MP4 loaded, sought once, and replaced the camera view.
+6. Historical prediction, mock market, and research pack loaded.
 
-When the result appears, point to Model / Market / Gap and say:
+Say:
 
-> “The vision model did not receive a sport selector. It recognized the World Cup Final, found the matching historical intelligence pack, and priced the visible state. The market value is a clearly labeled replay simulation—we are demonstrating the product loop, not pretending this old game is trading live.”
+> “There was no sport selector. The model recognized the World Cup Final and this checkpoint, then the clean local broadcast replaced the camera view. From here it plays normally; later detections from this same game cannot restart it.”
 
 ### 1:05–1:40 — Automatic NBA switch
 
-Switch the source screen to 2016 Finals Game 7. Do not touch BloomKnights.
+Change only the source screen seen by the glasses to the Celtics–Knicks clip.
+
+On the next model window, playback revision increments once and the NBA file replaces the World Cup file. Point to `What changed` and `Next trigger`.
 
 Say:
 
-> “Now I only change what I am watching.”
+> “I changed what I was watching, not a setting. A new exact event creates one new playback command; repeated NBA observations only update the analysis.”
 
-On the next model window, the UI should show basketball detected and an event switch. At the 89–89 or 92–89 checkpoint, explain `What changed` and `Next trigger`.
+### 1:40–2:15 — Super Bowl
 
-### 1:40–2:15 — Super Bowl probability swing
-
-Switch to Super Bowl LI at 28–3, then scrub or cut to 28–28.
+Switch the source to the chosen calibrated Super Bowl checkpoint. Do not scrub the source again after lock: same-stream detections deliberately never reseek the local playback.
 
 Say:
 
-> “This is where a visual probability layer becomes visceral. The same event moves from a three-percent comeback tail to essentially a coin flip because the score and clock changed—not because somebody searched for another market.”
-
-The monotonic replay cursor prevents a noisy old graphic from rewinding the analysis after the later checkpoint is reached.
+> “The old stream remains stable until the model proves which new stream and moment should replace it. That prevents noisy scorebugs and replay graphics from jerking the player around.”
 
 ### 2:15–2:40 — UFC proves the abstraction
 
-Switch to UFC 229.
+Switch to the calibrated UFC 229 checkpoint.
 
 Say:
 
-> “The state representation changes with the sport. There is no basketball-style score here, so the system uses fighter identity, round, clock, and visibly supported control context. It does not invent judge scores or damage.”
+> “There is no basketball-style score here. The system uses fighter identity, round, clock, and visibly supported control context, then selects the UFC file through the same playback contract.”
 
-The canonical terminal clock is `1:57 remaining`; `3:03` is elapsed time. Once the submission is visibly resolved, the historical checkpoint must show a closed 100% result rather than a pre-finish estimate.
+The canonical finish is `1:57 remaining` in round four. A visibly resolved submission must show the historical 100% terminal result.
 
 ### 2:40–3:00 — Close
 
 Say:
 
-> “Four broadcasts. No picker. No search. One interface from visible reality to a market question. With funding, the precollected replay layer becomes a live data and market infrastructure layer. Look at the game. See the probability.”
+> “Four broadcasts. No picker. No search. The camera identifies what I chose, then gets out of the way so the clean stream and its probability take over. Look at the game. See the probability.”
 
 ## Operator rules
 
-- Analysis stays off until the clip is framed and ready.
-- Use Chrome or Edge on the viewer.
-- Keep the scoreboard unobstructed and large enough to read.
+- Analysis stays off until the source scorebug is framed.
+- Use Chrome or Edge on the desktop.
+- Keep both primary participants, score, phase, and clock readable.
 - Never remove `Historical replay`, `Sport template`, or `MOCK` labels.
 - Never call the gap guaranteed profit or say the market is wrong.
-- If the exact pack does not match, the UI will say `Sport template`; explain it honestly or switch to the correct clip.
-- `/api/latest` contains live analyzed insight only and never silently changes to an NBA fixture.
+- `/api/latest` is live analyzed insight only.
+- `/api/playback` is authoritative: the same `(epoch, revision)` means never reload or seek.
+- Stopping analysis or losing the detector must not stop a locked local replay.
 
 ## Fallback ladder
 
-1. Meta glasses → native companion → viewer.
-2. Phone browser → viewer.
-3. Prerecorded clip displayed to either camera source.
-4. `/capture?demo=1&cycle=1` for a quota-free, explicitly labeled rehearsal of the
-   prediction, market, evidence, and mock-web-research UI. It does not claim
-   camera detection or model calls.
-5. `/capture?demo=1` for local video/UI proof only.
-6. Dashboard deterministic fixture moments for Q&A.
+1. Meta glasses → native companion → local viewer.
+2. Phone browser → local viewer.
+3. Another calibrated checkpoint from the four installed MP4s.
+4. `/capture?demo=1&cycle=1` for an explicitly labeled, quota-free rehearsal. It does not claim camera recognition, local-file synchronization, live search, or model calls.
+5. Dashboard deterministic fixtures for Q&A.
 
-The first three paths prove automatic event detection. The remaining paths are honest recovery tools, not substitutes for the primary demo.
+The first three paths prove automatic event and playback selection. The remaining paths are honest recovery tools.

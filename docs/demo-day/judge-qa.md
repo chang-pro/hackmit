@@ -5,10 +5,10 @@ Rules: 2–3 sentences, then stop talking. Never bluff a number. The honest-fall
 ---
 
 **1. What's your end-to-end latency?**
-The phone captures a fast five-frame opening window in roughly four seconds, followed by the live Cerebras vision request; later windows are capped at one every 12 seconds to respect the five-request-per-minute limit. We expose acquisition, model, and cooldown state rather than claiming a latency number we have not measured end to end on this venue network.
+The phone captures a fast five-frame opening window in roughly four seconds, then sends its earliest and latest representatives in one live Cerebras vision request; later windows are capped at one every 12 seconds to respect the five-request-per-minute limit. We expose acquisition, model, and cooldown state rather than claiming a latency number we have not measured end to end on this venue network.
 
 **2. Is that real computer vision, or staged?**
-In the primary demo, continuous video really comes from the phone or glasses over WebRTC, YOLO11s tracks players locally with WebGPU, and Cerebras Gemma reads five ordered camera frames into a strict event schema. The historical intelligence, market, and web-research layers are precollected for these four old games and are visibly labeled; the separate rehearsal URL also says when no camera or model call occurred.
+In the primary demo, continuous video really comes from the phone or glasses over WebRTC, YOLO11s tracks players locally with WebGPU, and Cerebras Gemma reads the earliest and latest representatives of a five-frame temporal window into a strict event schema. The historical intelligence, market, and web-research layers are precollected for these four old games and are visibly labeled; the separate rehearsal URL also says when no camera or model call occurred.
 
 **3. How accurate is the win-probability model?**
 The live repository contains small, explainable sport-specific baselines with sanity and boundary tests, but these four historical demo probabilities are explicitly illustrative checkpoints rather than a claimed calibrated production model. The funded milestone is calibration against licensed play-by-play and market histories; today we prove the screen-to-state-to-market product loop without inventing a validation score.

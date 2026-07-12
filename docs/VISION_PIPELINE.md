@@ -7,11 +7,13 @@ This is the execution guide for the BloomKnights camera-to-insight backend. The 
 Our service owns everything after camera capture:
 
 ```text
-phone/app camera -> direct WebRTC peer connection -> desktop capture viewer
+phone/app camera -> direct WebRTC detector preview -> desktop capture viewer
                   \-> HTTPS tunnel carries SDP/ICE signaling only
-desktop capture viewer -> bundled YOLO11s WebGPU -> continuous local player/ball overlay
-phone/app analysis JPEGs (only after user action) -> fast first five-frame window -> Gemma 4 event extraction
+phone/app analysis JPEGs (only after user action) -> fast five-frame window -> earliest/latest representatives -> Gemma 4 event extraction
 -> automatic event-switch check -> matching precollected event intelligence pack
+-> exact pack_id + calibrated moment_id -> PlaybackDirector revision
+-> local predownloaded MP4 -> one-time seek -> uninterrupted theater playback
+desktop theater video -> bundled YOLO11s WebGPU -> continuous local player/ball overlay
 -> deterministic exact-pack result or GPT OSS/GLM for unmatched events
 -> model/market/evidence presentation JSON
 ```
@@ -40,7 +42,7 @@ The server prints the exact phone URL. On the current machine it will resemble:
 http://10.32.242.101:3000/phone
 ```
 
-Open `/capture` on the desktop and `/phone` on the camera device. Choose **Start live feed** on the phone, fill most of the view with the television or monitor, and keep the scoreboard unobstructed. The latest started phone or glasses feed automatically becomes the desktop feed. Video connects directly between phone and desktop; press **Analyze** on the desktop only when you are ready to spend model requests.
+Open `/capture` on the desktop and `/phone` on the camera device. Choose **Start live feed** on the phone, fill most of the view with the television or monitor, and keep the scoreboard unobstructed. The latest started phone or glasses feed automatically becomes the detector source. Press **Analyze** only when you are ready to spend model requests. Before an exact lock, the theater shows the detector preview; after a lock, the detector remains connected behind the matching local MP4.
 
 Continuous **Start live feed** uses `getUserMedia`, which mobile browsers normally expose only in a secure HTTPS context. Use the photo flow until an HTTPS tunnel or the native app is available.
 
@@ -58,7 +60,7 @@ The command starts the analyzer and serves the stable demo URL:
 https://capture.saicharanramineni.com
 ```
 
-Open `https://capture.saicharanramineni.com/capture` on the desktop and `https://capture.saicharanramineni.com/phone` on the phone, then start the camera. The public tunnel carries only WebRTC signaling and sparse analysis requests; camera media travels directly between the browser peers or through the configured TURN provider. Unlike the previous LocalTunnel and Tunnelmole paths, the public URL opens with a trusted certificate—there is no IP/password interstitial for the camera user.
+Open `http://localhost:3000/capture` on the desktop and `https://capture.saicharanramineni.com/phone` on the phone, then start the camera. The public tunnel carries page delivery, signaling, and sparse analysis requests; camera media travels between peers or through TURN, while the large predownloaded MP4 stays on the laptop through localhost. The public `/capture` route still works, but using it would unnecessarily send local VOD bytes through the tunnel.
 
 The stable hostname is backed by the named `bloomknights-capture` Cloudflare Tunnel. Its credentials JSON lives only at `~/.cloudflared/<tunnel-id>.json`; never commit it. The hostname survives restarts, but the connector process must be running for the route to answer. Do not publish the URL broadly because anyone with it can submit analysis requests.
 
@@ -80,7 +82,7 @@ GET /api/webrtc/active
 
 When the phone or glasses starts, it claims that session at `POST /api/webrtc/active`. If another provider is already live, the new one replaces it. Both pages then exchange SDP offers/answers and ICE candidates through `POST /api/webrtc/signal` plus `GET /api/webrtc/poll`. Those endpoints carry only setup metadata—never JPEGs or video bytes.
 
-Analysis starts only after `POST /api/analysis/start`. The browser phone sends an initial five-frame burst at 800 ms spacing, then returns to one high-quality JPEG every 2.4 seconds. The backend still permits at most one model window every 12 seconds:
+Analysis starts only after `POST /api/analysis/start`. The browser phone sends an initial five-frame burst at 800 ms spacing, then returns to one high-quality JPEG every 2.4 seconds. Each five-frame temporal window is compressed to its earliest and latest images before the Cerebras request because Gemma accepts at most two image inputs. The backend still permits at most one model window every 12 seconds:
 
 ```http
 POST /api/frames
@@ -150,7 +152,7 @@ Queued frames return HTTP `202` with queue depth, time until the next eligible r
 Gemma remains the source of truth for what the camera sees. After each successful extraction, `services/demo/intelligence.js` canonicalizes the detected sport and matches event context and participant aliases against four committed evidence packs:
 
 - `world-cup-2022-final.json`
-- `nba-finals-2016-game-7.json`
+- `nba-celtics-knicks-2026.json`
 - `super-bowl-li.json`
 - `ufc-229.json`
 
@@ -158,12 +160,15 @@ The closest checkpoint is selected by score first, then phase and clock. Progres
 
 Together the packs contain 27 chronological checkpoints from opening state through resolved result. Each includes cached evidence traces, a deterministic model probability, an explicitly mocked replay-market probability, what changed, and the next probability trigger. Exact ready packs return immediately after vision and skip the optional GPT OSS/GLM pass by default, eliminating a second network dependency from the stage path. `CEREBRAS_EXACT_DEMO_ENRICHMENT=true` opts into that pass, but it cannot replace the checkpoint probability or deterministic summary. Unmatched events may still use GPT OSS/GLM for live model-led analysis.
 
-`GET /api/latest` returns only the latest live analyzed result and persists until reset. It never silently falls back to an NBA fixture. `GET /api/comparison` retains the explicit deterministic fixture/debug path, and `GET /api/demo/intelligence` lists the four available packs.
+`GET /api/latest` returns only the latest live analyzed result and never silently falls back to an NBA fixture. A completed result includes the PlaybackDirector snapshot. `GET /api/playback` persists the active local stream revision even if analysis stops; only explicit `/api/reset` clears it. `GET /api/demo/streams` reports file and calibration readiness, while `GET|HEAD /demo-streams/:stream_id` serves allowlisted MP4 byte ranges. The full contract is in [`LOCAL_STREAM_PLAYBACK.md`](LOCAL_STREAM_PLAYBACK.md).
 
 Other endpoints:
 
 - `GET /api/health` — backend selection and readiness.
 - `GET /api/latest` — most recent live insight, with fixture fallback after the live TTL.
+- `GET /api/playback` — authoritative local theater revision; same revision means never reseek.
+- `GET /api/demo/streams` — four-stream file and calibration readiness.
+- `GET|HEAD /demo-streams/:stream_id` — allowlisted, byte-range local MP4 delivery.
 - `GET /api/comparison` — compatibility alias for `/api/latest`.
 - `POST /api/reset` — clears buffered frames and canonical game state.
 - `GET /phone` — phone-first camera capture page.
@@ -175,11 +180,11 @@ Other endpoints:
 - `GET /api/webrtc/config?session_id=<id>` — session-bound STUN/TURN servers for browser peers.
 - `GET /api/analysis/status` — analysis-enabled state for the phone client.
 - `POST /api/analysis/start` — begin quota-limited model analysis.
-- `POST /api/analysis/stop` — stop model analysis while video keeps streaming.
+- `POST /api/analysis/stop` — stop model analysis while the current local replay or detector preview continues.
 
 ## Frame cadence
 
-The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the public HTTP tunnel. The phone requests 4K/15fps capture with a detail-preserving 12 Mbps sender ceiling; browsers that cannot supply 4K fall back gracefully. `/capture` reports the received resolution, frame rate, and bitrate in its dock. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend packs five ordered frames into one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
+The WebRTC peer connection carries continuous camera video directly from phone to desktop and does not traverse the public HTTP tunnel. The phone requests 4K/15fps capture with a detail-preserving 12 Mbps sender ceiling; browsers that cannot supply 4K fall back gracefully. `/capture` reports the received resolution, frame rate, and bitrate in its dock. Until the user presses **Analyze** on `/capture`, `/api/frames` rejects analysis submissions with `analysis_status: "disabled"`. After that explicit action, the phone submits one 1600-pixel JPEG every 2.4 seconds; the backend forms a five-frame temporal window, retains the earliest and latest representative images, and sends those two images in one Gemma request every 12 seconds. That yields at most five Gemma requests and five GPT-OSS requests per minute.
 
 The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Metered Open Relay: set `METERED_TURN_APP_NAME` and `METERED_TURN_API_KEY` on the server. For each ten-minute active session, the server retrieves the provider-issued browser ICE configuration and returns it only to callers holding that session id. Do not put the API key in frontend source code.
 
@@ -208,13 +213,13 @@ not claim camera detection, live web access, or model calls.
 
 The capture page runs bundled YOLO11s directly in the desktop browser against the received WebRTC video. Chrome and Edge use ONNX Runtime WebGPU for a four-update-per-second target; browsers without WebGPU fall back to a conservative WASM cadence. To detect distant broadcast players, it analyzes three overlapping 640px field tiles rather than shrinking the whole 16:9 frame into one small detector input. It recognizes COCO `person` and `sports ball` classes, merges tile results with local NMS, and maps normalized boxes over the cover-cropped video. The first live stream downloads the bundled 36 MB ONNX model to the viewer; after that, tracking creates no Cerebras call, backend frame upload, or tunnel media traffic. The local demo uses an explicitly labeled synthetic tracker so UI work never consumes model quota.
 
-Gemma remains deliberately user-gated behind **Analyze** for the job YOLO cannot do: reading scoreboards, identifying the event, and assembling prediction context from sparse five-frame windows.
+Gemma remains deliberately user-gated behind **Analyze** for the job YOLO cannot do: reading scoreboards, identifying the event, and assembling prediction context from sparse five-frame windows represented by their earliest and latest images.
 
 ## Cerebras models
 
 The live provider is intentionally simple:
 
-1. `gemma-4-31b` receives up to five ordered JPEGs and emits a strict universal event schema. Sport is open-ended; head-to-head games, tournaments, leaderboards, and races share one contract.
+1. `gemma-4-31b` receives the earliest and latest JPEGs from each window (at most two image inputs) and emits a strict universal event schema. Sport is open-ended; head-to-head games, tournaments, leaderboards, and races share one contract.
 2. The backend compares stable `event_identity`, sport, competition, and participants with the last trusted observation. A real event change clears the old context; a leaderboard showing another player does not.
 3. `gpt-oss-120b` receives the trusted event observation plus same-event context and emits the primary prediction-market question, probability, alternate markets, key factors, changes, and the next probability-moving trigger.
 

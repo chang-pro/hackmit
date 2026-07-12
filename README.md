@@ -37,18 +37,22 @@ Pages served by `npm start` (see `services/api/server.js`):
 
 - `/` — judge-facing dashboard
 - `/phone` — phone/Ray-Ban camera sender
-- `/capture` — desktop live-feed viewer and Analyze control
+- `/capture` — desktop detector plus local-broadcast theater and Analyze control
 - `/data` — data dashboard
 - `/landing` — marketing landing page
 - `/pitch` — pitch deck
 
-API routes: `GET /api/webrtc/active`, `POST /api/webrtc/active`, `POST /api/webrtc/signal`, `POST /api/analysis/start`, `POST /api/frames`, `GET /api/comparison`, `GET /api/demo/intelligence`, `GET /api/demo/replay`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
+API routes: `GET /api/webrtc/active`, `POST /api/webrtc/active`, `POST /api/webrtc/signal`, `POST /api/analysis/start`, `POST /api/frames`, `GET /api/playback`, `GET /api/demo/streams`, `GET|HEAD /demo-streams/:stream_id`, `GET /api/comparison`, `GET /api/demo/intelligence`, `GET /api/demo/replay`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
 
-### Four-stream funding demo
+### Camera-guided four-stream funding demo
 
-The live camera path now bridges automatic Cerebras detection to 27 deterministic checkpoints across four precollected intelligence timelines: the 2022 World Cup Final, 2016 NBA Finals Game 7, Super Bowl LI, and UFC 229. Exact mode requires both primary participants or a unique event-identity token, sufficient vision confidence, and an anchored score/phase/clock; otherwise the UI stays pending or uses a sport template without leaking another event's facts. A ready checkpoint returns cached evidence, clearly labeled mock web research about players, teams, tactics, and historical news context, a deterministic model estimate, an explicitly mocked replay-market estimate, the model-market gap, what changed, and the next probability trigger. Exact packs skip the optional GPT OSS/GLM enrichment pass by default for lower latency and deterministic stage wording; set `CEREBRAS_EXACT_DEMO_ENRICHMENT=true` to opt in, without allowing it to replace the checkpoint probability or summary.
+The camera/glasses feed is now the selector, not the permanent theater video. Cerebras detects which of four canonical broadcasts is visible and resolves one of 27 deterministic checkpoints. Once the exact event and checkpoint are ready, a server-owned `PlaybackDirector` emits an authoritative playback revision. The desktop swaps to the matching predownloaded MP4, seeks once to the calibrated media offset, and lets it play continuously. Later model results from the same game update predictions but never restart or reseek the video. Only a newly detected `pack_id` creates another revision and switches the theater.
 
-The pack catalog is available at `GET /api/demo/intelligence`; source data lives in `packages/fixtures/demo-intelligence/`. `/capture?demo=1&cycle=1` runs an explicitly labeled, quota-free UI rehearsal using `GET /api/demo/replay`; it does not claim camera detection, live search, or model calls. If the teammate-provided clips use different events, update the corresponding aliases and checkpoints before the demo rather than attaching mismatched historical facts. The complete stage procedure is in [`docs/demo-day/runbook.md`](docs/demo-day/runbook.md).
+Exact mode still requires both primary participants or a unique event-identity token, sufficient vision confidence, and an anchored score/phase/clock; otherwise the current playback is preserved and the UI stays pending. A ready checkpoint returns cached evidence, clearly labeled mock web research about players, teams, tactics, and historical news context, a deterministic model estimate, an explicitly mocked replay-market estimate, the model-market gap, what changed, and the next probability trigger. Exact packs skip the optional GPT OSS/GLM enrichment pass by default for lower latency and deterministic stage wording; set `CEREBRAS_EXACT_DEMO_ENRICHMENT=true` to opt in, without allowing it to replace the checkpoint probability or summary.
+
+The intelligence catalog is available at `GET /api/demo/intelligence`; stream readiness is at `GET /api/demo/streams`; the current switch revision is at `GET /api/playback`. Intelligence source data lives in `packages/fixtures/demo-intelligence/`, while exact-file media offsets live in `packages/fixtures/demo-streams/manifest.json`. The four compressed hackathon edits are committed under `demo-footage/`; raw full-resolution footage remains out of Git. Game clocks are not file timestamps, so each manifest entry is bound to the exact edit by filename, size, duration, and SHA-256. See [`docs/LOCAL_STREAM_PLAYBACK.md`](docs/LOCAL_STREAM_PLAYBACK.md) for the full contract and teammate handoff.
+
+`/capture?demo=1&cycle=1` remains an explicitly labeled, quota-free UI rehearsal using `GET /api/demo/replay`; it does not claim camera detection, local-file synchronization, live search, or model calls. The complete stage procedure is in [`docs/demo-day/runbook.md`](docs/demo-day/runbook.md).
 
 The iOS companion app lives at `apps/ios/` — see its README for build and glasses-streaming instructions. The rendered 60-second demo video is at `apps/demo-video/out/`.
 
