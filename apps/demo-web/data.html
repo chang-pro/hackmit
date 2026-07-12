@@ -237,13 +237,13 @@
     <div>
       <div class="eyebrow">Model &middot; Market &middot; Footage</div>
       <h1>Every sport, one question:<br /><em>what should this moment be priced at?</em></h1>
-      <p>Model estimates versus market-implied probabilities across the demo catalog, live stat snapshots feeding event resolution, and the state of the vision training set.</p>
+      <p>Model estimates versus market-implied probabilities across the event catalog, live stat snapshots feeding event resolution, and the state of the vision training set.</p>
     </div>
     <div class="kpis" aria-label="Summary metrics">
       <div class="kpi">
         <div class="kpi-label">Sports</div>
         <div class="kpi-value" id="kpiSports">&mdash;</div>
-        <div class="kpi-sub">in demo catalog</div>
+        <div class="kpi-sub">in event catalog</div>
       </div>
       <div class="kpi">
         <div class="kpi-label">Moments</div>
@@ -301,7 +301,7 @@
   <section class="sec" aria-label="Model versus market by sport">
     <div class="sec-head">
       <h2>Model vs market</h2>
-      <span class="tag">Demo moments &middot; per sport</span>
+      <span class="tag">Moments &middot; per sport</span>
       <span class="right" id="mvmStatus">loading&hellip;</span>
     </div>
     <div class="panel" id="strips"></div>
@@ -334,7 +334,7 @@
     </div>
   </section>
 
-  <p class="footnote">All comparisons use the pipeline&rsquo;s honest-data rules: mocked or replayed market values are labeled, low-confidence states are suppressed, and a model-market gap is a signal to inspect &mdash; not proof of profit. Trajectory sketches between demo moments are illustrative, not recorded tick data.</p>
+  <p class="footnote">All comparisons use the pipeline&rsquo;s honest-data rules: mocked or replayed market values are labeled, low-confidence states are suppressed, and a model-market gap is a signal to inspect &mdash; not proof of profit. Trajectory sketches between moments are illustrative, not recorded tick data.</p>
 </div>
 
 <div class="tip" id="tip"></div>
@@ -345,9 +345,9 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (p) => (p == null || isNaN(p)) ? "—" : (p * 100).toFixed(1) + "%";
 
-/* ── Sport catalog fallback — famous demo matches. /api/sports overrides. ── */
+/* ── Sport catalog fallback — famous match fixtures. /api/sports overrides. ── */
 const FALLBACK_SPORTS = [
-  { id: "nba",    label: "NBA",    match: "Celtics @ Knicks",                 sub: "Demo broadcast · BOS–NYK",
+  { id: "nba",    label: "NBA",    match: "Celtics @ Knicks",                 sub: "Sample broadcast · BOS–NYK",
     demo_moments: [ { fixture: "frame_000184", label: "Q4 2:14" }, { fixture: "frame_000260", label: "Q4 0:30" } ] },
   { id: "football", label: "NFL",    match: "Super Bowl LI · NE–ATL", sub: "The 28–3 comeback",
     demo_moments: [ { fixture: "sb51_q3_831", label: "Q3 28–3" }, { fixture: "sb51_q4_057", label: "Q4 0:57" } ] },
@@ -493,12 +493,12 @@ function renderHeroChart() {
   $("heroChart").appendChild(svg);
 }
 
-/* ── Per-sport mini curve: two demo-moment anchors, stylized line between ── */
+/* ── Per-sport mini curve: two moment anchors, stylized line between ── */
 function miniCurve(momentData) {
   /* momentData: [{label, model, market}] with model present */
   const W = 340, H = 120, m = { top: 14, right: 14, bottom: 22, left: 36 };
   const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
-  const svg = el("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Illustrative win-probability trajectory between demo moments" });
+  const svg = el("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Illustrative win-probability trajectory between moments" });
 
   for (const g of [0, 0.5, 1]) {
     const y = m.top + (1 - g) * ih;
@@ -679,7 +679,7 @@ async function renderStrips(sports) {
       chart.appendChild(miniCurve(momentData));
       const cap = document.createElement("p");
       cap.className = "chart-caption";
-      cap.textContent = "Illustrative trajectory between demo moments — anchors are real pipeline output; the connecting line is a sketch, not tick data.";
+      cap.textContent = "Illustrative trajectory between moments — anchors are real pipeline output; the connecting line is a sketch, not tick data.";
       chart.appendChild(cap);
     } else {
       chart.appendChild(miniPlaceholder());

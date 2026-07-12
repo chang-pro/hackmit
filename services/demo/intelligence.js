@@ -586,7 +586,7 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
           market_probability: marketProbability,
           gap_percentage_points: gap,
           is_mock: true,
-          provider: "precollected_demo_market",
+          provider: "precollected_replay_market",
         }
       : null,
     confidence: deterministicReady
@@ -616,7 +616,7 @@ export function analysisFromDemoIntelligence(intelligence, modelAnalysis = null)
     return {
       ...modelAnalysis,
       risk_note: [modelAnalysis.risk_note, intelligence.disclosure].filter(Boolean).join(" "),
-      model: `${modelAnalysis.model ?? "cerebras"}+sport-demo-evidence-v1`,
+      model: `${modelAnalysis.model ?? "cerebras"}+sport-replay-evidence-v1`,
     };
   }
   const deterministic = {
@@ -632,14 +632,14 @@ export function analysisFromDemoIntelligence(intelligence, modelAnalysis = null)
     what_changed: intelligence.what_changed,
     next_probability_trigger: intelligence.next_probability_trigger,
     risk_note: intelligence.disclosure,
-    model: "bloom-demo-intelligence-v1",
+    model: "bloom-replay-intelligence-v1",
   };
   if (!modelAnalysis) return deterministic;
   return {
     ...modelAnalysis,
     ...deterministic,
     key_factors: [...new Set([...deterministic.key_factors, ...(modelAnalysis.key_factors ?? [])])].slice(0, 6),
-    model: `${modelAnalysis.model ?? "cerebras"}+bloom-demo-intelligence-v1`,
+    model: `${modelAnalysis.model ?? "cerebras"}+bloom-replay-intelligence-v1`,
   };
 }
 
@@ -665,7 +665,7 @@ function rehearsalObservation(pack, moment) {
     sport: pack.sport,
     competition: pack.competition_tokens?.[0] ?? pack.event_label,
     event_name: pack.event_label,
-    event_identity: `demo:${pack.id}`,
+    event_identity: `replay:${pack.id}`,
     event_format: pack.sport === "mma" ? "head_to_head" : "team_event",
     participants: [
       { name: participantA, role_or_position: "participant", score_or_status: String(scoreA), visible_rank: 0 },
@@ -689,7 +689,7 @@ function rehearsalObservation(pack, moment) {
 
 export function getDemoRehearsalInsight(packId, momentId = null) {
   const pack = PACKS.find((entry) => entry.id === packId);
-  if (!pack) throw new Error(`unknown demo intelligence pack "${packId}"`);
+  if (!pack) throw new Error(`unknown intelligence pack "${packId}"`);
   const moment = momentId
     ? pack.moments.find((entry) => entry.id === momentId)
     : pack.moments[0];
@@ -700,12 +700,12 @@ export function getDemoRehearsalInsight(packId, momentId = null) {
   const intelligence = selectDemoIntelligence(observation);
   if (!intelligence || intelligence.mode !== "precollected_event_replay" ||
       intelligence.pack_id !== pack.id || intelligence.moment_id !== moment.id) {
-    throw new Error(`demo checkpoint "${pack.id}/${moment.id}" does not resolve to itself`);
+    throw new Error(`checkpoint "${pack.id}/${moment.id}" does not resolve to itself`);
   }
   const analysis = analysisFromDemoIntelligence(intelligence);
   return {
-    session_id: "session_demo_rehearsal",
-    source: "demo_rehearsal",
+    session_id: "session_rehearsal",
+    source: "rehearsal",
     extraction: "precollected-rehearsal",
     rehearsal: { is_rehearsal: true, no_model_calls: true },
     observation,
@@ -746,7 +746,7 @@ export function getDemoRehearsalInsight(packId, momentId = null) {
       analytics_skip_reason: "quota_free_rehearsal",
     },
     presentation: {
-      status: "demo_rehearsal",
+      status: "rehearsal",
       short_text: `Rehearsal only. ${analysis.event_summary}`,
       spoken_text: `Rehearsal only. ${analysis.event_summary}`,
     },

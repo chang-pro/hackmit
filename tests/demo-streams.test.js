@@ -157,7 +157,7 @@ test("uncalibrated, low-confidence, and rehearsal observations cannot command pl
   assert.equal(uncalibrated.revision, 0);
   assert.equal(playbackCandidateFromInsight(liveInsight({ confidence: 0.69 })), null);
   assert.ok(playbackCandidateFromInsight(liveInsight({ confidence: 0.70 })));
-  assert.equal(playbackCandidateFromInsight(liveInsight({ source: "demo_rehearsal" })), null);
+  assert.equal(playbackCandidateFromInsight(liveInsight({ source: "rehearsal" })), null);
   assert.equal(playbackCandidateFromInsight(liveInsight({ status: "held_previous" })), null);
 });
 

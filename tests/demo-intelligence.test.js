@@ -129,7 +129,7 @@ test("every catalog rehearsal checkpoint resolves exactly without model calls", 
   for (const [packId, momentId] of REHEARSAL_CHECKPOINTS) {
     assert.ok(catalog.get(packId)?.has(momentId), `${packId}/${momentId} is published`);
     const insight = getDemoRehearsalInsight(packId, momentId);
-    assert.equal(insight.source, "demo_rehearsal");
+    assert.equal(insight.source, "rehearsal");
     assert.equal(insight.extraction, "precollected-rehearsal");
     assert.equal(insight.rehearsal.is_rehearsal, true);
     assert.equal(insight.rehearsal.no_model_calls, true);
@@ -137,7 +137,7 @@ test("every catalog rehearsal checkpoint resolves exactly without model calls", 
     assert.equal(insight.demo_intelligence.moment_id, momentId);
     assert.equal(insight.market.is_mock, true);
     assert.equal(insight.demo_intelligence.market.is_mock, true);
-    assert.equal(insight.analysis.model, "bloom-demo-intelligence-v1");
+    assert.equal(insight.analysis.model, "bloom-replay-intelligence-v1");
     assert.match(insight.presentation.short_text, /^Rehearsal only\./);
   }
 });

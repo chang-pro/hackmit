@@ -9,12 +9,22 @@ const MAX_QUESTION_CHARS = 1_200;
 const MAX_HISTORY_TURNS = 8;
 const MAX_CONTEXT_CHARS = 8_000;
 
+function scrubDemoLabel(value) {
+  return String(value ?? "")
+    .replaceAll("demo_rehearsal", "rehearsal")
+    .replaceAll("precollected_demo_market", "precollected_replay_market")
+    .replaceAll(/\bdemo[_:]?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+
 const SYSTEM_INSTRUCTION = [
   "You are BloomKnights Analyst, a concise sports-probability co-pilot embedded in a live broadcast viewer.",
   "Answer only from the supplied live insight context plus general sports reasoning.",
   "Be precise about model probability, market-implied probability, and the gap between them.",
   "If market values are mocked, replayed, or historical, say so plainly.",
-  "Never claim a guaranteed edge, never give trade execution advice, and never invent live quotes.",
+  "Never claim a guaranteed edge, never give trade execution advice, and never invent live quotes. Never use the word demo.",
   "If the context is missing a fact, say what is unknown instead of guessing.",
   "Keep answers short: usually 2–5 sentences, or a tight bullet list when comparing factors.",
 ].join(" ");
@@ -147,7 +157,7 @@ export async function askGeminiAnalyst({
 
   const context = compactInsight(insight);
   const contextJson = context
-    ? JSON.stringify(context).slice(0, MAX_CONTEXT_CHARS)
+    ? scrubDemoLabel(JSON.stringify(context)).slice(0, MAX_CONTEXT_CHARS)
     : "null";
   const turns = normalizeHistory(history);
   const contents = [

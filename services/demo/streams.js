@@ -17,37 +17,37 @@ function finiteNonNegative(value) {
 
 function validateManifest(manifest) {
   if (manifest?.schema_version !== 1 || !Array.isArray(manifest.streams)) {
-    throw new Error("demo stream manifest must use schema_version 1 and contain streams");
+    throw new Error("stream manifest must use schema_version 1 and contain streams");
   }
   if (manifest.streams.length !== 4) {
-    throw new Error(`demo stream manifest must contain exactly four streams; received ${manifest.streams.length}`);
+    throw new Error(`stream manifest must contain exactly four streams; received ${manifest.streams.length}`);
   }
   const streamIds = new Set();
   const packIds = new Set();
   const filenames = new Set();
   for (const stream of manifest.streams) {
     if (!stream?.stream_id || !stream?.pack_id || !stream?.source?.filename) {
-      throw new Error("every demo stream requires stream_id, pack_id, and source.filename");
+      throw new Error("every stream requires stream_id, pack_id, and source.filename");
     }
     if (!Number.isInteger(stream.source.size_bytes) || stream.source.size_bytes <= 0 ||
         !finiteNonNegative(stream.source.duration_seconds) ||
         !/^[a-f0-9]{64}$/.test(stream.source.expected_sha256 ?? "")) {
-      throw new Error(`demo stream ${stream.stream_id} requires exact size, duration, and SHA-256`);
+      throw new Error(`stream ${stream.stream_id} requires exact size, duration, and SHA-256`);
     }
     if (streamIds.has(stream.stream_id) || packIds.has(stream.pack_id)) {
-      throw new Error(`duplicate demo stream or pack id: ${stream.stream_id}`);
+      throw new Error(`duplicate stream or pack id: ${stream.stream_id}`);
     }
     if (basename(stream.source.filename) !== stream.source.filename || filenames.has(stream.source.filename)) {
-      throw new Error(`unsafe or duplicate demo stream filename: ${stream.source.filename}`);
+      throw new Error(`unsafe or duplicate stream filename: ${stream.source.filename}`);
     }
     if (stream.playback?.route !== `/demo-streams/${stream.stream_id}` ||
         stream.playback?.switch_policy !== "on_pack_change") {
-      throw new Error(`invalid playback contract for demo stream ${stream.stream_id}`);
+      throw new Error(`invalid playback contract for stream ${stream.stream_id}`);
     }
     const moments = new Set();
     for (const checkpoint of stream.checkpoints ?? []) {
       if (!checkpoint?.moment_id || moments.has(checkpoint.moment_id)) {
-        throw new Error(`invalid or duplicate checkpoint in demo stream ${stream.stream_id}`);
+        throw new Error(`invalid or duplicate checkpoint in stream ${stream.stream_id}`);
       }
       if (typeof checkpoint.available_in_media !== "boolean") {
         throw new Error(`${stream.stream_id}/${checkpoint.moment_id} must declare available_in_media`);

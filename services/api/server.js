@@ -217,13 +217,13 @@ function parseByteRange(header, size) {
 async function sendDemoStream(req, res, streamId, mediaDir, verifyStream = demoStreamVerifiedStatus) {
   const definition = getDemoStreamDefinition(streamId);
   if (!definition) {
-    sendJson(res, 404, { error: "unknown demo stream" });
+    sendJson(res, 404, { error: "unknown stream" });
     return;
   }
   const file = await verifyStream(streamId, mediaDir);
   if (!file.available) {
     sendJson(res, 404, {
-      error: "demo stream media is not installed",
+      error: "stream media is not installed",
       stream_id: streamId,
       expected_filename: definition.filename,
     });
@@ -231,7 +231,7 @@ async function sendDemoStream(req, res, streamId, mediaDir, verifyStream = demoS
   }
   if (file.verified !== true) {
     sendJson(res, 409, {
-      error: "demo stream media does not match the pinned manifest",
+      error: "stream media does not match the pinned manifest",
       stream_id: streamId,
       expected_filename: definition.filename,
       reason: file.bytes !== definition.expected_size_bytes
