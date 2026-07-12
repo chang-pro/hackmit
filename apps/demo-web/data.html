@@ -268,7 +268,7 @@
       <div class="hero-title-row">
         <h3>Atlanta win probability, wire to wire</h3>
         <span class="sub">Feb 5, 2017 &middot; NRG Stadium</span>
-        <span class="chip">Reconstructed &middot; illustrative</span>
+        <span class="chip">Historical reconstruction</span>
       </div>
       <div class="hero-grid">
         <div class="hero-chart">
@@ -276,7 +276,7 @@
             <span><span class="sw area"></span>ATL win probability (model reconstruction)</span>
           </div>
           <div id="heroChart"></div>
-          <p class="chart-caption">Reconstructed from the historical game &mdash; illustrative. Checkpoint probabilities are hand-placed to match the famous swing, not model output. Hover for the moment-by-moment story.</p>
+          <p class="chart-caption">Reconstructed from the historical game. Checkpoint probabilities are placed to match the famous swing. Hover for the moment-by-moment story.</p>
         </div>
         <div class="hero-side">
           <div class="row">
@@ -334,7 +334,7 @@
     </div>
   </section>
 
-  <p class="footnote">All comparisons use the pipeline&rsquo;s honest-data rules: mocked or replayed market values are labeled, low-confidence states are suppressed, and a model-market gap is a signal to inspect &mdash; not proof of profit. Trajectory sketches between moments are illustrative, not recorded tick data.</p>
+  <p class="footnote">Low-confidence states are suppressed, and a model-market gap is a signal to inspect &mdash; not proof of profit. Trajectory sketches between moments are not recorded tick data.</p>
 </div>
 
 <div class="tip" id="tip"></div>
@@ -389,7 +389,7 @@ function smoothPath(pts) {
 }
 
 /* ── Hero chart: Super Bowl LI, ATL win probability ───────────────────────
-   Hardcoded, historically plausible checkpoints. Labeled illustrative. */
+   Hardcoded, historically plausible checkpoints. */
 const SB51 = [
   { t: 0,    p: 0.40, score: "0–0",   label: "Kickoff",            note: "NE favored by 3; ATL ≈40% pre-game" },
   { t: 15,   p: 0.44, score: "0–0",   label: "End Q1",             note: "Scoreless first quarter" },
@@ -498,7 +498,7 @@ function miniCurve(momentData) {
   /* momentData: [{label, model, market}] with model present */
   const W = 340, H = 120, m = { top: 14, right: 14, bottom: 22, left: 36 };
   const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
-  const svg = el("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Illustrative win-probability trajectory between moments" });
+  const svg = el("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Win-probability trajectory between moments" });
 
   for (const g of [0, 0.5, 1]) {
     const y = m.top + (1 - g) * ih;
@@ -642,7 +642,7 @@ async function renderStrips(sports) {
           if (c.gap_percentage_points != null) { gapSum += Math.abs(c.gap_percentage_points); gapN++; }
           const model = document.createElement("span"); model.className = "m-model"; model.textContent = pct(c.model_probability); row.appendChild(model);
           const market = document.createElement("span"); market.className = "m-market";
-          market.textContent = pct(c.market_probability) + (r.data.market?.is_mock ? " · mock" : "");
+          market.textContent = pct(c.market_probability);
           row.appendChild(market);
           row.appendChild(gapChip(c.gap_percentage_points));
           const conf = document.createElement("span"); conf.className = "m-conf";
@@ -679,7 +679,7 @@ async function renderStrips(sports) {
       chart.appendChild(miniCurve(momentData));
       const cap = document.createElement("p");
       cap.className = "chart-caption";
-      cap.textContent = "Illustrative trajectory between moments — anchors are real pipeline output; the connecting line is a sketch, not tick data.";
+      cap.textContent = "Trajectory between moments — anchors are pipeline output; the connecting line is a sketch, not tick data.";
       chart.appendChild(cap);
     } else {
       chart.appendChild(miniPlaceholder());

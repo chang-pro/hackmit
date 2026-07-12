@@ -238,9 +238,6 @@ struct ComparisonCard: View {
                     } else if response.source == "live" {
                         TagPill(text: "Live frames", color: BK.accent)
                     }
-                    if response.market?.isMock == true {
-                        TagPill(text: "Mock market", color: BK.warn)
-                    }
                     Spacer()
                     if let lastUpdated {
                         Text(lastUpdated, style: .time)

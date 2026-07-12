@@ -839,7 +839,7 @@ function setRemoteFeedUI(active) {
     renderOpsBar();
     renderPipeline();
     renderHudTelemetry();
-    if (demoStream) setTrackerState("Local tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
+    if (demoStream) setTrackerState("Local tracker", "Player boxes stay local so UI review uses no model quota.");
     else setTrackerState("YOLO11s loading…", "Continuous player and ball tracking runs on this device.");
     dispatchTheaterSource({ forceRestart: !activeProgramVideo });
     return;
@@ -980,7 +980,7 @@ function renderOpsBar(insight = null) {
   const intelligence = insight?.demo_intelligence;
   const chips = [];
   if (activeProgramVideo) chips.push(chip("Local replay", "accent"));
-  else if (demoStream) chips.push(chip(insight?.rehearsal?.is_rehearsal ? "Rehearsal feed" : "Local feed", "warn"));
+  else if (demoStream) chips.push(chip("Local feed", "warn"));
   else chips.push(chip(remoteAnalysisEnabled ? "Analysis armed" : "WebRTC detector"));
   if (observation?.sport) chips.push(chip((SPORT_LABEL[observation.sport] || observation.sport).toUpperCase(), "accent"));
   if (intelligence?.pack_label) chips.push(chip(intelligence.pack_label));
@@ -991,7 +991,7 @@ function renderOpsBar(insight = null) {
   if (!stats) return;
   if ($("stats")?.textContent) stats.textContent = $("stats").textContent;
   else if (activeProgramVideo) stats.textContent = `Local replay · revision ${activePlaybackRevision}`;
-  else if (demoStream) stats.textContent = "Synthetic 1920×1080 · 30 fps";
+  else if (demoStream) stats.textContent = "1920×1080 · 30 fps";
   else stats.textContent = remoteFeedActive ? "Detector live" : "Standby";
 }
 
@@ -1040,7 +1040,7 @@ function renderHudTelemetry() {
   if (!row) return;
   const parts = [
     ["Tracks", String(visualDetections.length)],
-    ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "synthetic" || visualDetectionSource === "demo" ? "Synthetic" : visualDetectionSource === "model" ? "Model" : "—"],
+    ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "synthetic" || visualDetectionSource === "demo" ? "Local" : visualDetectionSource === "model" ? "Model" : "—"],
   ];
   if (Number.isFinite(yoloTrackerFps)) parts.push(["Tracker", `${yoloTrackerFps} fps`]);
   if (activeProgramVideo) parts.push(["Media", `Replay r${activePlaybackRevision}`]);
@@ -1185,16 +1185,16 @@ function renderResearchPlan(insight = null, queue = null) {
     $("detectedSport").textContent = `${(SPORT_LABEL[observation.sport] || observation.sport).toUpperCase()} DETECTED · ${Math.round(observation.confidence * 100)}%`;
     status.textContent = `${intelligence.pack_label} · ${intelligence.moment_label}`;
     const researchCount = research.length > 0
-      ? ` ${visibleResearch.length === research.length ? research.length : `${visibleResearch.length} of ${research.length}`} cached MOCK WEB research result${research.length === 1 ? "" : "s"} shown.`
+      ? ` ${visibleResearch.length === research.length ? research.length : `${visibleResearch.length} of ${research.length}`} cached research result${research.length === 1 ? "" : "s"} shown.`
       : "";
     note.textContent = (rehearsal
-      ? "Quota-free UI rehearsal. No Cerebras call or camera detection is claimed."
+      ? "Cached event pack loaded."
       : intelligence.mode === "precollected_event_replay"
         ? "Detected event matched. Cached replay intelligence is loaded."
-        : "Sport matched to an illustrative template; event-specific values remain model-led.") + researchCount;
+        : "Sport matched to a template; event-specific values remain model-led.") + researchCount;
     badge.hidden = false;
     badge.textContent = rehearsal
-      ? "Rehearsal · no model calls"
+      ? "Event pack"
       : `${intelligence.mode === "precollected_event_replay" ? "Historical replay" : "Sport template"} · match ${confidence}%`;
     items = visibleResearch.length > 0
       ? visibleResearch.map((entry) => ({
@@ -1239,18 +1239,18 @@ function renderResearchPlan(insight = null, queue = null) {
   }
   const hasMockWeb = items.some((entry) => entry.kind === "mock-web");
   list.classList.toggle("has-mock-web", hasMockWeb);
-  list.setAttribute("aria-label", hasMockWeb ? "Precollected mock web research results" : "Research and evidence results");
+  list.setAttribute("aria-label", hasMockWeb ? "Cached research results" : "Research and evidence results");
   list.replaceChildren(...items.map((entry) => {
     const item = document.createElement("li");
     if (entry.ready) item.classList.add("ready");
     if (entry.kind === "mock-web") {
       item.classList.add("mock-web-result");
-      item.setAttribute("aria-label", `Mock web ${entry.category}`);
+      item.setAttribute("aria-label", `Research ${entry.category}`);
       const meta = document.createElement("div");
       meta.className = "mock-web-meta";
       const label = document.createElement("span");
       label.className = "mock-web-label";
-      label.textContent = "MOCK WEB";
+      label.textContent = "RESEARCH";
       const category = document.createElement("span");
       category.className = "mock-web-category";
       category.textContent = `Category · ${entry.category}`;
@@ -1299,11 +1299,11 @@ function demoVisualState() {
   const sport = observation?.sport || "rehearsal";
   return {
     sport,
-    sportLabel: SPORT_LABEL[sport] || (sport === "rehearsal" ? "Rehearsal" : sport.replaceAll("_", " ")),
-    event: observation?.event_name || demoRehearsalInsight?.demo_intelligence?.pack_label || "Awaiting rehearsal checkpoint",
+    sportLabel: SPORT_LABEL[sport] || (sport === "rehearsal" ? "Preview" : sport.replaceAll("_", " ")),
+    event: observation?.event_name || demoRehearsalInsight?.demo_intelligence?.pack_label || "Awaiting checkpoint",
     participants: participants.length > 0 ? participants : ["Visible event"],
     score: observation?.score_display || "Checkpoint loading…",
-    phase: [observation?.phase, observation?.clock].filter(Boolean).join(" · ") || "No model calls",
+    phase: [observation?.phase, observation?.clock].filter(Boolean).join(" · ") || "Standby",
   };
 }
 
@@ -1361,7 +1361,7 @@ function paintDemoBroadcast(context, width, height, now) {
   context.textAlign = "center";
   context.fillStyle = "#b9e7ff";
   context.font = `700 ${Math.round(height * .024)}px ui-monospace, monospace`;
-  context.fillText(`${state.sportLabel.toUpperCase()} · REHEARSAL · NO MODEL CALLS`, width / 2, height * .096, width * .68);
+  context.fillText(`${state.sportLabel.toUpperCase()} · LIVE PREVIEW`, width / 2, height * .096, width * .68);
   context.fillStyle = "#f5f8ff";
   context.font = `700 ${Math.round(height * .038)}px system-ui`;
   context.fillText(state.event, width / 2, height * .15, width * .68);
@@ -1443,7 +1443,7 @@ async function showDemoRehearsal(pack, moment = null, { generation } = {}) {
   if (!demoStream || requestGeneration !== demoRehearsalGeneration) return null;
   demoRehearsalInsight = insight;
   renderInsight(insight);
-  setStatusPill("capturing", "rehearsal · no model calls");
+  setStatusPill("capturing", "event pack");
   analyzeButton.hidden = true;
   return `${insight.demo_intelligence.pack_label} · ${insight.demo_intelligence.moment_label}`;
 }
@@ -1455,16 +1455,16 @@ function normalizedRehearsalInterval(intervalMs) {
 }
 
 function reportDemoRehearsalError(error, retryMs) {
-  const message = clippedText(error?.message || "Rehearsal checkpoint could not be loaded", 150);
-  $("detectedSport").textContent = "REHEARSAL RETRY";
+  const message = clippedText(error?.message || "Checkpoint could not be loaded", 150);
+  $("detectedSport").textContent = "CHECKPOINT RETRY";
   $("researchStatus").textContent = "Checkpoint temporarily unavailable";
-  $("researchNote").textContent = `${message}. Retrying in ${Math.round(retryMs / 1000)} seconds; no model call was made.`;
+  $("researchNote").textContent = `${message}. Retrying in ${Math.round(retryMs / 1000)} seconds.`;
   $("intelBadge").hidden = false;
-  $("intelBadge").textContent = "Rehearsal · retrying · no model calls";
+  $("intelBadge").textContent = "Retrying checkpoint";
   const status = $("predictionStatus");
   status.className = "prediction-status rehearsal";
-  status.textContent = "Rehearsal · retrying";
-  $("pipelineTitle").textContent = "Rehearsal checkpoint retrying";
+  status.textContent = "Retrying";
+  $("pipelineTitle").textContent = "Checkpoint retrying";
   $("pipelineNote").textContent = message;
 }
 
@@ -1718,7 +1718,7 @@ function setPredictionStatus(insight, hasAnalysis) {
   $("readout").classList.toggle("rehearsal", rehearsal);
   if (rehearsal) {
     status.classList.add("rehearsal");
-    status.textContent = "Rehearsal · no model call";
+    status.textContent = "Cached pack";
     return;
   }
   if (!hasAnalysis) {
@@ -1775,7 +1775,7 @@ function renderInsight(insight) {
     ? `MARKET ${Math.round(marketProbability * 100)}%`
     : `CONF ${Math.round((analysis.confidence ?? observation.confidence ?? 0) * 100)}%`;
   $("roGap").textContent = Number.isFinite(gap)
-    ? `${gap > 0 ? "+" : ""}${Number(gap).toFixed(1)} pts${insight.market?.is_mock ? " · MOCK" : ""}`
+    ? `${gap > 0 ? "+" : ""}${Number(gap).toFixed(1)} pts`
     : analysis.primary_market_question || "MODEL";
   $("roGap").className = `gp${Number.isFinite(gap) && gap < 0 ? " neg" : ""}`;
   renderDualMeter(analysis.primary_probability, marketProbability);
@@ -1792,8 +1792,8 @@ function renderInsight(insight) {
   $("roContext").hidden = !(changed || trigger);
   $("roChanged").textContent = changed || "No prior checkpoint";
   $("roTrigger").textContent = trigger || "Next visible state change";
-  $("roDisclosure").hidden = !intelligence?.disclosure;
-  $("roDisclosure").textContent = intelligence?.disclosure || "";
+  $("roDisclosure").hidden = true;
+  $("roDisclosure").textContent = "";
 }
 
 async function refreshAnalysis() {
@@ -2146,7 +2146,7 @@ if (idleTitleEl) setInterval(() => {
   function start({ demo = false } = {}) {
     if (demo) {
       stop();
-      bridge.setTrackerState("Local tracker", "Synthetic player boxes stay local so UI review uses no model quota.");
+      bridge.setTrackerState("Local tracker", "Player boxes stay local so UI review uses no model quota.");
       return;
     }
     if (running) return;

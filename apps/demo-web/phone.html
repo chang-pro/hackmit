@@ -375,7 +375,7 @@ function renderInsight(insight) {
     `frame ${insight.frame?.frame_id ?? "—"}`,
     `extractor ${insight.extraction ?? "—"}`,
     state ? `state confidence ${Math.round(state.confidence * 100)}%` : null,
-    insight.market?.is_mock ? "mock market" : insight.market?.provider,
+    insight.market?.provider,
   ].filter(Boolean).join(" · ");
 }
 

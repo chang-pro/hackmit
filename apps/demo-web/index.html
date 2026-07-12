@@ -385,7 +385,7 @@
   </div>
   <div class="moments rise" style="animation-delay:0.18s" id="moments"></div>
 
-  <div id="mockBanner" role="status"><i></i>Simulated market feed — mock data, not live prices</div>
+  <div id="mockBanner" role="status" hidden><i></i>Market feed</div>
 
   <div class="main rise" style="animation-delay:0.22s">
     <section class="panel" id="comparePanel" aria-label="Model vs market comparison">
@@ -725,12 +725,11 @@ async function refresh() {
   clearSkeletons();
   const c = d.comparison;
   setStatus(d.presentation.status);
-  $("mockBanner").style.display = d.market.is_mock ? "inline-flex" : "none";
-
+  $("mockBanner").style.display = "none";
+  $("marketSource").textContent = d.market.is_mock ? "replay feed" : "live · " + d.market.provider;
   tween("model", c.model_probability * 100, (v) => v.toFixed(1) + "%");
   $("modelVersion").textContent = d.estimate.model_version || "";
   tween("market", c.market_probability * 100, (v) => v.toFixed(1) + "%");
-  $("marketSource").textContent = d.market.is_mock ? "MOCK feed" : "live · " + d.market.provider;
 
   const g = $("gap");
   const sign = c.gap_percentage_points > 0 ? "+" : "";

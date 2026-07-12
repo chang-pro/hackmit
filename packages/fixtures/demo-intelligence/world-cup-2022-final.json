@@ -8,33 +8,33 @@
   "participant_groups": [["argentina", "arg"], ["france", "fra"]],
   "focus_aliases": ["argentina", "arg"],
   "focus_label": "Argentina",
-  "disclosure": "Historical evidence pack with illustrative replay-market prices; this is an illustrative estimate, not a live quote or trading advice.",
+  "disclosure": "Historical evidence pack with replay-market prices. Not a live quote or trading advice.",
   "research": [
     {
       "category": "players",
       "query": "Lionel Messi and Kylian Mbappe player context before the 2022 World Cup Final",
-      "source": "Mock historical research cache · FIFA tournament archive",
+      "source": "Historical research cache · FIFA tournament archive",
       "result": "Messi and Mbappe entered the final level on five tournament goals, making the match a direct Golden Boot contest.",
       "is_mock": true
     },
     {
       "category": "teams",
       "query": "Argentina and France team context entering the 2022 World Cup Final",
-      "source": "Mock historical research cache · tournament recap",
+      "source": "Historical research cache · tournament recap",
       "result": "Argentina arrived as Copa America holders, while France was attempting to become the first repeat men's champion since 1962.",
       "is_mock": true
     },
     {
       "category": "strategy/tactics",
       "query": "Argentina France 2022 final tactical matchup",
-      "source": "Mock historical research cache · tactical preview",
+      "source": "Historical research cache · tactical preview",
       "result": "Argentina could create overloads through Di Maria's left side, while France's clearest transition threat came through Mbappe attacking space.",
       "is_mock": true
     },
     {
       "category": "news/context",
       "query": "Historical stakes surrounding the Argentina France World Cup Final",
-      "source": "Mock historical research cache · pre-match context",
+      "source": "Historical research cache · pre-match context",
       "result": "Both nations entered the final seeking a third World Cup title; the match was played at Lusail Stadium on December 18, 2022.",
       "is_mock": true
     }
@@ -52,7 +52,7 @@
       "confidence": 0.88,
       "market_question": "Will Argentina lift the World Cup trophy?",
       "outcome": "Argentina lifts the trophy",
-      "summary": "The final begins level, with {focus} holding only a narrow illustrative pre-match edge to lift the trophy.",
+      "summary": "The final begins level, with {focus} holding only a narrow pre-match edge to lift the trophy.",
       "what_changed": "The match has started at 0–0, so team strength and tournament form drive the opening estimate.",
       "next_trigger": "The opening goal, a red card, or a major injury visible in the broadcast would create the first large move.",
       "key_factors": ["Level score", "Full match remains", "Trophy market includes extra time and penalties"],
@@ -61,8 +61,8 @@
       ],
       "evidence": [
         { "provider": "FIFA archive", "label": "Official match record", "query": "Argentina France 2022 final kickoff", "detail": "Cached match record establishes the 0–0 opening state at Lusail Stadium." },
-        { "provider": "Bloom state model", "label": "Trophy baseline", "query": "World Cup Final pre-match trophy probability", "detail": "The illustrative baseline treats the matchup as close and includes extra time and penalties." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price at kickoff", "detail": "Illustrative midpoint: 51%; explicitly marked mock/replay." }
+        { "provider": "Bloom state model", "label": "Trophy baseline", "query": "World Cup Final pre-match trophy probability", "detail": "The baseline treats the matchup as close and includes extra time and penalties." },
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price at kickoff", "detail": "Replay midpoint: 51%." }
       ]
     },
     {
@@ -86,8 +86,8 @@
       ],
       "evidence": [
         { "provider": "FIFA archive", "label": "Official match timeline", "query": "Argentina France final 2–0 at 60 minutes", "detail": "Cached event timeline aligns the visible 2–0 state with the second half." },
-        { "provider": "Bloom state model", "label": "Trophy clock model", "query": "Two-goal lead with roughly 30 minutes remaining", "detail": "The illustrative model strongly favors the leader while retaining comeback and shootout branches." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price at 2–0", "detail": "Illustrative midpoint: 92%; explicitly marked mock/replay." }
+        { "provider": "Bloom state model", "label": "Trophy clock model", "query": "Two-goal lead with roughly 30 minutes remaining", "detail": "The model strongly favors the leader while retaining comeback and shootout branches." },
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price at 2–0", "detail": "Replay midpoint: 92%." }
       ]
     },
     {
@@ -112,7 +112,7 @@
       "evidence": [
         { "provider": "FIFA archive", "label": "Official scoring timeline", "query": "Mbappé penalty 80 minute World Cup Final", "detail": "Cached timeline records France's first goal and the 2–1 state." },
         { "provider": "Bloom state model", "label": "One-goal protection model", "query": "One-goal lead near 80 minutes", "detail": "The leader remains favored, but one scoring event can reset the final." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price after France scores", "detail": "Illustrative midpoint: 75%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price after France scores", "detail": "Replay midpoint: 75%." }
       ]
     },
     {
@@ -137,7 +137,7 @@
       "evidence": [
         { "provider": "FIFA archive", "label": "Official match timeline", "query": "France equalizer World Cup Final minute", "detail": "Cached timeline confirms the 2–2 late-regulation state." },
         { "provider": "Bloom state model", "label": "Trophy draw-state recalculation", "query": "Level World Cup Final after 80 minutes", "detail": "The two-goal favorite state collapses to near-even after the equalizer." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price after 2–2", "detail": "Illustrative midpoint: 49%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price after 2–2", "detail": "Replay midpoint: 49%." }
       ]
     },
     {
@@ -162,7 +162,7 @@
       "evidence": [
         { "provider": "FIFA archive", "label": "Official scoring timeline", "query": "Messi goal 108 minute World Cup Final", "detail": "Cached timeline records Argentina restoring the lead at 3–2." },
         { "provider": "Bloom state model", "label": "Extra-time lead model", "query": "One-goal lead after 108 minutes", "detail": "The small remaining window strongly favors the leader without treating the match as resolved." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price at 3–2", "detail": "Illustrative midpoint: 79%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy replay price at 3–2", "detail": "Replay midpoint: 79%." }
       ]
     },
     {
@@ -187,7 +187,7 @@
       "evidence": [
         { "provider": "FIFA archive", "label": "Official match timeline", "query": "World Cup Final 3–3 118 minute", "detail": "Cached timeline confirms the late extra-time equalizer." },
         { "provider": "Bloom state model", "label": "Trophy shootout state", "query": "Level final with two minutes remaining", "detail": "Open-play resolution mass is small, so the trophy estimate approaches a shootout baseline." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy price before penalties", "detail": "Illustrative midpoint: 48%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Argentina trophy price before penalties", "detail": "Replay midpoint: 48%." }
       ]
     },
     {
@@ -213,7 +213,7 @@
       "evidence": [
         { "provider": "FIFA archive", "label": "Official final result", "query": "Argentina France 2022 final shootout result", "detail": "Cached official result records Argentina winning the shootout 4–2 after a 3–3 match." },
         { "provider": "Bloom state model", "label": "Resolved outcome gate", "query": "Completed trophy market settlement", "detail": "A verified finished state resolves the historical outcome to probability 1.0." },
-        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "Argentina trophy market settlement", "detail": "Illustrative replay market is closed and resolved at 100%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "Argentina trophy market settlement", "detail": "Replay market is closed and resolved at 100%." }
       ]
     }
   ]

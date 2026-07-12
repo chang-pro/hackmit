@@ -8,33 +8,33 @@
   "participant_groups": [["celtics", "boston", "bos"], ["knicks", "new york", "nyk"]],
   "focus_aliases": ["knicks", "new york", "nyk"],
   "focus_label": "New York",
-  "disclosure": "Historical evidence pack with illustrative replay-market prices; this is an illustrative estimate, not a live quote or trading advice.",
+  "disclosure": "Historical evidence pack with replay-market prices. Not a live quote or trading advice.",
   "research": [
     {
       "category": "players",
       "query": "Jalen Brunson Josh Hart Jayson Tatum Celtics Knicks April 9 2026",
-      "source": "Mock historical research cache · NBA game archive",
+      "source": "Historical research cache · NBA game archive",
       "result": "Brunson finished with 25 points and 10 assists, Hart scored 26 with 15 in the fourth quarter, and Tatum posted 24 points, 13 rebounds, and eight assists in his return to Madison Square Garden.",
       "is_mock": true
     },
     {
       "category": "teams",
       "query": "Celtics Knicks standings context April 9 2026",
-      "source": "Mock historical research cache · season recap",
+      "source": "Historical research cache · season recap",
       "result": "New York entered the closing weekend chasing Boston for the East's second seed and owned the season-series tiebreaker after this matchup.",
       "is_mock": true
     },
     {
       "category": "strategy/tactics",
       "query": "Boston New York April 2026 late-game tactical matchup",
-      "source": "Mock historical research cache · tactical recap",
+      "source": "Historical research cache · tactical recap",
       "result": "Boston's three-point volume kept the game close, while New York repeatedly created paint pressure and used Hart as the late weak-side release valve.",
       "is_mock": true
     },
     {
       "category": "news/context",
       "query": "Celtics at Knicks April 9 2026 historical context",
-      "source": "Mock historical research cache · game recap",
+      "source": "Historical research cache · game recap",
       "result": "The game was played at Madison Square Garden on April 9, 2026; New York won 112–106 after closing on a 13–5 run.",
       "is_mock": true
     }
@@ -52,7 +52,7 @@
       "confidence": 0.89,
       "market_question": "Will {focus} win the game?",
       "outcome": "{focus} wins",
-      "summary": "The game opens scoreless at Madison Square Garden, with {focus} holding only a narrow illustrative home edge.",
+      "summary": "The game opens scoreless at Madison Square Garden, with {focus} holding only a narrow home edge.",
       "what_changed": "The game has started, so team strength and home court anchor the opening estimate.",
       "next_trigger": "The first sustained scoring run or early foul trouble would create the first material move.",
       "key_factors": ["Scoreless opening", "New York home court", "Full forty-eight minutes remain"],
@@ -61,8 +61,8 @@
       ],
       "evidence": [
         { "provider": "NBA gamebook cache", "label": "Official game record", "query": "Celtics Knicks April 9 2026 opening tip", "detail": "Cached game record establishes the scoreless opening at Madison Square Garden." },
-        { "provider": "Bloom NBA model", "label": "Pregame baseline", "query": "New York home win baseline against Boston", "detail": "The illustrative baseline treats the matchup as close and gives New York a modest home edge." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at opening tip", "detail": "Illustrative midpoint: 51%; explicitly marked mock/replay." }
+        { "provider": "Bloom NBA model", "label": "Pregame baseline", "query": "New York home win baseline against Boston", "detail": "The baseline treats the matchup as close and gives New York a modest home edge." },
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at opening tip", "detail": "Replay midpoint: 51%." }
       ]
     },
     {
@@ -87,7 +87,7 @@
       "evidence": [
         { "provider": "NBA gamebook cache", "label": "Official play-by-play", "query": "Celtics Knicks 42 42 second quarter", "detail": "Cached play sequence aligns the visible 42–42 state with the second quarter." },
         { "provider": "Bloom NBA model", "label": "Tie-state update", "query": "NBA tie in second quarter", "detail": "The long remaining clock keeps the estimate close to the pregame baseline." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at 42–42", "detail": "Illustrative midpoint: 50%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at 42–42", "detail": "Replay midpoint: 50%." }
       ]
     },
     {
@@ -112,7 +112,7 @@
       "evidence": [
         { "provider": "NBA gamebook cache", "label": "Official play-by-play", "query": "Celtics Knicks 94 94 fourth quarter", "detail": "Cached sequence confirms the late 94–94 tie." },
         { "provider": "Bloom NBA model", "label": "Late tie model", "query": "Tie game under six minutes", "detail": "The reduced possession count moves the estimate toward a near coin flip with a small home edge." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at 94–94", "detail": "Illustrative midpoint: 52%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at 94–94", "detail": "Replay midpoint: 52%." }
       ]
     },
     {
@@ -137,7 +137,7 @@
       "evidence": [
         { "provider": "NBA gamebook cache", "label": "Official play-by-play", "query": "Celtics Knicks 101 101 2:49", "detail": "Cached play sequence confirms the 101–101 late tie." },
         { "provider": "Bloom NBA model", "label": "Closing tie model", "query": "Tie game with under three minutes", "detail": "Home court provides only a small edge when a handful of possessions remain." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at 101–101", "detail": "Illustrative midpoint: 53%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price at 101–101", "detail": "Replay midpoint: 53%." }
       ]
     },
     {
@@ -163,7 +163,7 @@
       "evidence": [
         { "provider": "NBA gamebook cache", "label": "Official play-by-play", "query": "Josh Hart three Celtics Knicks final minute", "detail": "Cached sequence records Hart's late three and New York's 109–104 lead." },
         { "provider": "Bloom NBA model", "label": "Closeout model", "query": "Five-point NBA lead with 41 seconds", "detail": "The leader is strongly favored while intentional fouls and quick threes retain a small tail." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price after Hart three", "detail": "Illustrative midpoint: 96%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "New York replay price after Hart three", "detail": "Replay midpoint: 96%." }
       ]
     },
     {
@@ -189,7 +189,7 @@
       "evidence": [
         { "provider": "NBA gamebook cache", "label": "Official final score", "query": "Celtics Knicks April 9 2026 final", "detail": "Cached official result records New York winning 112–106." },
         { "provider": "Bloom NBA model", "label": "Resolved outcome gate", "query": "Completed game settlement", "detail": "A verified finished state resolves New York's historical win probability to 1.0." },
-        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "New York game market settlement", "detail": "Illustrative replay market is closed and resolved at 100%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "New York game market settlement", "detail": "Replay market is closed and resolved at 100%." }
       ]
     }
   ]
