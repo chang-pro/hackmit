@@ -20,7 +20,6 @@
 //   GET  /api/latest            — latest live insight only (never fixture fallback)
 //   GET  /api/demo/intelligence — precollected four-event demo pack catalog
 //   GET  /api/demo/replay       — quota-free, explicitly labeled UI rehearsal insight
-//   POST /api/chat              — Gemini analyst chat grounded in the current insight
 //   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
@@ -38,7 +37,7 @@ import { LiveEventAnalyzer } from "./live-event-analyzer.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
-import { visionStatus } from "../vision/index.js";
+import { BACKENDS, liveBackendName, visionStatus } from "../vision/index.js";
 import { CEREBRAS_ANALYTICS_MODEL } from "../analytics/cerebras.js";
 import { CEREBRAS_VISION_MODEL } from "../vision/backends/cerebras.js";
 import { rightcodesGeminiBackend } from "../vision/backends/rightcodes-gemini.js";
@@ -55,7 +54,6 @@ import {
   getDemoStreamDefinition,
   listDemoStreams,
 } from "../demo/streams.js";
-import { askGeminiAnalyst, geminiChatStatus } from "../analytics/gemini-chat.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
@@ -343,7 +341,9 @@ export function createBloomServer({
   demoStreamsDir = DEFAULT_DEMO_STREAMS_DIR,
   demoStreamStatus = demoStreamVerifiedStatus,
 } = {}) {
-  const analyzer = liveAnalyzer ?? new LiveEventAnalyzer({ visionBackend });
+  const configuredVisionBackend = visionBackend ??
+    (process.env.VISION_BACKEND ? BACKENDS[liveBackendName()] : undefined);
+  const analyzer = liveAnalyzer ?? new LiveEventAnalyzer({ visionBackend: configuredVisionBackend });
   const playbackDirector = new PlaybackDirector();
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
   let latestInsight = null;
@@ -751,24 +751,6 @@ export function createBloomServer({
         handleAnalysisControl(res, true);
       } else if (req.method === "POST" && url.pathname === "/api/analysis/stop") {
         handleAnalysisControl(res, false);
-      } else if (req.method === "POST" && url.pathname === "/api/chat") {
-        let body;
-        try {
-          body = await readJsonBody(req);
-        } catch (err) {
-          sendJson(res, err.statusCode || 400, { error: err.message });
-          return;
-        }
-        try {
-          const result = await askGeminiAnalyst({
-            question: body?.question,
-            insight: body?.insight ?? latestInsight,
-            history: body?.history,
-          });
-          sendJson(res, 200, result);
-        } catch (err) {
-          sendJson(res, err.statusCode || 500, { error: err.message });
-        }
       } else if (req.method === "POST" && url.pathname === "/api/reset") {
         analysisEnabled = false;
         resetLivePipeline();
@@ -786,7 +768,6 @@ export function createBloomServer({
             vision: CEREBRAS_VISION_MODEL,
             analytics: CEREBRAS_ANALYTICS_MODEL,
           },
-          analyst_chat: geminiChatStatus(),
           frame_buffer_size: gateway.size,
           has_live_insight: Boolean(latestInsight),
           analysis_enabled: analysisEnabled,

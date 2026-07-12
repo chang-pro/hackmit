@@ -6,8 +6,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createBloomServer } from "../services/api/server.js";
 
-async function withServer(fn) {
-  const server = createBloomServer();
+async function withServer(fn, options = {}) {
+  const server = createBloomServer(options);
   await new Promise((resolve) => server.listen(0, resolve));
   const base = `http://localhost:${server.address().port}`;
   try {
@@ -125,17 +125,44 @@ test("POST /api/frames stays disabled until the viewer explicitly starts analysi
     // 201 once a batch is analyzed. Both mean "ingested".
     assert.ok([201, 202].includes(noSport.status), `got ${noSport.status}`);
     const noSportBody = await noSport.json();
-    assert.equal(noSportBody.sport, "auto", "omitted sport leaves detection to vision");
+    assert.equal(noSportBody.sport, "soccer", "omitted sport is detected by vision immediately");
     assert.equal(noSportBody.selection.accepted, true);
 
     const tagged = await submit({ ...frame, image_base64: "b3RoZXItYnl0ZXM=", sport: "ufc" });
-    // Rate-limited (same selector) is fine — the sport must still be echoed.
+    // During cooldown, the latest automatic classifier result remains authoritative.
     const taggedBody = await tagged.json();
-    assert.equal(taggedBody.sport, "ufc");
+    assert.equal(taggedBody.sport, "soccer");
 
     const openEndedSport = await submit({ ...frame, image_base64: "Y3JpY2tldA==", sport: "cricket" });
     assert.ok([200, 201, 202].includes(openEndedSport.status));
-    assert.equal((await openEndedSport.json()).sport, "cricket");
+    assert.equal((await openEndedSport.json()).sport, "soccer");
+  }, {
+    visionBackend: {
+      name: "test-sport-classifier",
+      async extractEventBatch() {
+        return {
+          sport: "soccer",
+          competition: "2022 FIFA World Cup Final",
+          event_name: "Argentina vs France",
+          event_identity: "world-cup-2022-final",
+          event_format: "team_event",
+          participants: [{ name: "Argentina" }, { name: "France" }],
+          participant_a: "Argentina",
+          participant_b: "France",
+          score_a: 0,
+          score_b: 0,
+          score_display: "0-0",
+          phase: "First half",
+          clock: "0'",
+          event_status: "replay",
+          possession_or_control: "UNKNOWN",
+          situation: "Kickoff",
+          visible_facts: [],
+          changes_across_frames: [],
+          confidence: 0.95,
+        };
+      },
+    },
   });
 });
 

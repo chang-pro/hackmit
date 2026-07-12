@@ -6,7 +6,7 @@ import {
 } from "../demo/intelligence.js";
 
 const DEFAULT_INTERVAL_MS = 12_000;
-const DEFAULT_BATCH_SIZE = 5;
+const DEFAULT_BATCH_SIZE = 1;
 const WINDOW_MS = 60_000;
 
 function publicFrame(frame) {
@@ -222,7 +222,7 @@ export class LiveEventAnalyzer {
 
     const cooldownMs = this.#cooldownMs();
     const hasFullWindow = this.pendingFrames.length >= this.batchSize;
-    const fastCameraSource = new Set(["phone_live", "phone_photo", "ios_app", "rayban_sdk"])
+    const fastCameraSource = new Set(["phone_live", "phone_photo", "ios_app", "rayban_sdk", "webrtc_viewer"])
       .has(frame?.source);
     const firstDetection = fastCameraSource && this.lastCallAt == null && this.latestInsight == null;
     if (this.inFlight || cooldownMs > 0 || (!force && !firstDetection && !hasFullWindow)) {
