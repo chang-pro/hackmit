@@ -117,7 +117,7 @@ test("demo replay endpoint serves valid checkpoints and rejects invalid requests
 
   const unknownPack = await fetch(`${base}/api/demo/replay?pack=not-a-pack`);
   assert.equal(unknownPack.status, 400);
-  assert.match((await unknownPack.json()).error, /unknown demo intelligence pack/i);
+  assert.match((await unknownPack.json()).error, /unknown intelligence pack/i);
 
   const unknownMoment = await fetch(
     `${base}/api/demo/replay?pack=world-cup-2022-final&moment=not-a-moment`
@@ -127,7 +127,7 @@ test("demo replay endpoint serves valid checkpoints and rejects invalid requests
 
   const missingPack = await fetch(`${base}/api/demo/replay`);
   assert.equal(missingPack.status, 400);
-  assert.match((await missingPack.json()).error, /unknown demo intelligence pack/i);
+  assert.match((await missingPack.json()).error, /unknown intelligence pack/i);
 });
 
 test("WebRTC signaling follows the latest active camera without proxying media", async (t) => {

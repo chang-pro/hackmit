@@ -572,7 +572,7 @@ function dispatchTheaterSource({ forceRestart = false } = {}) {
   const source = activeProgramVideo
     ? `local-replay:${activeProgramVideo.id}`
     : demoStream
-      ? "demo"
+      ? "local"
       : remoteFeedActive
         ? "remote"
         : "none";
@@ -729,6 +729,13 @@ function playbackCandidateStatus(directive) {
 
 async function applyPlaybackDirective(directive) {
   playbackCandidateStatus(directive);
+  if (!remoteFeedActive) {
+    if (directive?.status === "locked" || directive?.reason === "explicit_reset") {
+      // Camera is offline: never keep or revive a local stream on screen.
+      if (activeProgramVideo || activePlaybackStreamId) clearProgramPlayback();
+    }
+    return false;
+  }
   const directiveEpoch = Number(directive?.epoch);
   const directiveRevision = Number(directive?.revision);
   const newestEpoch = Math.max(latestPlaybackEpoch, activePlaybackEpoch, pendingPlaybackEpoch);
@@ -837,18 +844,23 @@ function setRemoteFeedUI(active) {
     dispatchTheaterSource({ forceRestart: !activeProgramVideo });
     return;
   }
-  if ($("analystChat")) $("analystChat").hidden = !activeProgramVideo;
+  stopDemoFeed({ resetUI: false });
+  if (activeProgramVideo || activePlaybackStreamId || video.getAttribute("src") || videoStandby.getAttribute("src")) {
+    clearProgramPlayback();
+  }
+  if ($("analystChat")) $("analystChat").hidden = true;
   remotePreview.srcObject = null;
-  if (!activeProgramVideo) clearVisualDetections();
+  remotePreview.style.display = "none";
+  video.style.display = "";
+  clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
-  setTrackerState(
-    activeProgramVideo ? "YOLO11s local replay" : "YOLO11s standby",
-    activeProgramVideo ? "The local replay continues while the detector reconnects." : "Player tracking starts automatically with a live camera stream."
-  );
+  setTrackerState("YOLO11s standby", "Player tracking starts automatically with a live camera stream.");
   clearRenderedInsight();
+  setProgramStatus("Camera preview · waiting for phone or glasses");
+  $("idleHint").textContent = "Waiting for the latest phone or glasses live feed.";
   dispatchTheaterSource();
-  setStatusPill("idle", activeProgramVideo ? "local replay continues" : "waiting for phone");
+  setStatusPill("idle", "waiting for phone");
 }
 
 function setTrackerState(title, note) {
@@ -1028,7 +1040,7 @@ function renderHudTelemetry() {
   if (!row) return;
   const parts = [
     ["Tracks", String(visualDetections.length)],
-    ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "demo" ? "Synthetic" : visualDetectionSource === "model" ? "Model" : "—"],
+    ["Source", visualDetectionSource === "yolo" ? "YOLO11s" : visualDetectionSource === "synthetic" || visualDetectionSource === "demo" ? "Synthetic" : visualDetectionSource === "model" ? "Model" : "—"],
   ];
   if (Number.isFinite(yoloTrackerFps)) parts.push(["Tracker", `${yoloTrackerFps} fps`]);
   if (activeProgramVideo) parts.push(["Media", `Replay r${activePlaybackRevision}`]);
@@ -1384,7 +1396,7 @@ function renderDemoDetections(now) {
     },
     confidence: spec.confidence,
   }));
-  setVisualDetections(detections, "demo");
+  setVisualDetections(detections, "synthetic");
 }
 
 function stopDemoFeed({ resetUI = true } = {}) {
@@ -1419,7 +1431,7 @@ function startDemoFeed() {
   clearRenderedInsight();
   analyzeButton.hidden = true;
   $("idleHint").textContent = "Local stream is active. No camera, relay, or bandwidth is being used.";
-  return "BloomKnights local stream started — run bloomDemo.stop() to exit.";
+  return "BloomKnights local stream started.";
 }
 
 async function showDemoRehearsal(pack, moment = null, { generation } = {}) {
@@ -1482,14 +1494,20 @@ async function cycleDemoRehearsal(intervalMs = DEFAULT_REHEARSAL_INTERVAL_MS) {
 
 function showWebRtcBlocked(message) {
   remoteFeedActive = false;
+  stopDemoFeed({ resetUI: false });
+  if (activeProgramVideo || activePlaybackStreamId || video.getAttribute("src") || videoStandby.getAttribute("src")) {
+    clearProgramPlayback();
+  }
   updateTheaterState();
   remotePreview.srcObject = null;
+  remotePreview.style.display = "none";
   analyzeButton.hidden = true;
-  if ($("analystChat")) $("analystChat").hidden = !activeProgramVideo;
-  if (!activeProgramVideo) clearVisualDetections();
+  if ($("analystChat")) $("analystChat").hidden = true;
+  clearVisualDetections();
   clearRenderedInsight();
-  setStatusPill("error", activeProgramVideo ? "detector offline · replay continues" : "TURN required");
-  $("idleHint").textContent = activeProgramVideo ? "The local replay continues while the camera detector reconnects." : message;
+  setProgramStatus("Camera preview · waiting for phone or glasses");
+  setStatusPill("error", "TURN required");
+  $("idleHint").textContent = message;
   $("stats").textContent = "WebRTC blocked · TURN relay needed";
   dispatchTheaterSource();
 }
@@ -1604,8 +1622,16 @@ async function getPeerConnection() {
     stopDemoFeed({ resetUI: false });
     clearVisualDetections();
     remotePreview.srcObject = streams[0];
+    remotePreview.style.display = "block";
+    video.style.display = activeProgramVideo ? "none" : "";
     remotePreview.play().catch(() => {});
     remotePreview.addEventListener("loadedmetadata", renderVisualDetections, { once: true });
+    streams[0]?.getVideoTracks?.().forEach((track) => {
+      track.addEventListener("ended", () => {
+        if (peerConnection !== connection) return;
+        setRemoteFeedUI(false);
+      });
+    });
     setRemoteFeedUI(true);
   };
   connection.onconnectionstatechange = () => {
@@ -1613,9 +1639,7 @@ async function getPeerConnection() {
     if (connection.connectionState === "failed") {
       showWebRtcBlocked("This campus network blocked the direct video route. Add a TURN relay, then restart the active camera feed.");
     } else if (["disconnected", "closed"].includes(connection.connectionState)) {
-      clearRenderedInsight();
-      setStatusPill("low_confidence", "reconnecting…");
-      $("stats").textContent = "WebRTC reconnecting";
+      setRemoteFeedUI(false);
     }
   };
   return connection;

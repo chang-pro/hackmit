@@ -202,7 +202,7 @@
   .gap-pos { color: var(--accent); text-shadow: 0 0 24px rgba(62,207,142,0.25); }
   .gap-neg { color: var(--neg); }
 
-  /* swap animation when the demo moment changes */
+  /* swap animation when the selected moment changes */
   @keyframes swapIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   .swap .metric-value, .swap .metric-sub, .swap .lens-text { animation: swapIn 0.45s var(--ease); }
 
@@ -358,7 +358,7 @@
       <div class="stats">
         <div><div class="n">~1 fps</div><div class="l">Frame sampling</div></div>
         <div><div class="n">&lt; 5 s</div><div class="l">State to signal</div></div>
-        <div><div class="n">5 sports</div><div class="l">Demo coverage</div></div>
+        <div><div class="n">5 sports</div><div class="l">Event coverage</div></div>
       </div>
     </div>
     <div class="hero-visual rise" style="animation-delay:0.15s" aria-hidden="true">
@@ -477,11 +477,11 @@
 
 <script>
 // ── Sport catalog: GET /api/sports is the source of truth; this fallback
-//    copy covers the famous demo matches if the endpoint isn't wired yet. ──
+//    copy covers the famous match fixtures if the endpoint isn't wired yet. ──
 const FALLBACK_SPORTS = [
   {
     id: "nba", label: "NBA", league: "NBA",
-    match: "Celtics vs Knicks — demo broadcast",
+    match: "Celtics vs Knicks — sample broadcast",
     fixtures: ["frame_000184", "frame_000260"],
     demo_moments: [
       { fixture: "frame_000184", label: "Q4 2:14" },
@@ -571,7 +571,7 @@ function renderMoments() {
   if (!moments.length) {
     const none = document.createElement("div");
     none.className = "none";
-    none.textContent = "No demo moments published for this sport yet.";
+    none.textContent = "No moments published for this sport yet.";
     wrap.appendChild(none);
     return;
   }
@@ -699,7 +699,7 @@ function showUnavailable(message, status) {
 }
 
 async function refresh() {
-  if (!currentFixture) { showUnavailable("No demo moment selected for this sport yet.", "no_state"); return; }
+  if (!currentFixture) { showUnavailable("No moment selected for this sport yet.", "no_state"); return; }
   let d;
   try {
     const qs = "sport=" + encodeURIComponent(currentSport) + "&fixture=" + encodeURIComponent(currentFixture);
