@@ -30,7 +30,7 @@ export function liveBackendName(requested = process.env.VISION_BACKEND ?? "auto"
     return name;
   }
   if (process.env.CEREBRAS_API_KEY) return "cerebras";
-  if (process.env.GEMINI_API_KEY) return "gemini";
+  if (process.env.RIGHTCODES_API_KEY || process.env.GEMINI_API_KEY) return "gemini";
   if (process.env.ALLOW_FIXTURE_LIVE === "true") return "fixture";
   throw new Error("No live vision backend configured. Set CEREBRAS_API_KEY.");
 }
@@ -48,7 +48,7 @@ export function visionStatus() {
     selected,
     available: {
       cerebras: Boolean(process.env.CEREBRAS_API_KEY),
-      gemini: Boolean(process.env.GEMINI_API_KEY),
+      gemini: Boolean(process.env.RIGHTCODES_API_KEY || process.env.GEMINI_API_KEY),
       fixture: true,
     },
     error,

@@ -16,7 +16,8 @@ import { demoEventObservationFromClassification } from "./cerebras.js";
 export const GEMINI_MODEL = process.env.GEMINI_VISION_MODEL ??
   process.env.GEMINI_CHAT_MODEL ??
   "gemini-3.1-flash-lite";
-const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const API_BASE = process.env.GEMINI_API_BASE_URL ??
+  "https://generativelanguage.googleapis.com/v1beta";
 
 const MIME_TYPES = {
   ".png": "image/png",
@@ -24,6 +25,38 @@ const MIME_TYPES = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
 };
+
+function parseSportClassification(text) {
+  const cleaned = String(text ?? "").trim().replace(/^```(?:json)?|```$/g, "").trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (typeof parsed?.classification === "string") {
+      return {
+        classification: parsed.classification,
+        confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
+      };
+    }
+  } catch {
+    // Some Gemini-compatible gateways ignore responseSchema and return prose.
+  }
+  const lower = cleaned.toLowerCase();
+  const labels = [
+    ["basketball", ["basketball", "nba"]],
+    ["american_football", ["american_football", "american football", "gridiron", "nfl"]],
+    ["soccer", ["soccer", "association football", "fifa"]],
+    ["mma", ["mma", "ufc", "mixed martial"]],
+    ["unclear", ["unclear"]],
+  ];
+  const ranked = labels
+    .map(([label, terms]) => ({ label, position: Math.max(...terms.map((term) => lower.lastIndexOf(term))) }))
+    .sort((left, right) => right.position - left.position);
+  const classification = ranked[0]?.position >= 0 ? ranked[0].label : "unclear";
+  const confidenceMatch = lower.match(/confidence[^0-9]{0,32}(0(?:\.\d+)?|1(?:\.0+)?)/);
+  return {
+    classification,
+    confidence: confidenceMatch ? Number(confidenceMatch[1]) : classification === "unclear" ? 0 : 0.9,
+  };
+}
 
 // NBA defaults — exported so the sports registry's NBA config references the
 // exact prompt/schema this backend has always used (default behavior).
@@ -81,8 +114,8 @@ export function createGeminiBackend({ fetchImpl = fetch } = {}) {
     if (!Array.isArray(frames) || frames.length === 0) {
       throw new Error("Gemini sport classification requires at least one frame");
     }
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("gemini backend unavailable: GEMINI_API_KEY is not set");
+    const apiKey = process.env.RIGHTCODES_API_KEY ?? process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("gemini backend unavailable: no Gemini-compatible API key is set");
     const { mimeType, base64 } = await loadFrameImage(frames.at(-1));
     const response = await fetchImpl(`${API_BASE}/models/${GEMINI_MODEL}:generateContent`, {
       method: "POST",
@@ -96,23 +129,11 @@ export function createGeminiBackend({ fetchImpl = fetch } = {}) {
         },
         contents: [{ parts: [
           { inline_data: { mime_type: mimeType, data: base64 } },
-          { text: "Return basketball, american_football, soccer, mma, or unclear. Use unclear if no supported sport is clearly visible." },
+          { text: "Answer with exactly one label: basketball, american_football, soccer, mma, or unclear. Use unclear if no supported sport is clearly visible." },
         ] }],
         generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "OBJECT",
-            properties: {
-              classification: {
-                type: "STRING",
-                enum: ["basketball", "american_football", "soccer", "mma", "unclear"],
-              },
-              confidence: { type: "NUMBER", minimum: 0, maximum: 1 },
-            },
-            required: ["classification", "confidence"],
-          },
           temperature: 0,
-          maxOutputTokens: 64,
+          maxOutputTokens: 256,
         },
       }),
     });
@@ -123,7 +144,7 @@ export function createGeminiBackend({ fetchImpl = fetch } = {}) {
     const payload = await response.json();
     const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error("gemini backend: classification returned no candidate text");
-    const classification = JSON.parse(text);
+    const classification = parseSportClassification(text);
     return {
       ...demoEventObservationFromClassification(classification),
       classification: classification.classification,
@@ -138,10 +159,10 @@ export function createGeminiBackend({ fetchImpl = fetch } = {}) {
     const sportVision = options.sport?.vision ?? null;
     const prompt = sportVision?.prompt ?? NBA_PROMPT;
     const responseSchema = sportVision?.responseSchema ?? NBA_RESPONSE_SCHEMA;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.RIGHTCODES_API_KEY ?? process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "gemini backend unavailable: GEMINI_API_KEY is not set in the environment"
+        "gemini backend unavailable: no Gemini-compatible API key is set"
       );
     }
 
