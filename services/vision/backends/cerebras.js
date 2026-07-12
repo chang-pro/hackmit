@@ -102,7 +102,7 @@ const DEMO_EVENT_BY_CLASSIFICATION = {
   },
 };
 
-function eventObservation(classification) {
+export function demoEventObservationFromClassification(classification) {
   const event = DEMO_EVENT_BY_CLASSIFICATION[classification.classification];
   if (!event) {
     return {
@@ -162,7 +162,7 @@ export function createCerebrasBackend({ complete = cerebrasStructuredCompletion 
         ],
       });
       return {
-        ...eventObservation(data),
+        ...demoEventObservationFromClassification(data),
         classification: data.classification,
         model: meta?.model ?? CEREBRAS_VISION_MODEL,
       };

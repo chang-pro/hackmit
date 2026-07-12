@@ -459,23 +459,6 @@
     </aside>
 
 
-    <section class="analyst-chat" id="analystChat" hidden aria-label="Analyst chat">
-      <div class="chat-head">
-        <div>
-          <div class="tile-eyebrow">Analyst</div>
-          <div class="tile-title">Ask about this moment</div>
-        </div>
-        <div class="chat-model" id="chatModel">Gemini 3.1 Flash-Lite</div>
-      </div>
-      <div class="chat-log" id="chatLog" aria-live="polite">
-        <div class="chat-empty" id="chatEmpty">Ask why the probability moved, what the gap means, or what to watch next.</div>
-      </div>
-      <form class="chat-form" id="chatForm">
-        <input id="chatInput" type="text" maxlength="1200" autocomplete="off" placeholder="Why did the model diverge from the market?" />
-        <button type="submit" id="chatSend">Ask</button>
-      </form>
-    </section>
-
     <nav class="checkpoint-rail" id="checkpointRail" hidden aria-label="Event checkpoints">
       <div class="rail-label">Timeline</div>
       <div class="rail-track" id="checkpointTrack"></div>
@@ -528,9 +511,8 @@ let demoRehearsalGeneration = 0;
 let visualDetections = [];
 let visualDetectionSource = null;
 let activeSessionRefreshInFlight = false;
-let latestChatInsight = null;
-let chatHistory = [];
-let chatBusy = false;
+let analysisSnapshotInFlight = false;
+let lastAnalysisSnapshotAt = 0;
 let lastInsightKey = "";
 let insightFlashTimer = null;
 let yoloTrackerFps = null;
@@ -650,7 +632,6 @@ function clearRenderedInsight({ queue = null, resetResearch = true } = {}) {
   insightFlashTimer = null;
   lastInsightKey = "";
   lastSpoken = "";
-  latestChatInsight = null;
   delete document.body.dataset.detectedSport;
   document.body.classList.remove("has-read", "ready", "gated", "insight-flash");
   $("readout").classList.remove("rehearsal");
@@ -1547,6 +1528,58 @@ async function api(path, options = {}) {
   return data;
 }
 
+const ANALYSIS_SNAPSHOT_INTERVAL_MS = 12_000;
+const ANALYSIS_SNAPSHOT_MAX_EDGE = 960;
+
+function canvasJpegBase64(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return reject(new Error("Could not capture WebRTC frame"));
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = () => reject(reader.error || new Error("Could not encode WebRTC frame"));
+      reader.readAsDataURL(blob);
+    }, "image/jpeg", .72);
+  });
+}
+
+async function submitWebRtcAnalysisSnapshot() {
+  const now = Date.now();
+  if (!remoteAnalysisEnabled || !remoteFeedActive || analysisSnapshotInFlight ||
+      now - lastAnalysisSnapshotAt < ANALYSIS_SNAPSHOT_INTERVAL_MS ||
+      remotePreview.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+      !remotePreview.videoWidth || !remotePreview.videoHeight) return;
+  analysisSnapshotInFlight = true;
+  lastAnalysisSnapshotAt = now;
+  try {
+    const scale = Math.min(1, ANALYSIS_SNAPSHOT_MAX_EDGE /
+      Math.max(remotePreview.videoWidth, remotePreview.videoHeight));
+    const canvas = $("canvas");
+    canvas.width = Math.max(1, Math.round(remotePreview.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(remotePreview.videoHeight * scale));
+    canvas.getContext("2d", { alpha: false }).drawImage(remotePreview, 0, 0, canvas.width, canvas.height);
+    await api("/api/frames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "webrtc_viewer",
+        captured_at: new Date(now).toISOString(),
+        mime_type: "image/jpeg",
+        image_base64: await canvasJpegBase64(canvas),
+        width: canvas.width,
+        height: canvas.height,
+      }),
+    });
+  } catch (error) {
+    lastAnalysisSnapshotAt = 0;
+    console.warn("WebRTC analysis snapshot failed", error);
+  } finally {
+    analysisSnapshotInFlight = false;
+  }
+}
+
+setInterval(submitWebRtcAnalysisSnapshot, 500);
+
 async function sendSignal(kind, payload) {
   if (!sessionId) return;
   await api("/api/webrtc/signal", {
@@ -1680,7 +1713,6 @@ function renderInsight(insight) {
     clearRenderedInsight({ queue: insight?.rate_limit });
     return;
   }
-  latestChatInsight = insight;
   const observation = insight.observation;
   const analysis = insight.analysis;
   const intelligence = insight.demo_intelligence;
@@ -1779,6 +1811,7 @@ analyzeButton.addEventListener("click", async () => {
   try {
     const data = await api(enable ? "/api/analysis/start" : "/api/analysis/stop", { method: "POST" });
     remoteAnalysisEnabled = data.analysis_enabled === true;
+    if (remoteAnalysisEnabled) lastAnalysisSnapshotAt = 0;
     updateAnalyzeButton();
     clearRenderedInsight({ queue: data.queue });
     setStatusPill("capturing", remoteAnalysisEnabled ? "analyzing…" : activeProgramVideo ? "local replay continues" : "WebRTC detector live");
@@ -1787,61 +1820,6 @@ analyzeButton.addEventListener("click", async () => {
   } finally {
     analyzeButton.disabled = false;
   }
-});
-
-function appendChatBubble(role, text, className = "") {
-  const log = $("chatLog");
-  const empty = $("chatEmpty");
-  if (empty) empty.remove();
-  const bubble = document.createElement("div");
-  bubble.className = `chat-bubble ${role}${className ? ` ${className}` : ""}`;
-  bubble.textContent = text;
-  log.append(bubble);
-  log.scrollTop = log.scrollHeight;
-  return bubble;
-}
-
-async function askAnalyst(question) {
-  if (chatBusy) return;
-  const cleaned = String(question ?? "").trim();
-  if (!cleaned) return;
-  chatBusy = true;
-  $("chatSend").disabled = true;
-  $("chatInput").value = "";
-  appendChatBubble("user", cleaned);
-  const pending = appendChatBubble("assistant", "Thinking…", "pending");
-  try {
-    const data = await api("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: cleaned,
-        insight: latestChatInsight,
-        history: chatHistory,
-      }),
-    });
-    pending.classList.remove("pending");
-    pending.textContent = data.answer;
-    if (data.model) $("chatModel").textContent = data.model.replaceAll("-", " ");
-    chatHistory = [
-      ...chatHistory,
-      { role: "user", text: cleaned },
-      { role: "model", text: data.answer },
-    ].slice(-8);
-  } catch (error) {
-    pending.classList.remove("pending");
-    pending.classList.add("error");
-    pending.textContent = error.message || "Analyst chat failed";
-  } finally {
-    chatBusy = false;
-    $("chatSend").disabled = false;
-    $("chatInput").focus();
-  }
-}
-
-$("chatForm")?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  askAnalyst($("chatInput").value);
 });
 
 $("speak").addEventListener("click", () => {

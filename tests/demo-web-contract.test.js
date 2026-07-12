@@ -61,11 +61,20 @@ test("capture viewer swaps to a double-buffered local broadcast only on a newer 
   assert.match(capture, /sourceGeneration: \(\) => theaterSourceGeneration/);
   assert.match(capture, /sourceVideo !== bridge\.video/);
   assert.match(capture, /event\.detail\?\.restart/);
+  assert.match(capture, /track\.addEventListener\("ended"/);
+  assert.match(capture, /if \(!remoteFeedActive\)/);
+  assert.match(capture, /clearProgramPlayback\(\)/);
+  assert.doesNotMatch(capture, /local replay continues while the (?:detector|camera)/i);
 });
 
-test("first live analysis uses a fast five-frame burst before quota cadence", () => {
+test("live analysis uses one frame per request and the viewer samples WebRTC for glasses", () => {
   assert.match(phone, /INITIAL_ANALYSIS_INTERVAL_MS = 800/);
-  assert.match(phone, /INITIAL_ANALYSIS_FRAMES = 5/);
+  assert.match(phone, /INITIAL_ANALYSIS_FRAMES = 1/);
   assert.match(phone, /analysisBurstRemaining/);
   assert.match(phone, /ANALYSIS_INTERVAL_MS = 2400/);
+  assert.match(capture, /function submitWebRtcAnalysisSnapshot/);
+  assert.match(capture, /source: "webrtc_viewer"/);
+  assert.match(capture, /ANALYSIS_SNAPSHOT_INTERVAL_MS = 12_000/);
+  assert.doesNotMatch(capture, /id="analystChat"/);
+  assert.doesNotMatch(capture, /api\("\/api\/chat"/);
 });

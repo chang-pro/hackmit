@@ -70,6 +70,7 @@ test("analyzes the first frame immediately, then batches later model windows", a
   const batches = [];
   const analyzer = new LiveEventAnalyzer({
     now: () => now,
+    batchSize: 5,
     visionBackend: {
       name: "test-vision",
       async extractEventBatch(frames) {
@@ -106,6 +107,7 @@ test("never starts another model window before twelve seconds", async () => {
   let calls = 0;
   const analyzer = new LiveEventAnalyzer({
     now: () => now,
+    batchSize: 5,
     visionBackend: {
       name: "test-vision",
       async extractEventBatch() {
