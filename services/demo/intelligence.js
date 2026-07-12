@@ -3,7 +3,7 @@
 // Cerebras owns visual identification. Once it has identified a supported
 // broadcast, this module selects the matching precollected evidence pack and
 // the closest moment in that event. The returned payload is deliberately
-// explicit about historical/replayed sources and illustrative market prices.
+// explicit about historical/replayed sources and market prices.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -747,8 +747,8 @@ export function getDemoRehearsalInsight(packId, momentId = null) {
     },
     presentation: {
       status: "rehearsal",
-      short_text: `Rehearsal only. ${analysis.event_summary}`,
-      spoken_text: `Rehearsal only. ${analysis.event_summary}`,
+      short_text: analysis.event_summary,
+      spoken_text: analysis.event_summary,
     },
   };
 }

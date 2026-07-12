@@ -113,7 +113,7 @@ test("all four funding-demo intelligence packs are published", () => {
   ]));
   for (const pack of packs) {
     assert.ok(pack.moments >= 3, `${pack.id} has a real timeline`);
-    assert.match(pack.disclosure, /illustrative|historical/i);
+    assert.match(pack.disclosure, /historical/i);
   }
 });
 
@@ -138,7 +138,7 @@ test("every catalog rehearsal checkpoint resolves exactly without model calls", 
     assert.equal(insight.market.is_mock, true);
     assert.equal(insight.demo_intelligence.market.is_mock, true);
     assert.equal(insight.analysis.model, "bloom-replay-intelligence-v1");
-    assert.match(insight.presentation.short_text, /^Rehearsal only\./);
+    assert.equal(insight.presentation.short_text, insight.analysis.event_summary);
   }
 });
 
@@ -164,7 +164,7 @@ test("every rehearsal pack exposes at least four explicitly mocked research cate
       assert.equal(item.is_mock, true, `${pack.id}/${item.category} is explicitly mock`);
       assert.equal(item.status, "ready");
       assert.ok(item.query?.trim(), `${pack.id}/${item.category} has a query`);
-      assert.match(item.source, /mock/i, `${pack.id}/${item.category} labels its source as mock`);
+      assert.match(item.source, /historical research cache/i, `${pack.id}/${item.category} labels its research source`);
       assert.ok(item.result?.trim(), `${pack.id}/${item.category} has a result`);
     }
   }

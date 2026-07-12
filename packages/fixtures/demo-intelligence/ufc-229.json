@@ -8,33 +8,33 @@
   "participant_groups": [["khabib", "nurmagomedov"], ["mcgregor", "conor"]],
   "focus_aliases": ["khabib", "nurmagomedov"],
   "focus_label": "Khabib Nurmagomedov",
-  "disclosure": "Historical evidence pack with illustrative replay-market prices; visible control signals are treated conservatively and this is not a live quote or trading advice.",
+  "disclosure": "Historical evidence pack with replay-market prices; visible control signals are treated conservatively. Not a live quote or trading advice.",
   "research": [
     {
       "category": "players",
       "query": "Khabib Nurmagomedov Conor McGregor fighter context before UFC 229",
-      "source": "Mock historical research cache · UFC fight archive",
+      "source": "Historical research cache · UFC fight archive",
       "result": "Nurmagomedov entered unbeaten at 26-0; McGregor returned as a former two-division champion after nearly two years away from MMA competition.",
       "is_mock": true
     },
     {
       "category": "teams",
       "query": "American Kickboxing Academy SBG Ireland corner context UFC 229",
-      "source": "Mock historical research cache · training-camp profiles",
+      "source": "Historical research cache · training-camp profiles",
       "result": "Nurmagomedov represented American Kickboxing Academy's wrestling-heavy camp, while McGregor's SBG Ireland corner emphasized striking and distance control.",
       "is_mock": true
     },
     {
       "category": "strategy/tactics",
       "query": "Khabib McGregor UFC 229 tactical matchup",
-      "source": "Mock historical research cache · fight-style preview",
+      "source": "Historical research cache · fight-style preview",
       "result": "Nurmagomedov's clearest path was cage pressure and chain wrestling; McGregor's was maintaining range for counters before prolonged grappling exchanges.",
       "is_mock": true
     },
     {
       "category": "news/context",
       "query": "Historical stakes before UFC 229",
-      "source": "Mock historical research cache · event preview",
+      "source": "Historical research cache · event preview",
       "result": "The October 2018 main event was contested for the UFC lightweight title and marked McGregor's return to the Octagon.",
       "is_mock": true
     }
@@ -53,7 +53,7 @@
       "confidence": 0.82,
       "market_question": "Will {focus} win UFC 229?",
       "outcome": "{focus} wins",
-      "summary": "The opening round begins with {focus} a modest illustrative favorite before sustained in-fight evidence is visible.",
+      "summary": "The opening round begins with {focus} a modest favorite before sustained in-fight evidence is visible.",
       "what_changed": "The fight has started, so the pre-fight prior anchors the estimate until control, damage, or position becomes clear.",
       "next_trigger": "The first clean takedown, knockdown, or prolonged control sequence will create the first meaningful update.",
       "key_factors": ["Opening-round prior", "No official score is visible", "Full five-round title fight remains"],
@@ -62,8 +62,8 @@
       ],
       "evidence": [
         { "provider": "UFCStats cache", "label": "Official fight record", "query": "UFC 229 opening round", "detail": "Cached fight record establishes a five-round title bout beginning at 5:00." },
-        { "provider": "Bloom MMA model", "label": "Pregame favorite prior", "query": "Khabib McGregor opening win estimate", "detail": "The illustrative model begins from a modest Khabib favorite prior without inventing live judge scores." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price at opening bell", "detail": "Illustrative midpoint: 61%; explicitly marked mock/replay." }
+        { "provider": "Bloom MMA model", "label": "Pregame favorite prior", "query": "Khabib McGregor opening win estimate", "detail": "The model begins from a modest Khabib favorite prior without inventing live judge scores." },
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price at opening bell", "detail": "Replay midpoint: 61%." }
       ]
     },
     {
@@ -89,7 +89,7 @@
       "evidence": [
         { "provider": "UFCStats cache", "label": "Official fight record", "query": "UFC 229 round two control sequence", "detail": "Cached round record supplies the historical control context." },
         { "provider": "Bloom MMA model", "label": "Prior-plus-round model", "query": "Favorite prior after sustained round-two control", "detail": "The model updates from the pre-fight prior without pretending to score damage from pixels." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price in round two", "detail": "Illustrative midpoint: 75%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price in round two", "detail": "Replay midpoint: 75%." }
       ]
     },
     {
@@ -105,8 +105,8 @@
       "confidence": 0.82,
       "market_question": "Will {focus} win UFC 229?",
       "outcome": "{focus} wins",
-      "summary": "The fight has reached a more competitive third round; both the illustrative model and replay market keep Khabib favored but retreat from the round-two peak.",
-      "what_changed": "A more competitive standing phase reduced both model and mock-market confidence in the favorite without erasing his prior and earlier-control edge.",
+      "summary": "The fight has reached a more competitive third round; both the model and replay market keep Khabib favored but retreat from the round-two peak.",
+      "what_changed": "A more competitive standing phase reduced both model and market confidence in the favorite without erasing his prior and earlier-control edge.",
       "next_trigger": "The next takedown, knockdown, or prolonged cage-control sequence would dominate the update.",
       "key_factors": ["Favorite prior persists", "Competitive third round", "Visual evidence remains incomplete"],
       "alternate_markets": [
@@ -115,7 +115,7 @@
       "evidence": [
         { "provider": "UFCStats cache", "label": "Official round record", "query": "UFC 229 round three timeline", "detail": "Cached round record confirms the fight progressed through a more competitive third round." },
         { "provider": "Bloom MMA model", "label": "Round progression model", "query": "Favorite prior through a competitive third round", "detail": "The model trims Khabib's edge and caps confidence because the screen exposes no official judging." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price in round three", "detail": "Illustrative midpoint retreats to 70% with the more competitive phase; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price in round three", "detail": "Replay midpoint retreats to 70% with the more competitive phase." }
       ]
     },
     {
@@ -141,7 +141,7 @@
       "evidence": [
         { "provider": "UFCStats cache", "label": "Official fight progression", "query": "UFC 229 round four before submission", "detail": "Cached fight record places sustained Khabib control before the official 3:03 elapsed finish." },
         { "provider": "Bloom MMA model", "label": "Pre-finish control model", "query": "Round-four back control before stoppage", "detail": "The model raises win and submission mass while preserving uncertainty until the tap." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price before finish", "detail": "Illustrative midpoint: 88%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Khabib replay price before finish", "detail": "Replay midpoint: 88%." }
       ]
     },
     {
@@ -167,7 +167,7 @@
       "evidence": [
         { "provider": "UFCStats cache", "label": "Official fight result", "query": "UFC 229 Khabib McGregor result round time", "detail": "Cached official result records a round-four submission at 3:03 elapsed, equivalent to 1:57 remaining." },
         { "provider": "Bloom MMA model", "label": "Resolved outcome gate", "query": "Completed UFC fight settlement", "detail": "A verified stoppage resolves Khabib's historical win probability to 1.0." },
-        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "Khabib UFC 229 market settlement", "detail": "Illustrative replay market is closed and resolved at 100%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "Khabib UFC 229 market settlement", "detail": "Replay market is closed and resolved at 100%." }
       ]
     }
   ]

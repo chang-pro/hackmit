@@ -8,33 +8,33 @@
   "participant_groups": [["patriots", "new england", "ne"], ["falcons", "atlanta", "atl"]],
   "focus_aliases": ["patriots", "new england", "ne"],
   "focus_label": "New England",
-  "disclosure": "Historical evidence pack with illustrative replay-market prices; this is an illustrative estimate, not a live quote or trading advice.",
+  "disclosure": "Historical evidence pack with replay-market prices. Not a live quote or trading advice.",
   "research": [
     {
       "category": "players",
       "query": "Tom Brady Matt Ryan Julio Jones player context before Super Bowl LI",
-      "source": "Mock historical research cache · NFL season archive",
+      "source": "Historical research cache · NFL season archive",
       "result": "Ryan entered as the league MVP, Jones as Atlanta's primary explosive target, and Brady was seeking a fifth championship.",
       "is_mock": true
     },
     {
       "category": "teams",
       "query": "Patriots Falcons team profiles entering Super Bowl LI",
-      "source": "Mock historical research cache · 2016 team recap",
+      "source": "Historical research cache · 2016 team recap",
       "result": "Atlanta brought the league's highest-scoring offense, while New England allowed the fewest regular-season points.",
       "is_mock": true
     },
     {
       "category": "strategy/tactics",
       "query": "Patriots Falcons Super Bowl LI tactical matchup",
-      "source": "Mock historical research cache · game-plan preview",
+      "source": "Historical research cache · game-plan preview",
       "result": "Atlanta leaned on outside-zone runs and play action; New England could answer with quick underneath throws and matchup-driven tempo.",
       "is_mock": true
     },
     {
       "category": "news/context",
       "query": "Historical stakes before Super Bowl LI",
-      "source": "Mock historical research cache · pregame context",
+      "source": "Historical research cache · pregame context",
       "result": "New England was making its ninth Super Bowl appearance, while Atlanta was seeking the franchise's first championship.",
       "is_mock": true
     }
@@ -52,7 +52,7 @@
       "confidence": 0.9,
       "market_question": "Will {focus} win Super Bowl LI?",
       "outcome": "{focus} wins",
-      "summary": "Super Bowl LI begins scoreless, with {focus} holding a modest illustrative pregame edge.",
+      "summary": "Super Bowl LI begins scoreless, with {focus} holding a modest pregame edge.",
       "what_changed": "The game has started at 0–0, so pregame team strength anchors the opening estimate.",
       "next_trigger": "The first turnover, touchdown, or major field-position swing will create the first material update.",
       "key_factors": ["Scoreless opening", "New England entered favored", "Full regulation remains"],
@@ -61,8 +61,8 @@
       ],
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official game record", "query": "Super Bowl LI kickoff score", "detail": "Cached game record establishes the 0–0 opening state." },
-        { "provider": "Bloom NFL model", "label": "Pregame baseline", "query": "Patriots Falcons opening win estimate", "detail": "The illustrative baseline gives New England a modest edge without treating the outcome as determined." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at kickoff", "detail": "Illustrative midpoint: 59%; explicitly marked mock/replay." }
+        { "provider": "Bloom NFL model", "label": "Pregame baseline", "query": "Patriots Falcons opening win estimate", "detail": "The baseline gives New England a modest edge without treating the outcome as determined." },
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at kickoff", "detail": "Replay midpoint: 59%." }
       ]
     },
     {
@@ -87,7 +87,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official second-half state", "query": "Super Bowl LI Q3 13:25 21–3", "detail": "Cached play-by-play confirms Atlanta's 21–3 lead early in the third quarter." },
         { "provider": "Bloom NFL model", "label": "Multi-score deficit model", "query": "Eighteen-point third-quarter deficit", "detail": "The remaining drive count leaves a narrow but nonzero comeback path." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price early in Q3", "detail": "Illustrative midpoint: 10%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price early in Q3", "detail": "Replay midpoint: 10%." }
       ]
     },
     {
@@ -102,7 +102,7 @@
       "confidence": 0.97,
       "market_question": "Will {focus} win Super Bowl LI?",
       "outcome": "{focus} wins",
-      "summary": "Down 28–3 in the third quarter, {focus} has only an extreme-tail comeback path in the illustrative replay model.",
+      "summary": "Down 28–3 in the third quarter, {focus} has only an extreme-tail comeback path in the replay model.",
       "what_changed": "Atlanta's fourth touchdown expanded the lead to 25 points while removing another long drive from the clock.",
       "next_trigger": "A quick New England touchdown followed by a defensive stop is required before the estimate can move materially.",
       "key_factors": ["Twenty-five-point deficit", "Q3 7:52", "Four scoring events may be required"],
@@ -112,7 +112,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI 28–3 third quarter", "detail": "Cached play-by-play aligns the condensed clip's visible 28–3 score with Q3 7:52." },
         { "provider": "Bloom NFL model", "label": "Possession deficit model", "query": "Twenty-five-point deficit with 23:31 remaining", "detail": "The required scoring and stop sequence makes the comeback an extreme tail event." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–3", "detail": "Illustrative midpoint: 1%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–3", "detail": "Replay midpoint: 1%." }
       ]
     },
     {
@@ -137,7 +137,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI 28–9 2:06 third quarter", "detail": "Cached summary records James White's touchdown and the missed extra point." },
         { "provider": "Bloom NFL model", "label": "Comeback branch model", "query": "Nineteen-point deficit entering fourth quarter", "detail": "The touchdown improves the tail path, but multiple stops and scores remain necessary." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–9", "detail": "Illustrative midpoint: 3%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–9", "detail": "Replay midpoint: 3%." }
       ]
     },
     {
@@ -162,7 +162,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI 28–12 fourth quarter", "detail": "Cached scoring summary confirms the fourth-quarter field goal and the clip's next visible 28–12 state." },
         { "provider": "Bloom NFL model", "label": "Two-score conversion model", "query": "Sixteen-point deficit under ten minutes", "detail": "Two touchdown-and-conversion sequences remain possible but require quick stops." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–12", "detail": "Illustrative midpoint: 7%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–12", "detail": "Replay midpoint: 7%." }
       ]
     },
     {
@@ -187,7 +187,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI 28–20 fourth quarter", "detail": "Cached play-by-play confirms the touchdown, conversion, and the clip's visible 5:53 state." },
         { "provider": "Bloom NFL model", "label": "Late-game drive model", "query": "Eight-point deficit with one expected possession", "detail": "Comeback probability rises but remains below the leader." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–20", "detail": "Illustrative midpoint: 24%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–20", "detail": "Replay midpoint: 24%." }
       ]
     },
     {
@@ -212,7 +212,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official scoring timeline", "query": "Super Bowl LI tie 28–28", "detail": "Cached play-by-play confirms the late tying conversion." },
         { "provider": "Bloom NFL model", "label": "Tie-state recalculation", "query": "Tie game with 18 seconds remaining", "detail": "The estimate resets near even instead of carrying the prior 28–3 state." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–28", "detail": "Illustrative midpoint: 52%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price at 28–28", "detail": "Replay midpoint: 52%." }
       ]
     },
     {
@@ -238,7 +238,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official overtime sequence", "query": "Super Bowl LI overtime coin toss possession", "detail": "Cached gamebook records New England receiving the opening overtime possession." },
         { "provider": "Bloom NFL model", "label": "Overtime possession model", "query": "NFL overtime first-possession win effect", "detail": "The first-possession touchdown rule gives the receiving team a meaningful but nonterminal edge." },
-        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price entering overtime", "detail": "Illustrative midpoint: 64%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Historical market reconstruction", "query": "Patriots replay price entering overtime", "detail": "Replay midpoint: 64%." }
       ]
     },
     {
@@ -264,7 +264,7 @@
       "evidence": [
         { "provider": "NFL gamebook cache", "label": "Official final scoring play", "query": "Super Bowl LI overtime touchdown 11:02", "detail": "Cached gamebook records James White's touchdown and the final 34–28 score." },
         { "provider": "Bloom NFL model", "label": "Resolved outcome gate", "query": "Completed Super Bowl settlement", "detail": "A verified finished state resolves New England's historical win probability to 1.0." },
-        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "Patriots Super Bowl LI market settlement", "detail": "Illustrative replay market is closed and resolved at 100%; explicitly marked mock/replay." }
+        { "provider": "Replay market cache", "label": "Resolved replay market", "query": "Patriots Super Bowl LI market settlement", "detail": "Replay market is closed and resolved at 100%." }
       ]
     }
   ]
