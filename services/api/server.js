@@ -20,12 +20,14 @@
 //   GET  /api/latest            — latest live insight only (never fixture fallback)
 //   GET  /api/demo/intelligence — precollected four-event demo pack catalog
 //   GET  /api/demo/replay       — quota-free, explicitly labeled UI rehearsal insight
+//   POST /api/chat              — Gemini analyst chat grounded in the current insight
 //   GET  /api/sports            — sport selector data for the frontends
 //   GET  /api/stats             — compact summaries of saved ESPN snapshots
 //   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
 //   GET  /, /capture, /phone, /data, /landing, /pitch — pages
 
 import { createServer } from "node:http";
+import { createReadStream } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -45,6 +47,14 @@ import {
   getDemoRehearsalInsight,
   listDemoIntelligencePacks,
 } from "../demo/intelligence.js";
+import { PlaybackDirector } from "../demo/playback-director.js";
+import {
+  DEFAULT_DEMO_STREAMS_DIR,
+  demoStreamVerifiedStatus,
+  getDemoStreamDefinition,
+  listDemoStreams,
+} from "../demo/streams.js";
+import { askGeminiAnalyst, geminiChatStatus } from "../analytics/gemini-chat.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
@@ -179,6 +189,88 @@ async function sendDemoAsset(res, filename, contentType) {
   res.end(asset);
 }
 
+async function sendPlaybackPolicy(res) {
+  const asset = await readFile(join(ROOT, "services", "demo", "playback-director.js"));
+  res.writeHead(200, responseHeaders("text/javascript; charset=utf-8"));
+  res.end(asset);
+}
+
+function parseByteRange(header, size) {
+  if (!header) return null;
+  const match = String(header).match(/^bytes=(\d*)-(\d*)$/);
+  if (!match || (!match[1] && !match[2]) || size <= 0) return false;
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return false;
+    start = Math.max(0, size - suffixLength);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : size - 1;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || start >= size) return false;
+    end = Math.min(end, size - 1);
+  }
+  return { start, end };
+}
+
+async function sendDemoStream(req, res, streamId, mediaDir, verifyStream = demoStreamVerifiedStatus) {
+  const definition = getDemoStreamDefinition(streamId);
+  if (!definition) {
+    sendJson(res, 404, { error: "unknown demo stream" });
+    return;
+  }
+  const file = await verifyStream(streamId, mediaDir);
+  if (!file.available) {
+    sendJson(res, 404, {
+      error: "demo stream media is not installed",
+      stream_id: streamId,
+      expected_filename: definition.filename,
+    });
+    return;
+  }
+  if (file.verified !== true) {
+    sendJson(res, 409, {
+      error: "demo stream media does not match the pinned manifest",
+      stream_id: streamId,
+      expected_filename: definition.filename,
+      reason: file.bytes !== definition.expected_size_bytes
+        ? "media_file_size_mismatch"
+        : "media_file_hash_mismatch",
+    });
+    return;
+  }
+  const range = parseByteRange(req.headers.range, file.bytes);
+  if (range === false) {
+    res.writeHead(416, {
+      ...responseHeaders("application/json"),
+      "Accept-Ranges": "bytes",
+      "Content-Range": `bytes */${file.bytes}`,
+    });
+    res.end(JSON.stringify({ error: "invalid byte range" }));
+    return;
+  }
+  const start = range?.start ?? 0;
+  const end = range?.end ?? file.bytes - 1;
+  const statusCode = range ? 206 : 200;
+  res.writeHead(statusCode, {
+    ...responseHeaders(definition.mime_type),
+    "Accept-Ranges": "bytes",
+    "Content-Length": String(end - start + 1),
+    ...(range ? { "Content-Range": `bytes ${start}-${end}/${file.bytes}` } : {}),
+    "Content-Disposition": `inline; filename="${definition.filename}"`,
+    "X-Content-Type-Options": "nosniff",
+  });
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  const stream = createReadStream(file.path, { start, end });
+  stream.on("error", () => res.destroy());
+  stream.pipe(res);
+}
+
 // ── Saved ESPN stats snapshots (scripts/pull-stats.js) ──────────────────────
 // Served from disk only — no network calls at request time.
 
@@ -247,8 +339,11 @@ export function createBloomServer({
   selector = new FrameSelector({ minIntervalMs: 750 }),
   visionBackend = undefined,
   liveAnalyzer = undefined,
+  demoStreamsDir = DEFAULT_DEMO_STREAMS_DIR,
+  demoStreamStatus = demoStreamVerifiedStatus,
 } = {}) {
   const analyzer = liveAnalyzer ?? new LiveEventAnalyzer({ visionBackend });
+  const playbackDirector = new PlaybackDirector();
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
   let latestInsight = null;
   let latestInsightAt = 0;
@@ -356,12 +451,22 @@ export function createBloomServer({
       const result = await analyzer.submit(frame, {
         force: body.force_analysis === true || body.source === "phone_photo",
       });
+      let responseResult = result;
       if (result.analysis_status === "analyzed") {
+        const streamId = result.insight?.demo_intelligence?.playback?.stream_id;
+        const streamFile = streamId
+          ? await demoStreamStatus(streamId, demoStreamsDir)
+          : { available: false };
+        const playback = playbackDirector.consider(result.insight, {
+          assetAvailable: streamFile.verified === true,
+        });
         latestInsight = {
           ...result.insight,
           sport: registrySportId(result.insight.observation?.sport ?? requestedSport?.id),
+          playback,
         };
         latestInsightAt = Date.now();
+        responseResult = { ...result, insight: latestInsight };
       }
       sendJson(res, result.analysis_status === "analyzed" ? 201 : 202, {
         frame: meta,
@@ -371,7 +476,7 @@ export function createBloomServer({
           requestedSport?.id ??
           "auto",
         selection,
-        ...result,
+        ...responseResult,
         ...(dataset ? { dataset } : {}),
       });
     } catch (err) {
@@ -645,14 +750,34 @@ export function createBloomServer({
         handleAnalysisControl(res, true);
       } else if (req.method === "POST" && url.pathname === "/api/analysis/stop") {
         handleAnalysisControl(res, false);
+      } else if (req.method === "POST" && url.pathname === "/api/chat") {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          sendJson(res, err.statusCode || 400, { error: err.message });
+          return;
+        }
+        try {
+          const result = await askGeminiAnalyst({
+            question: body?.question,
+            insight: body?.insight ?? latestInsight,
+            history: body?.history,
+          });
+          sendJson(res, 200, result);
+        } catch (err) {
+          sendJson(res, err.statusCode || 500, { error: err.message });
+        }
       } else if (req.method === "POST" && url.pathname === "/api/reset") {
         analysisEnabled = false;
         resetLivePipeline();
         resetAnalysisState();
         webrtcSessions.clear();
         activeWebRtcSessionId = null;
-        sendJson(res, 200, { status: "reset" });
+        const playback = playbackDirector.reset();
+        sendJson(res, 200, { status: "reset", playback });
       } else if (req.method === "GET" && url.pathname === "/api/health") {
+        const demoStreams = await listDemoStreams({ mediaDir: demoStreamsDir });
         sendJson(res, 200, {
           status: "ok",
           vision: visionStatus(),
@@ -660,12 +785,21 @@ export function createBloomServer({
             vision: CEREBRAS_VISION_MODEL,
             analytics: CEREBRAS_ANALYTICS_MODEL,
           },
+          analyst_chat: geminiChatStatus(),
           frame_buffer_size: gateway.size,
           has_live_insight: Boolean(latestInsight),
           analysis_enabled: analysisEnabled,
           webrtc_sessions: webrtcSessions.size,
           analysis_queue: analyzer.status(),
           demo_intelligence_packs: listDemoIntelligencePacks().length,
+          demo_streams: {
+            total: demoStreams.length,
+            files_available: demoStreams.filter((stream) => stream.file_available).length,
+            ready: demoStreams.filter((stream) => stream.ready).length,
+            complete_coverage: demoStreams.filter((stream) => stream.coverage_status === "complete").length,
+            partial_coverage: demoStreams.filter((stream) => stream.coverage_status === "partial").length,
+          },
+          playback: playbackDirector.snapshot(),
         });
       } else if (req.method === "GET" && url.pathname === "/api/live-frame") {
         handleLatestFrame(res);
@@ -681,8 +815,12 @@ export function createBloomServer({
         await handleComparison(res, url);
       } else if (req.method === "GET" && url.pathname === "/api/latest") {
         handleLatestInsight(res);
+      } else if (req.method === "GET" && url.pathname === "/api/playback") {
+        sendJson(res, 200, playbackDirector.snapshot());
       } else if (req.method === "GET" && url.pathname === "/api/demo/intelligence") {
         sendJson(res, 200, { packs: listDemoIntelligencePacks() });
+      } else if (req.method === "GET" && url.pathname === "/api/demo/streams") {
+        sendJson(res, 200, { streams: await listDemoStreams({ mediaDir: demoStreamsDir }) });
       } else if (req.method === "GET" && url.pathname === "/api/demo/replay") {
         try {
           sendJson(
@@ -718,6 +856,11 @@ export function createBloomServer({
         await sendDemoAsset(res, "models/yolo11n.onnx", "application/octet-stream");
       } else if (req.method === "GET" && url.pathname === "/models/yolo11s.onnx") {
         await sendDemoAsset(res, "models/yolo11s.onnx", "application/octet-stream");
+      } else if (req.method === "GET" && url.pathname === "/playback-policy.js") {
+        await sendPlaybackPolicy(res);
+      } else if (["GET", "HEAD"].includes(req.method) && url.pathname.startsWith("/demo-streams/")) {
+        const streamId = decodeURIComponent(url.pathname.slice("/demo-streams/".length));
+        await sendDemoStream(req, res, streamId, demoStreamsDir, demoStreamStatus);
       } else if (
         req.method === "GET" &&
         (url.pathname === "/phone" || url.pathname === "/phone.html")

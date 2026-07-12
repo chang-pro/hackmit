@@ -18,7 +18,7 @@ Point to the evidence checks, then Model / Market / Gap.
 
 ## NBA Finals switch
 
-Switch the source screen to Cavaliers–Warriors Game 7 without touching BloomKnights.
+Switch the source screen to the April 9, 2026 Celtics–Knicks game without touching BloomKnights.
 
 > “I only changed what I am watching. The prior soccer context is discarded, basketball is detected, and the NBA Finals timeline loads automatically.”
 

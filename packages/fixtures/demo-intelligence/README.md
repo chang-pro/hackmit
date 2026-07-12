@@ -7,7 +7,7 @@ These four JSON files are the deterministic funding-demo layer used after Cerebr
 | Pack | Expected footage | Exact-match signals |
 |---|---|---|
 | `world-cup-2022-final.json` | Argentina vs France, 2022 FIFA World Cup Final | World Cup plus ARG/Argentina and FRA/France |
-| `nba-finals-2016-game-7.json` | Cleveland vs Golden State, 2016 NBA Finals Game 7 | NBA Finals plus Cavaliers/Cleveland and Warriors/Golden State |
+| `nba-celtics-knicks-2026.json` | Boston at New York, April 9, 2026 | NBA regular season plus Celtics/Boston and Knicks/New York |
 | `super-bowl-li.json` | New England vs Atlanta, Super Bowl LI | Super Bowl plus Patriots/New England and Falcons/Atlanta |
 | `ufc-229.json` | Khabib vs McGregor, UFC 229 | UFC 229 plus both fighter names |
 

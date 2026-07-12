@@ -41,6 +41,28 @@ test("capture viewer clears stale results and keeps rehearsal visually consisten
   assert.match(capture, /body\.running \.readout[^}]*overflow-y: auto/);
 });
 
+test("capture viewer swaps to a double-buffered local broadcast only on a newer playback command", () => {
+  assert.match(capture, /id="video" class="program-video"/);
+  assert.match(capture, /id="videoStandby" class="program-video"/);
+  assert.match(capture, /id="remotePreview"/);
+  assert.match(capture, /body\.playback-active #remotePreview/);
+  assert.match(capture, /playbackDirectiveTarget/);
+  assert.match(capture, /activePlaybackRevision/);
+  assert.match(capture, /activePlaybackEpoch/);
+  assert.match(capture, /pendingPlaybackRevision/);
+  assert.match(capture, /pendingPlaybackEpoch/);
+  assert.match(capture, /function applyPlaybackDirective/);
+  assert.match(capture, /function clearProgramPlayback/);
+  assert.match(capture, /api\("\/api\/playback"\)/);
+  assert.match(capture, /get video\(\) \{ return theaterVideo\(\); \}/);
+  assert.match(capture, /keeping current view/);
+  assert.match(capture, /synced once/);
+  assert.match(capture, /analysisRefreshInFlight/);
+  assert.match(capture, /sourceGeneration: \(\) => theaterSourceGeneration/);
+  assert.match(capture, /sourceVideo !== bridge\.video/);
+  assert.match(capture, /event\.detail\?\.restart/);
+});
+
 test("first live analysis uses a fast five-frame burst before quota cadence", () => {
   assert.match(phone, /INITIAL_ANALYSIS_INTERVAL_MS = 800/);
   assert.match(phone, /INITIAL_ANALYSIS_FRAMES = 5/);

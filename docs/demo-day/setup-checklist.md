@@ -14,10 +14,12 @@ Run this top to bottom on the actual demo network and projector. Do not introduc
   ```bash
   curl -fsS https://capture.saicharanramineni.com/api/health | jq .
   curl -fsS https://capture.saicharanramineni.com/api/demo/intelligence | jq .
+  curl -fsS http://localhost:3000/api/demo/streams | jq .
   ```
 
-- [ ] Health reports `status: "ok"`, `vision.selected: "cerebras"`, `vision.error: null`, and `demo_intelligence_packs: 4`.
-- [ ] The catalog lists the World Cup Final, 2016 NBA Finals Game 7, Super Bowl LI, and UFC 229.
+- [ ] Health reports `status: "ok"`, `vision.selected: "cerebras"`, `vision.error: null`, `demo_intelligence_packs: 4`, and `demo_streams.ready: 4`.
+- [ ] The catalog lists the World Cup Final, April 9 2026 Celtics–Knicks, Super Bowl LI, and UFC 229.
+- [ ] Every stream reports `file_available: true`, `calibration_complete: true`, and `ready: true`.
 
 ## T-45 · Check every stage checkpoint
 
@@ -33,26 +35,29 @@ Run this top to bottom on the actual demo network and projector. Do not introduc
 
 ## T-30 · Real two-device path
 
-- [ ] Viewer laptop: `https://capture.saicharanramineni.com/capture` in current Chrome or Edge.
+- [ ] Viewer laptop: `http://localhost:3000/capture` in current Chrome or Edge so local MP4 bytes remain off the tunnel.
 - [ ] Camera device: native glasses companion or `https://capture.saicharanramineni.com/phone`.
 - [ ] Start the camera feed. The latest provider appears automatically; there is no pairing code or refresh button.
-- [ ] Confirm continuous video on the viewer before pressing **Analyze**.
+- [ ] Confirm the camera detector preview appears before pressing **Analyze**.
 - [ ] Confirm the viewer eventually reports `YOLO11s WebGPU`. WASM is a functional but slower fallback.
-- [ ] Press **Analyze** once. Confirm the acquisition counter advances and a live insight appears.
-- [ ] Stop analysis and confirm video continues while the old prediction disappears.
+- [ ] Press **Analyze** once. Confirm the acquisition counter advances, an exact event locks, and the theater crossfades to the matching local broadcast.
+- [ ] Confirm `GET /api/playback` reports `status: "locked"` and `revision: 1`.
+- [ ] Stop analysis and confirm the local broadcast continues while the old prediction disappears.
 
 ## T-20 · Four canonical clips
 
 Use only these identities unless their JSON packs have been deliberately recalibrated:
 
 1. 2022 FIFA World Cup Final — Argentina vs France.
-2. 2016 NBA Finals Game 7 — Cavaliers vs Warriors.
+2. April 9, 2026 NBA — Celtics at Knicks.
 3. Super Bowl LI — Patriots vs Falcons.
 4. UFC 229 — Khabib Nurmagomedov vs Conor McGregor.
 
-- [ ] Each clip keeps the primary scorebug visible and large enough to read.
+- [ ] The four exact MP4 filenames and every checkpoint present in those condensed edits match `packages/fixtures/demo-streams/manifest.json`; intentionally omitted checkpoints are marked unavailable.
+- [ ] Each source clip shown to the glasses keeps the primary scorebug visible and large enough to read.
 - [ ] Each clip reaches at least one committed checkpoint and shows `Historical replay`, not `Sport template`.
-- [ ] Switch through all four without touching a sport selector.
+- [ ] Switch through all four without touching a sport selector; each new game increments playback revision exactly once.
+- [ ] A second detection from the same game does not increment revision, reload, or seek.
 - [ ] Terminal footage resolves to 100% for the known winner instead of retaining a pre-finish estimate.
 - [ ] If any teammate clip is a different event, stop and update the pack. Never attach a famous game's facts to unrelated footage.
 
@@ -66,7 +71,7 @@ Use only these identities unless their JSON packs have been deliberately recalib
 
 ## T-2 · Final state
 
-- [ ] Viewer is open on `/capture`, camera feed is live, and analysis is **off**.
+- [ ] Viewer is open on local `/capture`, detector feed is live, and analysis is **off**.
 - [ ] World Cup clip is framed at the first rehearsed checkpoint.
 - [ ] Tunnel terminal is healthy; `/api/health` still returns 200.
 - [ ] Rehearsal URL is bookmarked as the final fallback.

@@ -4,7 +4,6 @@ node_modules/
 !.env.example
 .DS_Store
 *.log
-
 # Raw match footage and extracted frames — never commit (README §16)
 footage/
 clip-frames/
@@ -15,3 +14,8 @@ clip-frames/
 *.pem
 *.key
 secrets.*
+
+# Optional local copies/symlinks for the camera-guided theater.
+/apps/demo-web/streams/*.mp4
+/apps/demo-web/streams/*.mov
+/apps/demo-web/streams/*.webm

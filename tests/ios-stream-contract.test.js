@@ -12,11 +12,23 @@ test("iOS glasses clients keep the Meta-supported low-latency frame path", async
     const streamer = await readFile(`${root}/GlassesStreamer.swift`, "utf8");
     const rtc = await readFile(`${root}/RTCPublisher.swift`, "utf8");
 
-    assert.match(
-      streamer,
-      /StreamConfiguration\(videoCodec: \.raw, resolution: \.low, frameRate: 24\)/,
-      `${root} must use the Meta CameraAccess sample stream profile`,
-    );
+    if (root.endsWith("ios/capture/BloomKnights")) {
+      const decoder = await readFile(`${root}/FrameDecoder.swift`, "utf8");
+      assert.match(
+        streamer,
+        /StreamConfiguration\(videoCodec: \.hvc1, resolution: \.high, frameRate: 15\)/,
+        `${root} must use its proven compressed glasses profile`,
+      );
+      assert.match(decoder, /import VideoToolbox/);
+      assert.match(decoder, /private let maxQueued = 3/);
+      assert.match(decoder, /waitForKeyframe/);
+    } else {
+      assert.match(
+        streamer,
+        /StreamConfiguration\(videoCodec: \.raw, resolution: \.low, frameRate: 24\)/,
+        `${root} must retain the Meta CameraAccess sample stream profile`,
+      );
+    }
     assert.doesNotMatch(
       streamer,
       /CFDictionarySetValue/,

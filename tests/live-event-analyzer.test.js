@@ -150,21 +150,21 @@ test("automatically detects an NBA-to-golf switch and clears prior analysis cont
     {
       ...observation,
       sport: "basketball",
-      competition: "NBA",
+      competition: "NBA Regular Season",
       event_name: "Celtics vs Knicks",
       event_identity: "nba:boston-celtics-vs-new-york-knicks",
       event_format: "team_event",
       participants: [
-        { name: "Boston Celtics", role_or_position: "away", score_or_status: "104", visible_rank: 0 },
+        { name: "Boston Celtics", role_or_position: "away", score_or_status: "101", visible_rank: 0 },
         { name: "New York Knicks", role_or_position: "home", score_or_status: "101", visible_rank: 0 },
       ],
       participant_a: "Boston Celtics",
       participant_b: "New York Knicks",
-      score_a: 104,
+      score_a: 101,
       score_b: 101,
-      score_display: "104-101",
+      score_display: "101-101",
       phase: "Q4",
-      clock: "2:14",
+      clock: "2:49",
     },
     {
       ...observation,
@@ -191,6 +191,7 @@ test("automatically detects an NBA-to-golf switch and clears prior analysis cont
   const contexts = [];
   const analyzer = new LiveEventAnalyzer({
     now: () => now,
+    enrichExactDemo: true,
     visionBackend: {
       name: "test-vision",
       async extractEventBatch() {

@@ -39,7 +39,7 @@ test("Gemma 4 backend sends a base64 phone image with strict scoreboard output",
   assert.equal(result.clock_text, "2:14");
 });
 
-test("Gemma 4 packs five ordered sports frames into one vision request", async () => {
+test("Gemma 4 compresses a five-frame window to its earliest and latest images", async () => {
   let request;
   const backend = createCerebrasBackend({
     complete: async (args) => {
@@ -80,10 +80,15 @@ test("Gemma 4 packs five ordered sports frames into one vision request", async (
   const result = await backend.extractEventBatch(frames);
   const imageParts = request.messages[1].content.filter((part) => part.type === "image_url");
   assert.equal(request.schemaName, "multisport_live_event_window");
-  assert.equal(imageParts.length, 5);
+  assert.equal(imageParts.length, 2);
+  assert.equal(imageParts[0].image_url.url, "data:image/jpeg;base64,ZnJhbWUt0");
+  assert.equal(imageParts[1].image_url.url, "data:image/jpeg;base64,ZnJhbWUt4");
+  assert.match(request.messages[1].content[0].text, /window of 5 ordered camera frame/);
+  assert.match(request.messages[1].content[0].text, /2 representative image/);
   assert.equal(request.schema.properties.sport.enum, undefined);
   assert.equal(request.schema.properties.event_identity.type, "string");
   assert.equal(request.schema.properties.participants.type, "array");
+  assert.match(request.messages[0].content, /phase must be the explicit numbered round/);
   assert.equal(result.sport, "soccer");
 });
 
