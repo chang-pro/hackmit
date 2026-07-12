@@ -140,19 +140,13 @@ test("playback director switches only when a different exact stream is detected"
   assert.equal(backToArgentina.initial_seek_seconds, 321);
 });
 
-test("moderate-confidence stream changes require two consecutive detections", () => {
+test("a 70%-confidence exact stream match switches immediately", () => {
   const director = new PlaybackDirector({ epoch: 200 });
-  const insight = liveInsight({ confidence: 0.84 });
+  const insight = liveInsight({ confidence: 0.70 });
   const first = director.consider(insight, { assetAvailable: true });
-  assert.equal(first.status, "candidate");
-  assert.equal(first.reason, "awaiting_stream_confirmation");
-  assert.equal(first.candidate.confirmations, 1);
-  assert.equal(first.revision, 0);
-
-  const second = director.consider(insight, { assetAvailable: true });
-  assert.equal(second.status, "locked");
-  assert.equal(second.stream_id, "world-cup-2022-final");
-  assert.equal(second.revision, 1);
+  assert.equal(first.status, "locked");
+  assert.equal(first.stream_id, "world-cup-2022-final");
+  assert.equal(first.revision, 1);
 });
 
 test("uncalibrated, low-confidence, and rehearsal observations cannot command playback", () => {
@@ -161,7 +155,8 @@ test("uncalibrated, low-confidence, and rehearsal observations cannot command pl
   assert.equal(uncalibrated.status, "candidate");
   assert.equal(uncalibrated.reason, "detected_stream_checkpoint_not_calibrated");
   assert.equal(uncalibrated.revision, 0);
-  assert.equal(playbackCandidateFromInsight(liveInsight({ confidence: 0.71 })), null);
+  assert.equal(playbackCandidateFromInsight(liveInsight({ confidence: 0.69 })), null);
+  assert.ok(playbackCandidateFromInsight(liveInsight({ confidence: 0.70 })));
   assert.equal(playbackCandidateFromInsight(liveInsight({ source: "demo_rehearsal" })), null);
   assert.equal(playbackCandidateFromInsight(liveInsight({ status: "held_previous" })), null);
 });
