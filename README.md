@@ -1,906 +1,357 @@
-# BloomKnights
+<p align="center">
+  <img src="apps/demo-web/sunglasses.svg" width="112" alt="BloomKnights smart-glasses mark" />
+</p>
 
-> Look at the game. See the probability.
+<h1 align="center">BloomKnights</h1>
 
-BloomKnights is a wearable visual-intelligence system for live sports and event prediction markets. A user points camera-enabled smart glasses at a screen showing a live event. The system reads the visible game state, estimates the probability of an outcome, compares that estimate with the current prediction-market price, and returns a short, useful result through a glasses-friendly interface.
+<p align="center"><strong>Look at the game. See the probability.</strong></p>
 
-The hackathon version is focused on one cross-sport experience:
-
-> Point Meta glasses at a live sports broadcast and receive the most relevant prediction-market probability without selecting a sport or searching for the event.
-
-Sport and event selection are automatic. If the viewer changes from an NBA game to a golf tournament—or to another recognizable sport—the next analyzed frame window identifies the new event and starts fresh analytical context. Ordinary cuts within one event, including a golf leaderboard cycling through different players, do not reset the session.
-
-Example output:
-
-```text
-USA vs. Brazil — 72:14, 1-1
-Primary market: Brazil to win
-Model probability: 42%
-Alternate market: Draw 30%
-State confidence: High
-```
-
-This README is the source of truth for humans and AI coding tools working on the project. Read it before making architectural or product decisions.
+<p align="center">
+  Meta glasses recognize the sport on a nearby screen, switch the viewer to the matching broadcast,
+  and surface a historical prediction-market probability in seconds.
+</p>
 
 ---
 
-## Quickstart
+BloomKnights turns camera-enabled glasses into a hands-free interface for sports prediction markets. The user simply looks at a television or laptop. The system recognizes the sport, selects the matching event, loads a synchronized local replay, and presents a concise model-versus-market comparison with supporting research.
 
-```bash
-npm start        # zero-dependency Node server on http://localhost:3000
-npm test         # full node:test suite, no install needed
-npm run evaluate # run the vision fixtures evaluation
-node scripts/pull-stats.js   # pull live stats snapshots
-```
+This repository is the complete hackathon implementation: Meta Ray-Ban capture, WebRTC transport, Gemini vision classification, four historical event packs, local replay switching, prediction timelines, WebGPU player tracking, and the liquid-glass presentation layer.
 
-Pages served by `npm start` (see `services/api/server.js`):
+> [!IMPORTANT]
+> This README is the source of truth for teammates and AI coding tools. The current hackathon path recognizes one prerecorded event per supported sport. It does not claim to identify every live game in the world.
 
-- `/` — judge-facing dashboard
-- `/phone` — phone/Ray-Ban camera sender
-- `/capture` — desktop detector plus local-broadcast theater and Analyze control
-- `/data` — data dashboard
-- `/landing` — marketing landing page
-- `/pitch` — pitch deck
+## The experience
 
-API routes: `GET /api/webrtc/active`, `POST /api/webrtc/active`, `POST /api/webrtc/signal`, `POST /api/analysis/start`, `POST /api/frames`, `GET /api/playback`, `GET /api/demo/streams`, `GET|HEAD /demo-streams/:stream_id`, `GET /api/comparison`, `GET /api/demo/intelligence`, `GET /api/demo/replay`, `GET /api/sports`, `GET /api/stats`, `GET /api/stats/raw`.
+1. Open `/capture` on the presentation laptop.
+2. Start the Meta glasses stream from the iOS app.
+3. Press **Analyze** on the capture page.
+4. Look at basketball, American football, soccer, or UFC/MMA footage.
+5. Gemini classifies the sport from one WebRTC snapshot.
+6. At 70% confidence or higher, the theater switches to the corresponding local broadcast.
+7. BloomKnights displays a backtested probability, an illustrative historical market price, research context, and the model-market gap.
+8. Look at a different supported sport and the viewer switches again.
 
-### Camera-guided four-stream funding demo
+No sport picker. No market search. No chatbot. The camera is the interface.
 
-The camera/glasses feed is now the selector, not the permanent theater video. Because the demo has exactly one prerecorded stream per sport, Gemma performs only a fast five-way screen classification: basketball, American football, soccer, MMA/UFC, or unclear. The first camera frame is analyzed immediately with one image and an 80-token response cap; no team, player, score, clock, or exact-event transcription is requested. At 70% or higher confidence, a server-owned `PlaybackDirector` immediately swaps to the corresponding predownloaded MP4. Later results for the same sport never restart or reseek the video. Only a newly detected sport/`pack_id` creates another revision and switches the theater.
+## Supported showcase
 
-Exact mode still requires both primary participants or a unique event-identity token plus sufficient vision confidence. Known checkpoints return their backtested probabilities directly; visible in-between moments use the phase and clock to interpolate the full archived probability timeline, so a recognized replay always has a deterministic estimate instead of waiting for an exact score. The estimate is explicitly labeled historical and point-in-time: the eventual winner is never injected into an earlier moment. Each result also returns cached evidence, clearly labeled mock web research about players, teams, tactics, and historical news context, an explicitly mocked replay-market estimate, the model-market gap, what changed, and the next probability trigger. Exact packs skip the optional GPT OSS/GLM enrichment pass by default for lower latency and deterministic stage wording; set `CEREBRAS_EXACT_DEMO_ENRICHMENT=true` to opt in, without allowing it to replace the timeline probability or summary.
+| What the glasses see | Local broadcast selected | Intelligence pack |
+|---|---|---|
+| Soccer | 2022 FIFA World Cup Final — Argentina vs France | Trophy probability timeline |
+| Basketball | Boston Celtics at New York Knicks — April 9, 2026 | Knicks win probability timeline |
+| American football | Super Bowl LI — Patriots vs Falcons | Patriots comeback probability timeline |
+| UFC / MMA | UFC 229 — Khabib vs McGregor | Khabib win probability timeline |
+| Anything else | No switch | `unclear` |
 
-The intelligence catalog is available at `GET /api/demo/intelligence`; stream readiness is at `GET /api/demo/streams`; the current switch revision is at `GET /api/playback`. Intelligence source data lives in `packages/fixtures/demo-intelligence/`, while exact-file media offsets live in `packages/fixtures/demo-streams/manifest.json`. The four compressed hackathon edits are committed under `demo-footage/`; raw full-resolution footage remains out of Git. Game clocks are not file timestamps, so each manifest entry is bound to the exact edit by filename, size, duration, and SHA-256. See [`docs/LOCAL_STREAM_PLAYBACK.md`](docs/LOCAL_STREAM_PLAYBACK.md) for the full contract and teammate handoff.
-
-`/capture?demo=1&cycle=1` remains an explicitly labeled, quota-free UI rehearsal using `GET /api/demo/replay`; it does not claim camera detection, local-file synchronization, live search, or model calls. The complete stage procedure is in [`docs/demo-day/runbook.md`](docs/demo-day/runbook.md).
-
-The iOS companion app lives at `apps/ios/` — see its README for build and glasses-streaming instructions. The rendered 60-second demo video is at `apps/demo-video/out/`.
-
-Full documentation index: [docs/README.md](docs/README.md).
-
-## Repository map
-
-- `apps/demo-web/` — dashboard, capture, and data pages served by the API server
-- `apps/landing/` — landing page
-- `apps/pitch/` — pitch deck
-- `apps/ios/` — SwiftUI iPhone companion app (iOS 17+, Meta glasses streaming)
-- `apps/demo-video/` — HyperFrames demo-video project; rendered output in `out/`
-- `services/` — api (server + pipeline), capture, vision, sports (5 sports), probability, market, analytics, cerebras
-- `packages/fixtures/` — demo frames, expected states, market and stats fixtures
-- `scripts/` — evaluate-fixtures, evaluate-model, pull-stats, extract-clip-frames, start-phone-tunnel
-- `tests/` — node:test coverage for pipeline, sports, probability, market, and capture
-- `models/metadata/` — model version and calibration info
-- `tools/` — dataset viewer
-- `docs/` — all documentation; start at [docs/README.md](docs/README.md)
-
----
-
-## 1. Executive summary
-
-Live prediction markets are difficult to follow while watching an event. The user has to identify the correct market, interpret rapidly changing game conditions, switch between screens, and decide whether the current price reflects what just happened.
-
-BloomKnights removes that interaction cost. The live screen becomes the input. Computer vision converts the broadcast into structured state, a probability engine estimates the outcome, and a market adapter retrieves the comparable market price. The system presents the difference without requiring the user to type, search, or leave the event.
-
-The product is not intended to understand every pixel or narrate every play. For the hackathon, computer vision has a narrower and more reliable job: recover enough structured state to estimate a live outcome probability.
-
-The core pipeline is:
+The classifier intentionally returns only five values:
 
 ```text
-Glasses camera
-    -> selected video frames
-    -> event and scoreboard recognition
-    -> reconciled game state
-    -> model probability
-    -> prediction-market price
-    -> comparison and confidence checks
-    -> concise wearable response
+basketball | american_football | soccer | mma | unclear
 ```
 
-## 2. Product thesis
+Because there is exactly one showcase replay per supported sport, asking the vision model for teams, scores, players, clocks, or event names would add latency without improving stream selection.
 
-Prediction markets become more useful when they can react to what the user is already seeing.
-
-Today, most prediction-market interfaces begin with a list of markets. BloomKnights begins with the physical world. The user looks at an event, and the system determines what is happening, finds the relevant market, and explains how its estimate compares with that market.
-
-The sports demo is the wedge, not the ceiling. The same visual-to-probability architecture could eventually support esports, elections, award shows, financial broadcasts, and other live events. Those are future directions, not hackathon requirements.
-
-## 3. The north-star experience
-
-1. A user watches a major live sporting event on a television or laptop.
-2. The user looks at the broadcast through Meta glasses.
-3. BloomKnights identifies the sport, competition, event format, participants, and visible scoreboard or leaderboard.
-4. It constructs a sport-aware state: score, clock, period/round, visible cards, down and distance, or other reliably available features.
-5. It selects the most relevant prediction-market question and estimates its outcomes.
-6. It finds the matching prediction-market contract and reads the latest price.
-7. It reports the model probability, market probability, difference, and confidence.
-8. As the visible state changes, the estimate updates.
-
-A good response is glanceable or speakable in a few seconds:
-
-```text
-Boston 68%. Market 59%. Model is 9 points higher.
-```
-
-A bad response is a dashboard full of unexplained numbers, an uncalibrated claim of guaranteed profit, or a result based on stale or low-confidence state.
-
-## 4. What we are building for the hackathon
-
-### Primary use case
-
-Live prediction-market analysis for any recognizable sport visible on a screen, with optimized prompts for World Cup soccer, American football, UFC/MMA, NBA basketball, and golf.
-
-### Required inputs
-
-- Camera frames originating from the glasses or a development-time camera substitute.
-- A broadcast view containing identifiable participants and enough visible event state to support a probability estimate.
-- A configured prediction-market source or a realistic mock adapter for the exact demo matchup.
-
-### Required outputs
-
-- Identified event and teams.
-- Latest reconciled game state.
-- Model-estimated win probability.
-- Market-implied probability and timestamp.
-- Difference in percentage points.
-- State confidence and freshness.
-- A compact visual or spoken response.
-
-### Must-have capabilities
-
-- Ingest still frames or a low-rate video stream.
-- Detect the sport and event automatically, with no client-side sport picker required.
-- Detect a switch to a different event and clear prior analytical context before producing its probability.
-- Locate and parse the scoreboard region.
-- Normalize team names or abbreviations to stable internal IDs.
-- Reject or retain the previous state when a frame is unreadable.
-- Calculate or infer sport-appropriate probabilities from the structured state.
-- Match the game to one market contract.
-- Fetch or simulate a timestamped market price behind a clean adapter interface.
-- Return a response only when the state and market data are sufficiently trustworthy.
-- Run an end-to-end demo from camera input to user-facing result.
-
-### Should-have capabilities
-
-- Update after meaningful state changes instead of on every frame.
-- Smooth noisy OCR across multiple frames.
-- Provide audio output suitable for glasses.
-- Show a debug view containing the captured frame, parsed state, probability, market price, latency, and confidence.
-- Support a prerecorded broadcast clip as a deterministic demo source.
-
-### Nice-to-have capabilities
-
-- Detect possession, timeouts, or recent scoring events.
-- Support more than one broadcast scoreboard layout.
-- Match live observations against real cross-sport prediction-market contracts.
-- Notify only when the probability difference crosses a configured threshold.
-
-## 5. Explicit non-goals
-
-These are not part of the first hackathon build unless the primary flow is already complete:
-
-- Automated trade execution.
-- Claims of guaranteed profit or a guaranteed informational advantage.
-- Support for every sport, broadcast network, or prediction market.
-- Full play-by-play understanding from raw video.
-- Player tracking or player-prop pricing.
-- Training a large end-to-end video model.
-- Millisecond high-frequency trading infrastructure.
-- Perfect recognition during cuts, commercials, replays, or obstructed scoreboards.
-- A production-grade identity, payments, wallet, or custody system.
-- A general-purpose augmented-reality operating system.
-
-The hackathon succeeds when one complete path works convincingly. Breadth is secondary.
-
-## 6. Product language
-
-Use careful, credible language in the UI, demo, and presentation.
-
-Prefer:
-
-- "Model estimate"
-- "Market-implied probability"
-- "Difference" or "model-market gap"
-- "Potential mispricing"
-- "State confidence"
-- "Data last updated"
-
-Avoid:
-
-- "Guaranteed edge"
-- "Risk-free"
-- "Certain win"
-- "The market is wrong"
-- "Place this trade now"
-
-The model and the market measure related but not perfectly identical things. A displayed difference is a signal to inspect, not proof of profit.
-
-## 7. System architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    A["Meta glasses or camera simulator"] --> B["Capture gateway"]
-    B --> C["Frame selector"]
-    C --> D["Scoreboard detector"]
-    D --> E["OCR and team resolver"]
-    E --> F["Game-state reconciler"]
-    F --> G["Probability engine"]
-    F --> H["Market matcher"]
-    H --> I["Market data adapter"]
-    G --> J["Comparison engine"]
-    I --> J
-    J --> K["Confidence and freshness gate"]
-    K --> L["Audio, visual, or companion response"]
-    F --> M["Developer debug view"]
-    G --> M
-    I --> M
-    K --> M
+    A["Meta Ray-Ban camera"] -->|"Meta Wearables SDK"| B["iOS companion app"]
+    B -->|"WebRTC media"| C["Desktop capture viewer"]
+    B -.->|"SDP and ICE only"| D["BloomKnights server"]
+    C -.->|"One gated JPEG snapshot"| D
+    D --> E["Gemini 3.5 Flash via RightCodes"]
+    E --> F{"Sport and confidence"}
+    F -->|"at least 70 percent"| G["PlaybackDirector"]
+    G --> H["Pinned local MP4"]
+    F --> I["Historical intelligence pack"]
+    I --> J["Prediction and mock market comparison"]
+    H --> K["Liquid-glass theater UI"]
+    J --> K
+    K --> L["WebGPU YOLO overlays"]
 ```
 
-### 7.1 Capture gateway
+### Media and control are separate
 
-The capture gateway isolates hardware-specific behavior from the rest of the system. It should accept images through a simple internal interface regardless of whether the source is:
+The continuous glasses video is sent over WebRTC. It is not proxied through the web server or Cloudflare tunnel. The server carries only:
 
-- A supported glasses camera stream.
-- A phone companion application.
-- A laptop webcam.
-- Uploaded screenshots.
-- Frames extracted from a prerecorded demo video.
+- WebRTC signaling metadata;
+- one compressed analysis snapshot at a time;
+- playback commands and application JSON;
+- the four local replay files.
 
-Do not couple the vision pipeline directly to one device SDK. Hardware integration will change; the internal frame contract should not.
+This keeps the live media path low-latency while still allowing the backend to own detection and playback decisions.
 
-Minimum frame metadata:
+### Detection cadence
 
-```json
-{
-  "frame_id": "frame_000184",
-  "captured_at": "2026-07-11T20:14:32.491Z",
-  "source": "glasses",
-  "image_uri": "local-or-object-storage-reference",
-  "width": 1920,
-  "height": 1080
-}
-```
+- Analysis is off until the user presses **Analyze**.
+- The first usable frame is submitted immediately.
+- Each request contains exactly one frame.
+- Later snapshots are limited to one every 12 seconds.
+- The snapshot is scaled to a maximum edge of 960 pixels and encoded as JPEG.
+- Only the newest frame is classified.
+- Switching requires at least 70% event confidence.
+- Unclear or low-confidence results preserve the current theater source.
 
-### 7.2 Frame selector
+Phone and glasses feeds use the same backend contract. The browser samples the incoming WebRTC track itself, so Meta detection does not depend on a separate native HTTP uploader.
 
-Running expensive vision on every video frame is unnecessary. The selector should sample at a low rate and increase the rate only when the visible screen changes meaningfully.
+### Vision provider
 
-Initial target:
-
-- Sample approximately 1-2 frames per second.
-- Skip near-duplicate frames.
-- Prefer sharp, unobstructed frames.
-- Ignore frames that do not appear to contain a broadcast or scoreboard.
-
-### 7.3 Scoreboard detector and parser
-
-The vision layer should extract structured facts rather than return prose.
-
-Minimum target fields:
-
-```json
-{
-  "sport": "basketball",
-  "league": "NBA",
-  "away_team_text": "BOS",
-  "home_team_text": "NYK",
-  "away_score": 104,
-  "home_score": 101,
-  "period": 4,
-  "clock_seconds": 134,
-  "shot_clock_seconds": 14,
-  "possession_team_text": "BOS",
-  "scoreboard_bbox": [72, 881, 890, 1058],
-  "field_confidences": {
-    "teams": 0.98,
-    "scores": 0.96,
-    "period": 0.99,
-    "clock": 0.94,
-    "possession": 0.61
-  }
-}
-```
-
-Only team identity, scores, period, and clock are required for the first probability model. Optional fields must never block the primary flow.
-
-Possible implementation paths include conventional OCR on a detected scoreboard crop, a multimodal model producing schema-constrained JSON, or a hybrid. The best hackathon implementation is the one that is stable on the chosen demo footage.
-
-### 7.4 Team and event resolver
-
-Broadcast labels, model labels, and prediction-market labels will differ. Resolve all of them to stable internal identifiers.
-
-Example:
-
-```json
-{
-  "event_id": "nba_2026_07_11_bos_nyk",
-  "league": "NBA",
-  "away_team_id": "nba_bos",
-  "home_team_id": "nba_nyk",
-  "scheduled_start": "2026-07-11T23:30:00Z"
-}
-```
-
-Resolution should consider:
-
-- Known abbreviations and aliases.
-- Scheduled start time.
-- Home and away orientation.
-- The active-event list from the market adapter.
-- Whether scores and event status are plausible.
-
-Never match only on fuzzy team text when multiple candidate events are possible.
-
-### 7.5 Game-state reconciler
-
-Single-frame OCR is noisy. The reconciler owns the canonical current state and decides whether a new observation is plausible.
-
-For basketball, basic invariants include:
-
-- Scores should not decrease.
-- Regulation period should not decrease.
-- The clock usually decreases within a period.
-- A score normally changes by 1, 2, or 3 points at a time.
-- Large jumps may indicate a replay, a different game, or OCR failure.
-- Team identity should remain stable during a session.
-
-The reconciler may require the same parsed value in two consecutive frames before accepting a low-confidence update. It should retain the last trusted state during brief camera movement instead of replacing it with null or bad data.
-
-Canonical game state:
-
-```json
-{
-  "event_id": "nba_2026_07_11_bos_nyk",
-  "observed_at": "2026-07-11T20:14:32.491Z",
-  "accepted_at": "2026-07-11T20:14:32.780Z",
-  "away_team_id": "nba_bos",
-  "home_team_id": "nba_nyk",
-  "away_score": 104,
-  "home_score": 101,
-  "period": 4,
-  "clock_seconds": 134,
-  "possession_team_id": "nba_bos",
-  "confidence": 0.95,
-  "source_frame_ids": ["frame_000183", "frame_000184"]
-}
-```
-
-### 7.6 Probability engine
-
-The probability engine consumes structured game state and returns a calibrated outcome probability. It must not depend on image pixels.
-
-Interface:
-
-```json
-{
-  "event_id": "nba_2026_07_11_bos_nyk",
-  "outcome": "nba_bos_wins",
-  "probability": 0.68,
-  "model_version": "nba-win-probability-v1",
-  "computed_at": "2026-07-11T20:14:32.812Z",
-  "input_state_observed_at": "2026-07-11T20:14:32.491Z",
-  "confidence": 0.91
-}
-```
-
-Recommended implementation order:
-
-1. Build a deterministic baseline using score differential, time remaining, period, home-court indicator, and pregame strength.
-2. Validate monotonic behavior on obvious scenarios.
-3. If historical play-by-play data is available, replace or calibrate the baseline with logistic regression or gradient-boosted trees.
-4. Add possession only if it is reliably extracted.
-
-For a hackathon, a small, explainable model with reliable inputs is better than a sophisticated model fed noisy state.
-
-Minimum behavioral tests:
-
-- A tied game at the start should be near the pregame prior.
-- A lead should become more valuable as time expires.
-- A team leading by 20 with 30 seconds remaining should have a very high probability.
-- Swapping home and away inputs should not silently preserve the same outcome label.
-- Returned probabilities must remain between 0 and 1.
-
-The model should report an estimate even when its confidence is lower, but the presentation gate may decide not to show that estimate to the user.
-
-### 7.7 Prediction-market adapter
-
-All provider-specific code belongs behind one interface. The rest of the system should not know how a provider names contracts, authenticates requests, or represents prices.
-
-Required operations:
+Production detection uses the Gemini-native API through RightCodes:
 
 ```text
-list_live_events(league, time_window)
-find_market(event_id, outcome)
-get_market_snapshot(market_id)
+provider  RightCodes Gemini-compatible gateway
+model     gemini-3.5-flash
+input     one JPEG
+output    sport classification + confidence
 ```
 
-Normalized market snapshot:
+The direct Google Gemini backend remains compatible through environment configuration. Cerebras is still available as a fallback backend but is not the current live selector.
 
-```json
-{
-  "provider": "provider-name-or-mock",
-  "market_id": "market_123",
-  "event_id": "nba_2026_07_11_bos_nyk",
-  "outcome": "nba_bos_wins",
-  "yes_bid": 0.58,
-  "yes_ask": 0.60,
-  "display_probability": 0.59,
-  "liquidity": 12500.0,
-  "provider_timestamp": "2026-07-11T20:14:31.900Z",
-  "received_at": "2026-07-11T20:14:32.830Z",
-  "is_mock": false
-}
+### Playback policy
+
+`PlaybackDirector` is the single authority for stream changes.
+
+- A supported sport at 70% confidence can select its replay.
+- Repeated detections of the current sport do not restart or reseek the video.
+- Only a different supported `pack_id` creates a new playback revision.
+- Below-threshold or unclear observations never blank the current replay.
+- Disconnecting the camera returns the interface to the camera-waiting state.
+- Every media asset is pinned by filename, byte size, duration, and SHA-256.
+
+### Predictions and provenance
+
+The four events are historical, so BloomKnights uses deterministic intelligence packs rather than spending model quota inventing probabilities live.
+
+Each pack contains:
+
+- calibrated probability checkpoints;
+- an illustrative historical market probability;
+- cached evidence and clearly labeled mock web research;
+- key factors, what changed, and the next probability trigger;
+- alternate prediction-market questions;
+- an explicit historical-replay disclosure.
+
+Known checkpoints use their calibrated values. In-between states can interpolate between adjacent archived anchors using the visible phase and clock. The final result is never substituted into an earlier point-in-time estimate.
+
+> [!NOTE]
+> Market values in the showcase are illustrative historical replay prices, not live quotes or trading advice.
+
+## Quick start
+
+### Requirements
+
+- Node.js 20 or newer
+- macOS for the full iOS/Meta workflow
+- A RightCodes or Google Gemini-compatible API key
+- Optional: Xcode 16+, a physical iPhone, and paired Meta Ray-Ban glasses
+
+The web server has no runtime npm dependencies.
+
+### Run locally
+
+```bash
+npm start
 ```
 
-The displayed market probability should have an explicit definition. For the first version, use the midpoint of the best yes bid and ask when both exist. If only a last-trade price exists, label it accordingly in the debug interface.
-
-Never silently combine prices from different markets or outcomes. Contract resolution is part of correctness.
-
-### 7.8 Comparison engine
-
-The main comparison is measured in percentage points:
+Then open:
 
 ```text
-model_market_gap = model_probability - market_probability
+http://localhost:3000/capture
 ```
 
-Example:
+Useful commands:
+
+```bash
+npm test                 # complete node:test suite
+npm run evaluate         # deterministic vision-fixture evaluation
+npm run streams:validate # verify replay files against the manifest
+npm run phone:tunnel     # optional phone-access helper
+```
+
+### Environment
+
+Copy the example file and add credentials locally:
+
+```bash
+cp .env.example .env
+```
+
+Current live configuration:
+
+```dotenv
+HOST=0.0.0.0
+PORT=3000
+
+VISION_BACKEND=gemini
+CEREBRAS_FRAMES_PER_REQUEST=1
+CEREBRAS_MODEL_INTERVAL_MS=12000
+
+GEMINI_API_BASE_URL=https://right.codes/gemini/v1beta
+GEMINI_VISION_MODEL=gemini-3.5-flash
+RIGHTCODES_API_KEY=
+```
+
+TURN credentials are optional on ordinary networks and strongly recommended on client-isolated university Wi-Fi. Never place provider keys in browser JavaScript or committed source files.
+
+## Demo-day runbook
+
+1. Start the server with `npm start`.
+2. Confirm `GET /api/health` reports:
+   - `status: "ok"`;
+   - `vision.selected: "gemini"`;
+   - `analysis_queue.frames_per_request: 1`;
+   - all four replay files ready.
+3. Open `https://capture.saicharanramineni.com/capture` on the presentation laptop.
+4. Hard-refresh once so the latest capture JavaScript is loaded.
+5. Start the glasses feed in the iOS app.
+6. Wait for the WebRTC picture, then press **Analyze**.
+7. Point the glasses at one supported sport until the local replay loads.
+8. Switch to a different sport to demonstrate automatic selection.
+
+The quota-free rehearsal remains available at:
 
 ```text
-0.68 - 0.59 = 0.09 = +9 percentage points
+/capture?demo=1&cycle=1
 ```
 
-Do not call this a 9% expected return. Probability difference, expected value, and realizable trading profit are not interchangeable.
+It is explicitly labeled as rehearsal data and makes no vision-model calls. See [the complete runbook](docs/demo-day/runbook.md) for stage recovery procedures.
 
-Output contract:
+## Application surfaces
 
-```json
-{
-  "event_id": "nba_2026_07_11_bos_nyk",
-  "outcome": "nba_bos_wins",
-  "model_probability": 0.68,
-  "market_probability": 0.59,
-  "gap_percentage_points": 9.0,
-  "direction": "model_higher",
-  "state_confidence": 0.95,
-  "freshness_ms": 930,
-  "generated_at": "2026-07-11T20:14:32.840Z"
-}
-```
+| Route | Purpose |
+|---|---|
+| `/capture` | Primary theater, WebRTC receiver, Analyze control, predictions, and overlays |
+| `/phone` | Browser-based phone camera provider and development fallback |
+| `/` | Product dashboard |
+| `/data` | Intelligence and dataset view |
+| `/landing` | Judge-facing marketing page |
+| `/pitch` | Browser-based pitch deck |
 
-### 7.9 Confidence and freshness gate
+## HTTP API
 
-The system should decline to present a precise comparison when its inputs are unreliable.
-
-Initial gating rules:
-
-- Do not present if the event cannot be resolved uniquely.
-- Do not present if required scoreboard fields are missing.
-- Do not present if canonical game-state confidence is below the configured threshold.
-- Do not present if the market snapshot is older than the configured threshold.
-- Do not present if the market is paused, closed, or mapped to a different outcome.
-- Clearly mark mocked market data in developer and judge-facing demos.
-
-Safe fallback messages:
-
-```text
-I can see the game, but the scoreboard is not clear enough yet.
-```
-
-```text
-Game identified. Current market data is stale, so no comparison is available.
-```
-
-### 7.10 User experience layer
-
-The core response must work without a dense augmented-reality display. Supported presentation modes may include:
-
-- Short audio through the glasses.
-- A minimal companion-phone card.
-- A browser overlay for the hackathon demo.
-- A glasses visual surface if the available hardware and SDK support it.
-
-The backend should return presentation-neutral JSON. Device-specific clients decide how to render or speak it.
-
-## 8. End-to-end data contract
-
-The following represents one complete update through the system:
-
-```json
-{
-  "session_id": "session_a81f",
-  "event": {
-    "event_id": "nba_2026_07_11_bos_nyk",
-    "away_team_id": "nba_bos",
-    "home_team_id": "nba_nyk"
-  },
-  "state": {
-    "away_score": 104,
-    "home_score": 101,
-    "period": 4,
-    "clock_seconds": 134,
-    "confidence": 0.95,
-    "observed_at": "2026-07-11T20:14:32.491Z"
-  },
-  "estimate": {
-    "outcome": "nba_bos_wins",
-    "probability": 0.68,
-    "model_version": "nba-win-probability-v1"
-  },
-  "market": {
-    "provider": "provider-name-or-mock",
-    "market_id": "market_123",
-    "probability": 0.59,
-    "is_mock": false,
-    "provider_timestamp": "2026-07-11T20:14:31.900Z"
-  },
-  "comparison": {
-    "gap_percentage_points": 9.0,
-    "direction": "model_higher"
-  },
-  "presentation": {
-    "status": "ready",
-    "short_text": "Boston 68%. Market 59%. Model is 9 points higher.",
-    "spoken_text": "Boston's estimated win probability is 68 percent. The market is at 59 percent."
-  }
-}
-```
-
-Schema names may evolve, but every component should exchange typed, versionable data rather than free-form strings.
-
-## 9. Latency and update strategy
-
-The demo should feel live, but correctness matters more than updating on every frame.
-
-Initial end-to-end target: return a trusted update within approximately 2-5 seconds of a stable scoreboard change.
-
-Suggested budget:
-
-| Stage | Target |
-|---|---:|
-| Frame selection and upload | 250-750 ms |
-| Scoreboard detection and parsing | 500-2,000 ms |
-| State reconciliation | under 100 ms after observation |
-| Probability calculation | under 100 ms |
-| Market lookup | 100-1,000 ms |
-| Response generation and delivery | 100-500 ms |
-
-These are design targets, not claims about current performance. Instrument every stage so the real bottleneck is visible.
-
-Meaningful state changes should trigger updates. A new frame that produces the same score, period, and clock bucket does not need a new spoken response.
-
-## 10. Recommended repository structure
-
-The codebase has not yet committed to a language or framework. Preserve clear service boundaries even if the hackathon implementation runs as one process.
-
-```text
-.
-├── README.md
-├── docs/
-│   ├── demo-script.md
-│   ├── architecture.md
-│   └── decisions/
-├── apps/
-│   ├── demo-web/             # Judge-facing/debug interface
-│   └── companion/            # Optional phone or glasses client
-├── services/
-│   ├── api/                  # Orchestrates the pipeline
-│   ├── vision/               # Scoreboard detection and parsing
-│   ├── probability/          # Win-probability model
-│   └── market/               # Provider adapters and mock source
-├── packages/
-│   ├── contracts/            # Shared schemas and types
-│   └── fixtures/             # Sanitized demo frames and expected state
-├── models/
-│   └── metadata/             # Version and calibration information
-├── scripts/
-│   ├── run-demo.*
-│   └── evaluate-fixtures.*
-└── tests/
-    ├── integration/
-    └── end-to-end/
-```
-
-This is a proposed structure, not permission to create placeholder complexity. Start with the smallest implementation that preserves the contracts above.
-
-## 11. Development strategy
-
-Build vertical slices, not isolated impressive components.
-
-### Slice 1: deterministic end-to-end skeleton
-
-- Use a saved screenshot.
-- Return a hard-coded but correctly structured parsed state.
-- Run a deterministic probability function.
-- Use a mock market adapter.
-- Render the final comparison in a debug page.
-
-This proves the interfaces and product loop.
-
-### Slice 2: real scoreboard extraction
-
-- Select one broadcast layout and one demo game.
-- Detect or configure its scoreboard crop.
-- Extract required fields.
-- Add fixtures with expected JSON.
-- Reject implausible updates.
-
-### Slice 3: defensible probability model
-
-- Implement a baseline.
-- Test obvious game scenarios.
-- Record the model version and features.
-- Add historical calibration only if data and time permit.
-
-### Slice 4: live or recorded camera flow
-
-- Replace the screenshot input with webcam, phone, or glasses-originated frames.
-- Sample frames and measure latency.
-- Keep prerecorded input as a deterministic fallback.
-
-### Slice 5: real market integration
-
-- Implement one provider adapter.
-- Resolve one live event to one explicit contract.
-- Preserve the mock adapter for offline demos and tests.
-- Display provider freshness and whether data is mocked.
-
-### Slice 6: wearable delivery and polish
-
-- Add concise audio or a minimal wearable-compatible response.
-- Polish the debug view for judges.
-- Rehearse the primary and fallback demo paths.
-
-## 12. Team workstreams
-
-### Current ownership boundary
-
-- **Vision/backend lane (this repository branch):** owns the complete camera-to-insight path: frame ingestion, selection, scoreboard extraction, event resolution, temporal reconciliation, probability, market comparison, gating, and the JSON API.
-- **Teammate 1:** owns the Next.js frontend and renders backend results. The frontend should not duplicate vision or probability logic.
-- **Teammate 2:** owns the native app, camera permissions, frame capture, and delivery to the backend. The app should treat the backend response as the source of truth.
-
-Until the native app is ready, `/phone` is the canonical phone-camera sender and `/capture` is the desktop viewer. The most recently started phone or glasses feed automatically becomes the viewer's active WebRTC stream, so video travels directly between the devices and the tunnel carries signaling only. Model analysis begins only after the user presses **Analyze** on `/capture`. See [`docs/VISION_PIPELINE.md`](docs/VISION_PIPELINE.md) for the live contract and operating instructions.
-
-On university networks with client isolation, run `npm run phone:tunnel`, open the generated public HTTPS URL with `/phone` on the camera device and `/capture` on the desktop viewer; do not use the laptop's LAN IP.
-
-These tracks can progress in parallel once shared contracts are agreed upon.
-
-### Vision and state
-
-Owns:
-
-- Frame ingestion.
-- Scoreboard localization.
-- OCR or structured visual extraction.
-- Confidence scoring.
-- Temporal state reconciliation.
-- Fixture evaluation.
-
-Definition of done: chosen demo footage reliably produces correct team, score, period, and clock state.
-
-### Probability and data science
-
-Owns:
-
-- Feature definition.
-- Baseline win-probability model.
-- Historical-data preparation if used.
-- Calibration and sanity checks.
-- Model versioning.
-
-Definition of done: any valid canonical state produces a deterministic, bounded, explainable probability that passes scenario tests.
-
-### Markets and backend
-
-Owns:
-
-- Event and contract normalization.
-- Provider and mock adapters.
-- Freshness handling.
-- Pipeline orchestration.
-- Comparison engine and API responses.
-
-Definition of done: the correct event resolves to the correct outcome, and the backend returns a complete typed comparison.
-
-### Glasses, client, and demo
-
-Owns:
-
-- Hardware capture investigation and integration.
-- Audio or visual delivery.
-- Debug and judge-facing UI.
-- End-to-end demo flow.
-- Demo recording and fallback path.
-
-Definition of done: a teammate can point the selected capture device at the demo broadcast and receive an understandable result without touching backend tools.
-
-## 13. Demo plan
-
-### Primary live demo
-
-1. Show a current World Cup broadcast or another selected live sporting event on a television or laptop.
-2. Show the glasses or camera view in the debug interface.
-3. Point at the scoreboard and let BloomKnights identify the game.
-4. Display the structured state to prove the system read the screen.
-5. Display or speak the model probability.
-6. Fetch and display the market-implied probability.
-7. Highlight the difference and data freshness.
-8. Move to a later moment in the game and show the estimate update.
-
-### Recommended spoken narrative
-
-> Prediction markets know their contracts, but they do not know what I am looking at. BloomKnights connects the physical event to the market. The glasses read the visible game state, our model estimates the outcome, and we compare it with the market in real time. I never have to search for the game or leave the broadcast.
-
-### Demo resilience ladder
-
-Prepare all of these before presenting:
-
-1. Live glasses capture with live market data.
-2. Webcam or phone capture with live market data.
-3. Prerecorded broadcast clip with live market data.
-4. Prerecorded clip with timestamped mock market data.
-5. Saved frames with deterministic expected outputs.
-
-Fallbacks must remain honest. The UI should identify mocked or replayed market data.
-
-## 14. Success criteria
-
-The hackathon build is successful if:
-
-- A new viewer understands the product in under 30 seconds.
-- The system identifies the chosen game from its visible broadcast.
-- Required scoreboard fields are correct on the curated demo sequence.
-- The state reconciler avoids obvious OCR regressions.
-- The probability output changes sensibly when score and time change.
-- The market contract is correctly matched and timestamped.
-- The model-market comparison uses a clear, mathematically correct definition.
-- The user receives the result without manually searching for a market.
-- The main demo works end to end, with at least one tested fallback.
-
-Useful engineering metrics:
-
-- Required-field accuracy on curated frames.
-- Event-resolution accuracy.
-- False state-update count.
-- End-to-end latency.
-- Market-data age at presentation time.
-- Probability-model calibration, if a historical evaluation set exists.
-
-## 15. Main risks and mitigations
-
-### Hardware access is more restricted than expected
-
-Mitigation: keep capture behind a source-agnostic gateway and support phone, webcam, uploaded frames, and prerecorded video. Validate hardware access early.
-
-### Scoreboard OCR fails across broadcast layouts
-
-Mitigation: select one broadcast layout for the demo, use a configured region when necessary, evaluate against fixed fixtures, and smooth results over time.
-
-### Replays or commercials produce incorrect state
-
-Mitigation: require stable team identity, enforce temporal invariants, retain the last trusted state, and expose a paused/uncertain status.
-
-### Probability looks arbitrary
-
-Mitigation: use a small documented feature set, test obvious scenarios, show the game state that produced the estimate, and describe it as a model estimate.
-
-### The wrong market is matched
-
-Mitigation: normalize team IDs, confirm scheduled time and home/away orientation, and require a unique match before presenting a comparison.
-
-### Market data is delayed or unavailable
-
-Mitigation: timestamp every snapshot, gate stale values, implement a mock adapter, and prepare an offline demo whose status is clearly labeled.
-
-### The demo depends on a real game's unpredictable timing
-
-Mitigation: use a curated prerecorded sequence for the reliable core demo and treat live input as an enhancement.
-
-### The presentation sounds like automated gambling advice
-
-Mitigation: describe probability estimates and differences accurately, avoid trade commands, and keep automated execution out of scope.
-
-## 16. Privacy, security, and responsible-use baseline
-
-Even a hackathon prototype should follow basic safeguards:
-
-- Process only frames needed for the user-requested analysis.
-- Avoid storing raw camera footage by default.
-- Make recording or upload status visible.
-- Do not commit API keys, user tokens, or private footage.
-- Keep secrets in environment variables or the chosen secret manager.
-- Use sanitized or team-owned footage for committed fixtures.
-- Log structured state and latency instead of raw images when possible.
-- Do not execute prediction-market trades in the hackathon MVP.
-- Do not represent estimates as financial guarantees.
-
-Any production version would require a deeper review of device privacy, market-provider terms, financial regulations, jurisdiction, age restrictions, and user consent.
-
-## 17. AI-agent working agreement
-
-This repository is expected to be edited by multiple teammates and AI coding tools. Agents should follow these rules:
-
-1. Read this README before proposing or implementing work.
-2. Preserve the primary end-to-end use case: visible live sport to trusted, sport-aware prediction analysis.
-3. Keep the supported demo set bounded to soccer, American football, UFC/MMA, and NBA until those vertical slices are reliable.
-4. Keep device, vision, probability, market, and presentation concerns behind explicit interfaces.
-5. Prefer typed or schema-validated data between components.
-6. Never invent live market values, model evaluation results, latency measurements, or device capabilities.
-7. Mark fixtures, replay data, and mocked market values clearly.
-8. Add tests for state parsing, state reconciliation, probability bounds, and market mapping when modifying those areas.
-9. Record meaningful architecture decisions under `docs/decisions/` once that directory exists.
-10. Avoid committing secrets, downloaded private data, large generated artifacts, or raw user camera footage.
-11. Keep changes narrow enough for another teammate to review quickly.
-12. Update this README when a product-level decision changes.
-
-When an implementation detail is unknown, prefer an adapter or configuration point over a fabricated assumption.
-
-## 18. Decision log
-
-The following decisions are locked for the first build:
-
-| Decision | Current choice | Reason |
+| Method | Route | Purpose |
 |---|---|---|
-| Initial domain | Live sports | Visually clear and easy to demonstrate |
-| Demo sports | Soccer, American football, UFC/MMA, NBA | Covers the highest-interest live prediction categories |
-| Primary input | A screen showing a broadcast | Matches the wearable visual-intelligence thesis |
-| Vision responsibility | Extract structured game state | More reliable than end-to-end video prediction |
-| Primary prediction | Most relevant supported market | Winner, draw, advancement, totals, next score, or method of victory depending on sport |
-| Main comparison | Difference in percentage points | Simple and mathematically honest |
-| Trade execution | Out of scope | Keeps focus on intelligence and interaction |
-| Demo architecture | Hardware-agnostic capture gateway | Protects the build from device SDK constraints |
-| Demo fallback | Prerecorded clip and mock adapter | Makes the presentation reliable and reproducible |
+| `GET` | `/api/health` | Provider, quota, stream, and playback readiness |
+| `POST` | `/api/analysis/start` | Explicitly enable snapshot analysis |
+| `POST` | `/api/analysis/stop` | Stop model calls without interrupting WebRTC |
+| `POST` | `/api/frames` | Submit one analysis snapshot |
+| `GET` | `/api/latest` | Latest analyzed live insight |
+| `GET` | `/api/playback` | Current server-owned playback revision |
+| `GET` | `/api/demo/intelligence` | Four historical intelligence packs |
+| `GET` | `/api/demo/streams` | Replay readiness and manifest coverage |
+| `GET` | `/api/demo/replay` | Quota-free rehearsal checkpoint |
+| `GET/HEAD` | `/demo-streams/:stream_id` | Seekable, allowlisted local MP4 |
+| `GET/POST` | `/api/webrtc/active` | Discover or claim the single active provider session |
+| `POST` | `/api/webrtc/signal` | Relay SDP/ICE signaling only |
+| `GET` | `/api/webrtc/poll` | Poll peer signaling messages |
+| `GET` | `/api/webrtc/config` | Session-bound STUN/TURN configuration |
+| `POST` | `/api/reset` | Clear analysis, signaling, and playback state |
 
-## 19. Open implementation questions
+There is intentionally no chatbot endpoint. Gemini quota is reserved for visual detection.
 
-These questions should be answered through quick prototypes or documented decisions, not prolonged debate:
-
-- What frame access and response surfaces are available on the exact Meta hardware in hand?
-- Which broadcast layout and footage will be the canonical demo fixture?
-- Which OCR or multimodal extraction method is most reliable on that footage?
-- Which sport-specific datasets or market priors should calibrate generated probabilities?
-- Which prediction-market provider and contract type are available for the demo?
-- What freshness threshold is appropriate for a displayed comparison?
-- Will the first client use audio, a phone card, a browser overlay, or a native glasses display?
-- Which language and framework let the team integrate fastest?
-
-Each resolved question should update the relevant section of this README or create a short architecture decision record.
-
-## 20. Immediate next actions
-
-1. Confirm the exact glasses model and available capture/developer access.
-2. Choose one reliable demo clip each for World Cup soccer, American football, UFC, and NBA, with a World Cup clip as the primary path.
-3. Define shared schemas for `Frame`, `ParsedScoreboard`, `CanonicalGameState`, `ProbabilityEstimate`, `MarketSnapshot`, and `Comparison`.
-4. Build the deterministic end-to-end skeleton with a saved frame and mock market data.
-5. Evaluate scoreboard extraction methods on the chosen fixtures.
-6. Implement and test the baseline probability function.
-7. Select the market provider and verify event/contract availability.
-8. Connect camera or video ingestion.
-9. Build the judge-facing debug view and compact user response.
-10. Rehearse every rung of the demo resilience ladder.
-
-## 21. Short pitch variants
-
-### One sentence
-
-BloomKnights turns smart glasses into a real-time prediction layer that reads a live sports broadcast, estimates the outcome, and compares that estimate with prediction-market prices.
-
-### Ten seconds
-
-Point your glasses at a game. BloomKnights reads the scoreboard, calculates a live win probability, and tells you how it compares with the prediction market.
-
-### Thirty seconds
-
-Prediction markets are powerful, but using them during a live event means searching for the right contract and constantly translating what just happened into probability. BloomKnights lets the user simply look at the broadcast. The glasses capture the game, computer vision extracts the live state, our model estimates the outcome, and the system compares that estimate with the market price through a concise wearable response.
-
-## 22. Final product principle
-
-BloomKnights should make the transition from **seeing an event** to **understanding its probability** feel immediate.
-
-Every technical choice should strengthen that loop:
+## Repository map
 
 ```text
-Look -> Understand -> Estimate -> Compare -> Inform
+apps/
+  demo-web/       Capture theater, phone sender, dashboard, and data UI
+  ios/            SwiftUI companion and Meta Wearables integration
+  landing/        Marketing page
+  pitch/          Browser pitch deck
+
+demo-footage/     Four pinned, compressed showcase broadcasts
+docs/             Architecture, API, demo-day, launch, and training docs
+models/           Model metadata and calibration notes
+packages/
+  fixtures/
+    demo-intelligence/  Historical event timelines and research
+    demo-streams/       Media manifest and calibrated offsets
+
+services/
+  api/            HTTP server and live analysis orchestration
+  capture/        Frame ingestion, sampling, and dataset hooks
+  demo/           Intelligence routing and playback policy
+  vision/         Gemini, Cerebras, fixtures, normalization, reconciliation
+  probability/    Sport-aware probability models
+  market/         Market adapters and comparison contracts
+
+scripts/          Evaluation, validation, stats, and tunnel helpers
+tests/            End-to-end and package-level node:test coverage
 ```
 
-If a proposed feature does not improve that loop or make the demo more reliable, it can wait.
+## Important files
+
+| File | Responsibility |
+|---|---|
+| [`services/api/server.js`](services/api/server.js) | HTTP routes, analysis gate, WebRTC signaling, replay serving |
+| [`services/api/live-event-analyzer.js`](services/api/live-event-analyzer.js) | One-frame cadence, event switching, live insight assembly |
+| [`services/vision/backends/gemini.js`](services/vision/backends/gemini.js) | Gemini-compatible image classification |
+| [`services/demo/intelligence.js`](services/demo/intelligence.js) | Event-pack matching and historical probabilities |
+| [`services/demo/playback-director.js`](services/demo/playback-director.js) | Server-owned stream-switch state machine |
+| [`packages/fixtures/demo-streams/manifest.json`](packages/fixtures/demo-streams/manifest.json) | Exact media integrity and checkpoint offsets |
+| [`apps/demo-web/capture.html`](apps/demo-web/capture.html) | Theater UI, WebRTC snapshots, playback application, WebGPU overlays |
+| [`apps/ios/README.md`](apps/ios/README.md) | Meta SDK build and device instructions |
+
+## Team boundaries
+
+| Owner | Scope |
+|---|---|
+| Vision/backend lane | Camera snapshots, provider integration, classification, intelligence packs, playback commands |
+| Frontend teammate | Next.js product surface and shared API consumption |
+| Native-app teammate | Meta SDK session, glasses permissions, decoding, and WebRTC publishing |
+
+The internal boundary is `/api/frames` plus the WebRTC signaling contract. Hardware-specific code must not leak into the probability or playback layers.
+
+## Rules for contributors and AI agents
+
+1. Read this README and [the documentation index](docs/README.md) before changing architecture.
+2. Treat the live checkout as shared. Preserve unrelated dirty files and teammate work.
+3. Keep the classifier narrow. One showcase stream per sport means sport-only classification is intentional.
+4. Never reintroduce a five-frame model window for the live showcase.
+5. Never make model calls until the user presses **Analyze**.
+6. WebRTC carries media; HTTP carries snapshots and control data.
+7. `PlaybackDirector` owns stream changes. Do not switch media directly from an arbitrary client result.
+8. Keep replay markets and mock research visibly labeled.
+9. Never hard-code credentials into tracked source or frontend bundles.
+10. Run the narrowest relevant tests, then `npm test` before merging when time permits.
+11. Validate replay files with `npm run streams:validate` after any media change.
+12. Push small completed changes so every teammate sees the same contract.
+
+## Honest scope and limitations
+
+- The live showcase recognizes four sport categories, not arbitrary event identities.
+- Each category maps to one predetermined historical broadcast.
+- Probabilities and market prices are replay intelligence, not live tradable quotes.
+- Research results are cached and explicitly marked mock.
+- WebGPU/YOLO overlays are presentation context; they do not select the event.
+- The WebRTC connection may require TURN on restrictive campus networks.
+- The project does not execute trades, manage funds, or claim guaranteed profit.
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Implemented architecture](docs/architecture/ARCHITECTURE.md)
+- [API reference](docs/architecture/API.md)
+- [Local replay contract](docs/LOCAL_STREAM_PLAYBACK.md)
+- [Demo-day runbook](docs/demo-day/runbook.md)
+- [Setup checklist](docs/demo-day/setup-checklist.md)
+- [Failure recovery](docs/demo-day/failure-modes.md)
+- [Judge Q&A](docs/demo-day/judge-qa.md)
+- [iOS and Meta glasses](apps/ios/README.md)
+
+## Responsible-use language
+
+Prefer **model estimate**, **market-implied probability**, **difference**, **historical replay**, and **confidence**.
+
+Avoid **guaranteed edge**, **risk-free**, **certain win**, or instructions to place a trade. A probability gap is a signal to investigate, not proof of profit.
+
+## The pitch
+
+**One sentence:** BloomKnights lets smart glasses recognize the sport you are watching and instantly surface the matching prediction-market probability.
+
+**Ten seconds:** Prediction markets make you search for the right contract while the game keeps moving. With BloomKnights, you just look at the screen—your glasses identify the sport, load the event, and show the probability.
+
+**Thirty seconds:** BloomKnights turns Meta glasses into a visual interface for prediction markets. The glasses stream directly to the laptop over WebRTC. A lightweight Gemini classifier recognizes the sport from one gated snapshot, the backend switches to the matching historical broadcast, and the viewer presents a backtested probability beside an illustrative market price and supporting context. No menus, no typing, and no manual sport selection.
+
+---
+
+<p align="center"><strong>The broadcast is the query.</strong></p>
