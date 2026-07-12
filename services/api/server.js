@@ -41,6 +41,7 @@ import { DatasetWriter } from "../capture/dataset.js";
 import { visionStatus } from "../vision/index.js";
 import { CEREBRAS_ANALYTICS_MODEL } from "../analytics/cerebras.js";
 import { CEREBRAS_VISION_MODEL } from "../vision/backends/cerebras.js";
+import { rightcodesGeminiBackend } from "../vision/backends/rightcodes-gemini.js";
 import { Reconciler } from "../vision/reconciler.js";
 import { getSport, listSports, DEFAULT_SPORT_ID } from "../sports/index.js";
 import {
@@ -896,7 +897,11 @@ function lanAddresses(port) {
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
-  const server = createBloomServer();
+  // VISION_BACKEND=rightcodes-gemini runs the live classifier on gemini-3.5-flash
+  // via the right.codes gateway instead of Cerebras gemma-4-31b.
+  const liveVisionBackend =
+    process.env.VISION_BACKEND === "rightcodes-gemini" ? rightcodesGeminiBackend : undefined;
+  const server = createBloomServer({ visionBackend: liveVisionBackend });
   server.listen(port, host, () => {
     console.log(`BloomKnights desktop: http://localhost:${port}`);
     for (const address of lanAddresses(port)) console.log(`BloomKnights phone:   ${address}`);
