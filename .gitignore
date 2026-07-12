@@ -8,3 +8,10 @@ node_modules/
 # Raw match footage and extracted frames — never commit (README §16)
 footage/
 clip-frames/
+
+# Never commit session/conversation exports or ad-hoc secret files (public-repo safety)
+*local-command-caveat*.txt
+2026-*-messages-below.txt
+*.pem
+*.key
+secrets.*
