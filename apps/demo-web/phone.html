@@ -83,8 +83,10 @@
 const ANALYSIS_INTERVAL_MS = 2400;
 const INITIAL_ANALYSIS_INTERVAL_MS = 800;
 const INITIAL_ANALYSIS_FRAMES = 5;
-const MAX_IMAGE_EDGE = 1600;
-const JPEG_QUALITY = 0.82;
+// Sport classification does not need scoreboard-readable snapshots. Keep the
+// WebRTC video high quality, but upload a much smaller image to Gemma.
+const MAX_IMAGE_EDGE = 960;
+const JPEG_QUALITY = 0.72;
 const SIGNAL_POLL_MS = 350;
 const ANALYSIS_STATUS_POLL_MS = 1_000;
 // Favor readable distant subjects for the on-device detector: 4K capture at
@@ -288,14 +290,14 @@ function renderAnalysisState() {
   document.getElementById("camera-note").textContent = !connected
     ? "Camera is ready and WebRTC is negotiating the desktop connection. Analysis stays off until the desktop connects and you press Analyze."
     : analysisEnabled
-      ? "Direct WebRTC video is live. The first five-frame evidence burst completes in about four seconds; later model windows respect the twelve-second quota."
+      ? "Direct WebRTC video is live. The first frame is classified immediately; later checks respect the twelve-second quota."
       : "Direct WebRTC video is live. Analysis is off until you press Analyze on the desktop capture page.";
 }
 
 async function analyzeCanvas(source) {
   if (processing) return;
   processing = true;
-  setStatus("Capturing", source === "phone_live" ? "Building a five-frame event window…" : "Analyzing the event…");
+  setStatus("Capturing", "Classifying the sport on screen…");
   const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
   try {
     const response = await fetch("/api/frames", {

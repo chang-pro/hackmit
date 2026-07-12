@@ -222,7 +222,10 @@ export class LiveEventAnalyzer {
 
     const cooldownMs = this.#cooldownMs();
     const hasFullWindow = this.pendingFrames.length >= this.batchSize;
-    if (this.inFlight || cooldownMs > 0 || (!force && !hasFullWindow)) {
+    const fastCameraSource = new Set(["phone_live", "phone_photo", "ios_app", "rayban_sdk"])
+      .has(frame?.source);
+    const firstDetection = fastCameraSource && this.lastCallAt == null && this.latestInsight == null;
+    if (this.inFlight || cooldownMs > 0 || (!force && !firstDetection && !hasFullWindow)) {
       return {
         analysis_status: this.inFlight ? "in_flight" : "queued",
         insight: this.latestInsight,
