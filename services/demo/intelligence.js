@@ -347,6 +347,76 @@ function timelineProgress(sport, phaseValues, clockValue) {
   return (period - 1) * periodSeconds + Math.max(0, periodSeconds - remaining);
 }
 
+function clamp(value, minimum = 0, maximum = 1) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function roundedProbability(value) {
+  return Number(clamp(value).toFixed(4));
+}
+
+function historicalTimelineMoment(pack, observation) {
+  const observedProgress = timelineProgress(pack.sport, [observation?.phase], observation?.clock);
+  if (!Number.isFinite(observedProgress)) return null;
+
+  const anchors = pack.moments
+    .map((moment, index) => ({
+      moment,
+      index,
+      progress: timelineProgress(pack.sport, moment.phase_tokens ?? [], moment.clock_seconds),
+    }))
+    .filter((entry) => Number.isFinite(entry.progress))
+    .sort((left, right) => left.progress - right.progress);
+  if (!anchors.length) return null;
+
+  let left = anchors[0];
+  let right = anchors[0];
+  for (const anchor of anchors) {
+    if (anchor.progress <= observedProgress) left = anchor;
+    if (anchor.progress >= observedProgress) {
+      right = anchor;
+      break;
+    }
+    right = anchor;
+  }
+  const span = right.progress - left.progress;
+  const ratio = span > 0 ? clamp((observedProgress - left.progress) / span) : 0;
+  const nearest = ratio < 0.5 ? left : right;
+  const interpolate = (field) => Number(left.moment[field]) +
+    ratio * (Number(right.moment[field]) - Number(left.moment[field]));
+  const phase = String(observation?.phase ?? "Replay").trim();
+  const clock = String(observation?.clock ?? "").trim();
+
+  return {
+    ...nearest.moment,
+    id: null,
+    label: `${phase}${clock ? ` ${clock}` : ""} · historical timeline estimate`,
+    model_probability: roundedProbability(interpolate("model_probability")),
+    market_probability: roundedProbability(interpolate("market_probability")),
+    confidence: roundedProbability(Math.min(
+      Number(left.moment.confidence ?? 0),
+      Number(right.moment.confidence ?? 0)
+    ) * 0.95),
+    summary: `Backtested point-in-time estimate between “${left.moment.label}” and “${right.moment.label}”. The visible phase and clock set the position on the archived probability timeline; the final result is not injected into this estimate.`,
+    what_changed: `The visible broadcast moved between the archived “${left.moment.label}” and “${right.moment.label}” states.`,
+    next_trigger: right.progress > observedProgress
+      ? `Recalculate at the next archived state: ${right.moment.label}.`
+      : "Recalculate when the visible score, phase, or clock changes.",
+    key_factors: [
+      `Visible state: ${phase}${clock ? ` ${clock}` : ""}`,
+      "Interpolated from the complete archived replay timeline",
+      "Point-in-time estimate; final-result leakage is disabled",
+      ...(nearest.moment.key_factors ?? []),
+    ].slice(0, 6),
+    timeline_interpolation: {
+      left_anchor_id: left.moment.id,
+      right_anchor_id: right.moment.id,
+      ratio: Number(ratio.toFixed(4)),
+      observed_progress: observedProgress,
+    },
+  };
+}
+
 function approximatePlaybackTarget(pack, observation) {
   const targets = pack.moments
     .map((moment) => ({ moment, target: getDemoPlaybackTarget(pack.id, moment.id) }))
@@ -443,18 +513,23 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
   const { moment, index, score } = selection;
   const focus = detectedFocus(pack, observation, match.basis);
   const checkpointReady = Boolean(moment) && selection.status !== "pending";
-  const deterministicReady = match.deterministic && checkpointReady;
+  const interpolatedMoment = match.deterministic && !checkpointReady
+    ? historicalTimelineMoment(pack, observation)
+    : null;
+  const resolvedMoment = moment ?? interpolatedMoment;
+  const interpolatedReady = Boolean(interpolatedMoment);
+  const deterministicReady = match.deterministic && Boolean(resolvedMoment);
   const mode = deterministicReady
     ? "precollected_event_replay"
     : match.exactEvidence
       ? "precollected_event_pending"
       : "illustrative_sport_template";
-  const modelProbability = deterministicReady ? moment.model_probability : null;
-  const marketProbability = deterministicReady ? moment.market_probability : null;
+  const modelProbability = deterministicReady ? resolvedMoment.model_probability : null;
+  const marketProbability = deterministicReady ? resolvedMoment.market_probability : null;
   const gap = deterministicReady
     ? Number(((modelProbability - marketProbability) * 100).toFixed(1))
     : null;
-  const checkpointPlayback = deterministicReady && selection.status === "ready"
+  const checkpointPlayback = deterministicReady && !interpolatedReady && selection.status === "ready"
     ? getDemoPlaybackTarget(pack.id, moment.id)
     : null;
   const playback = checkpointPlayback ??
@@ -472,11 +547,11 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
     detected_event: observation?.event_name || observation?.event_identity || "Recognized broadcast",
     match_basis: match.basis,
     match_confidence: match.confidence,
-    checkpoint_status: deterministicReady ? selection.status : "pending",
+    checkpoint_status: deterministicReady ? (interpolatedReady ? "interpolated" : selection.status) : "pending",
     pending_reason: deterministicReady ? null : match.pendingReason ?? selection.reason,
-    moment_selection_reason: selection.reason,
-    moment_id: moment?.id ?? null,
-    moment_label: moment?.label ?? "Waiting for a stable scoreboard checkpoint",
+    moment_selection_reason: interpolatedReady ? "historical_timeline_interpolation" : selection.reason,
+    moment_id: resolvedMoment?.id ?? null,
+    moment_label: resolvedMoment?.label ?? "Waiting for a stable scoreboard checkpoint",
     moment_index: index,
     moment_count: match.exactEvidence ? pack.moments.length : 0,
     moment_match_score: Number(score.toFixed(2)),
@@ -492,7 +567,7 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
       : [],
     focus,
     evidence: match.exactEvidence
-      ? (moment?.evidence ?? []).map((item) => ({ ...item, status: "ready" }))
+      ? (resolvedMoment?.evidence ?? []).map((item) => ({ ...item, status: "ready" }))
       : [],
     research: match.exactEvidence
       ? (pack.research ?? []).map((item) => ({
@@ -505,8 +580,8 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
       : [],
     market: deterministicReady
       ? {
-          question: template(moment.market_question, focus),
-          outcome: template(moment.outcome, focus),
+          question: template(resolvedMoment.market_question, focus),
+          outcome: template(resolvedMoment.outcome, focus),
           model_probability: modelProbability,
           market_probability: marketProbability,
           gap_percentage_points: gap,
@@ -515,19 +590,20 @@ export function selectDemoIntelligence(observation, { previous = null } = {}) {
         }
       : null,
     confidence: deterministicReady
-      ? Math.min(Number(moment.confidence ?? 0), match.confidence)
+      ? Math.min(Number(resolvedMoment.confidence ?? 0), match.confidence)
       : match.confidence,
-    key_factors: (moment?.key_factors ?? []).map((factor) => template(factor, focus)),
-    what_changed: template(moment?.what_changed, focus),
-    next_probability_trigger: template(moment?.next_trigger, focus),
+    key_factors: (resolvedMoment?.key_factors ?? []).map((factor) => template(factor, focus)),
+    what_changed: template(resolvedMoment?.what_changed, focus),
+    next_probability_trigger: template(resolvedMoment?.next_trigger, focus),
     summary: deterministicReady
-      ? template(moment.summary, focus)
+      ? template(resolvedMoment.summary, focus)
       : "Event candidate identified. Waiting for a stable score, phase, or clock before loading replay probabilities.",
-    alternate_markets: (moment?.alternate_markets ?? []).map((market) => ({
+    alternate_markets: (resolvedMoment?.alternate_markets ?? []).map((market) => ({
       ...market,
       question: template(market.question, focus),
       outcome: template(market.outcome, focus),
     })),
+    timeline_interpolation: interpolatedMoment?.timeline_interpolation ?? null,
     disclosure: pack.disclosure,
   };
 }

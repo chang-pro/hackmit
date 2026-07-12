@@ -335,7 +335,7 @@ test("deterministic matching clamps confidence and stays pending below 0.72", ()
   assert.ok(ready.market);
 });
 
-test("unresolved checkpoints and ambiguous MMA phases stay pending without odds", () => {
+test("unknown states stay pending while visible in-between moments use the historical timeline", () => {
   const unresolved = selectDemoIntelligence(observation({
     score_a: null,
     score_b: null,
@@ -365,13 +365,25 @@ test("unresolved checkpoints and ambiguous MMA phases stay pending without odds"
     phase: "1st Quarter",
     clock: "4:10",
   }));
-  assert.equal(offCheckpoint.mode, "precollected_event_pending");
-  assert.equal(offCheckpoint.pending_reason, "visible_score_not_in_calibrated_checkpoints");
+  assert.equal(offCheckpoint.mode, "precollected_event_replay");
+  assert.equal(offCheckpoint.checkpoint_status, "interpolated");
+  assert.equal(offCheckpoint.pending_reason, null);
+  assert.equal(offCheckpoint.moment_selection_reason, "historical_timeline_interpolation");
   assert.equal(offCheckpoint.moment_id, null);
   assert.equal(offCheckpoint.playback.match_mode, "approximate_event_sync");
   assert.equal(offCheckpoint.playback.stream_id, "nba-celtics-knicks-2026");
   assert.ok(Math.abs(offCheckpoint.playback.playback_start_seconds - 176.54) < 1);
-  assert.equal(offCheckpoint.market, null);
+  assert.ok(offCheckpoint.market.model_probability > 0.5);
+  assert.ok(offCheckpoint.market.model_probability < 0.53);
+  assert.ok(offCheckpoint.market.market_probability >= 0.5);
+  assert.match(offCheckpoint.summary, /Backtested point-in-time estimate/);
+  assert.match(offCheckpoint.summary, /final result is not injected/i);
+  assert.equal(offCheckpoint.timeline_interpolation.left_anchor_id, "opening-tip");
+  assert.equal(offCheckpoint.timeline_interpolation.right_anchor_id, "second-quarter-tie");
+  assert.equal(
+    analysisFromDemoIntelligence(offCheckpoint).primary_probability,
+    offCheckpoint.market.model_probability
+  );
 
   const mma = selectDemoIntelligence(observation({
     sport: "mma",

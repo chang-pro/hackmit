@@ -39,7 +39,7 @@ The backend, not the UI, owns stream-switch decisions.
 | New model result | Playback action |
 |---|---|
 | First exact, ready, calibrated event A | Load A and seek once to its detected checkpoint. |
-| Event A identified at ≥70%, but visible state is between checkpoints | Load A immediately and interpolate a seek from phase/clock; keep prediction values pending. |
+| Event A identified at ≥70%, but visible state is between checkpoints | Load A immediately, interpolate a seek from phase/clock, and show a labeled point-in-time estimate from the archived probability timeline. |
 | Event A again at any later or earlier checkpoint | No source change and no seek. A continues naturally. |
 | Below 70%, ambiguous, or unsupported event | Keep the current video unchanged. |
 | Analysis stopped or detector disconnected | Keep the current video unchanged. |
@@ -72,7 +72,7 @@ For every checkpoint, set:
 
 `anchor_media_seconds` is the exact frame corresponding to the checkpoint. `playback_start_seconds` is normally one to three seconds earlier so the transition has context. The UFC edit is the one explicit best-available exception: it starts after Round 1 movement begins, so the opening target starts at `0.0` and records that its first visible clock is `4:57`. Also fill `source.duration_seconds` and `source.expected_sha256`; if the file changes, recalibrate its offsets.
 
-Prediction values still require a trustworthy checkpoint. Playback is intentionally more responsive: once the exact indexed event is at least 70% confident, an in-between score can issue an `approximate_event_sync` revision derived from the visible period and clock. This switches to the correct broadcast immediately without inventing checkpoint probabilities.
+Once the exact indexed event is at least 70% confident, an in-between score issues an `approximate_event_sync` revision derived from the visible period and clock. The same point on the complete archived timeline provides an interpolated model and mock-market probability. This switches to the correct broadcast immediately and keeps the prediction continuous; it is labeled as a historical, point-in-time estimate and never substitutes the known final result for an earlier state.
 
 ## Backend contract
 
