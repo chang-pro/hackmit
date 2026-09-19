@@ -130,10 +130,25 @@ export class Market {
   }
 
   // options: { location: {lat, lon}, categories: {itemId: name}, photoUrls: {itemId: [url]} }
-  approvePlan(planId, { location = null, categories = {}, photoUrls = {} } = {}) {
+  // keepIds: items the person unticked while reviewing. They are approved as
+  // KEEP -- nothing is listed, published or drafted for them.
+  approvePlan(planId, { location = null, categories = {}, photoUrls = {}, keepIds = [] } = {}) {
     const plan = this.plans.get(planId);
     if (!plan) throw fail(404, `no plan "${planId}"`);
     if (plan.approved) throw fail(409, "plan is already approved");
+    const kept = new Set(keepIds);
+    for (const decision of plan.decisions) {
+      if (!kept.has(decision.itemId)) continue;
+      decision.action = "KEEP";
+      decision.listUsd = null;
+      decision.reason = "You kept this item.";
+    }
+    if (kept.size) {
+      plan.expectedUsd = plan.decisions
+        .filter((d) => d.action === "SELL")
+        .reduce((sum, d) => sum + (d.band?.[plan.tier ?? "normalUsd"] ?? d.listUsd ?? 0), 0);
+      plan.goalGapUsd = Math.max(0, (plan.targetUsd ?? 0) - plan.expectedUsd);
+    }
     const rules = this.#pendingRules.get(planId);
     plan.approved = true;
     plan.approvedAt = new Date().toISOString();

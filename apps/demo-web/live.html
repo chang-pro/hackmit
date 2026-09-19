@@ -7,13 +7,19 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html { height: 100%; }
+  /* The page scrolls. A fixed-height centred flex box clipped the item list
+     and the approve panel off the bottom of the screen as soon as a scan
+     found more than a few things. */
   body {
-    display: flex; align-items: center; justify-content: center; gap: 1.5rem;
-    padding: 1.25rem; background: #0b0d12; color: #e7ecf5; flex-wrap: wrap;
+    min-height: 100%; margin: 0;
+    display: flex; align-items: flex-start; justify-content: center; gap: 1.5rem;
+    /* Bottom clearance so the fixed agent banner never covers the last row. */
+    padding: 1.25rem 1.25rem 5.5rem; background: #0b0d12; color: #e7ecf5; flex-wrap: wrap;
     font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  #stage { position: relative; line-height: 0; }
+  /* The feed stays put while the sidebar scrolls past it. */
+  #stage { position: sticky; top: 1.25rem; line-height: 0; }
   #shot { max-width: min(92vw, 720px); max-height: 82vh; border-radius: 12px; background: #141821; }
   #shot[hidden] { display: none; }
   #boxes { position: absolute; inset: 0; pointer-events: none; }
@@ -23,7 +29,9 @@
     border-radius: 5px; background: var(--c); color: #06080c;
     font: 700 11px ui-monospace, monospace; white-space: nowrap;
   }
-  aside { min-width: 15rem; max-width: 20rem; }
+  aside { flex: 1 1 18rem; min-width: 15rem; max-width: 22rem; }
+  /* Long scans scroll inside the list instead of off the screen. */
+  #list { max-height: 34vh; overflow: auto; }
   #total { font: 700 3rem/1 ui-monospace, monospace; letter-spacing: -.04em; }
   #cap { margin-top: .2rem; color: #7d8aa3; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; }
   #list { margin-top: 1rem; display: flex; flex-direction: column; gap: .35rem; }
@@ -55,7 +63,19 @@
   .d .why { color: #7d8aa3; font-size: .7rem; line-height: 1.45; margin-top: .15rem; }
   .d a { color: #55e39b; font-size: .7rem; }
   .d .st { font-size: .7rem; color: #9aa6bd; }
+  .d.off { opacity: .45; }
+  .d .h { align-items: baseline; }
+  .pick { flex: 1; display: flex; align-items: baseline; gap: .45rem; background: none;
+          border: 0; padding: 0; text-align: left; color: inherit; font: inherit; }
+  .pick .tick { flex: none; width: 1.05rem; height: 1.05rem; border: 1px solid #3d4761;
+                border-radius: 4px; display: grid; place-items: center; font-size: .7rem; color: #06251a; }
+  .d:not(.off) .pick .tick { background: #55e39b; border-color: #55e39b; }
   .tot { display: flex; justify-content: space-between; border-top: 1px solid #222838; padding-top: .45rem; font-weight: 700; }
+  #confirm { margin-top: .9rem; border-top: 1px solid #222838; padding-top: .8rem; }
+  #confirmText { font-size: .82rem; line-height: 1.5; margin-bottom: .6rem; }
+  #confirmText b { color: #55e39b; }
+  .confirm-acts { display: flex; gap: .5rem; }
+  .confirm-acts button { flex: 1; padding: .6rem; }
 </style>
 </head>
 <body>
@@ -82,11 +102,20 @@
       <div id="goals"></div>
       <div class="acts">
         <button id="analyze" type="button">Start pricing</button>
-        <button id="makePlan" type="button">Plan these items</button>
-        <button id="approve" class="go" type="button" hidden>Approve &amp; list</button>
+        <button id="makePlan" type="button">Review these items</button>
         <a href="/dashboard" style="align-self:center;color:#55e39b;font-size:.72rem">Dashboard</a>
       </div>
       <div id="plan"></div>
+
+      <!-- The decision, spelled out: what will happen, to how many things, for
+           how much, and an equally available way to say no. -->
+      <div id="confirm" hidden>
+        <div id="confirmText"></div>
+        <div class="confirm-acts">
+          <button id="approve" class="go" type="button">Yes, list them</button>
+          <button id="cancel" type="button">Not now</button>
+        </div>
+      </div>
     </section>
   </aside>
 
@@ -285,30 +314,74 @@ setInterval(pollItems, ITEM_POLL_MS);
   });
   refreshAnalyze();
 
+  // Items the person unticked. They are sent as keep_item_ids and never listed.
+  const kept = new Set();
+
   function renderPlan() {
     const rows = plan.decisions.map((d) => {
+      const off = kept.has(d.itemId);
       const price = d.action === "SELL" ? usd(d.listUsd) : d.action.toLowerCase();
-      return `<div class="d" style="--c:${ACTION_COLOR[d.action] ?? "#3d4761"}" data-item="${esc(d.itemId)}">
-        <div class="h"><span>${esc(d.label ?? d.itemId)}</span><span>${price}</span></div>
+      return `<div class="d${off ? " off" : ""}" style="--c:${ACTION_COLOR[d.action] ?? "#3d4761"}" data-item="${esc(d.itemId)}">
+        <div class="h">
+          <button class="pick" type="button" data-pick="${esc(d.itemId)}"
+                  aria-pressed="${off ? "false" : "true"}"
+                  title="${off ? "Keep this item" : "Include this item"}">
+            <span class="tick" aria-hidden="true">${off ? "" : "✓"}</span>
+            <span>${esc(d.label ?? d.itemId)}</span>
+          </button>
+          <span>${off ? "keeping" : price}</span>
+        </div>
         ${d.reason ? `<div class="why">${esc(d.reason)}</div>` : ""}
         <div class="st"></div>
       </div>`;
     }).join("");
-    const gap = plan.goalGapUsd ? `${usd(plan.goalGapUsd)} short of goal` : "meets the goal";
-    el("plan").innerHTML = `${rows}<div class="tot"><span>expected</span><span>${usd(plan.expectedUsd)}</span></div>
-      <div class="why">${esc(gap)}. Nothing is listed until you approve.</div>`;
-    el("approve").hidden = plan.approved === true;
+    el("plan").innerHTML = rows;
+    renderConfirm();
   }
+
+  function renderConfirm() {
+    if (!plan || plan.approved) {
+      el("confirm").hidden = true;
+      return;
+    }
+    const live = plan.decisions.filter((d) => !kept.has(d.itemId));
+    const sell = live.filter((d) => d.action === "SELL");
+    const other = live.filter((d) => ["DONATE", "RECYCLE"].includes(d.action));
+    const total = sell.reduce((sum, d) => sum + (d.listUsd ?? 0), 0);
+    const bits = [`put <b>${sell.length} item${sell.length === 1 ? "" : "s"}</b> up for sale, asking <b>${usd(total)}</b>`];
+    if (other.length) bits.push(`and set ${other.length} aside to donate or recycle`);
+    el("confirmText").innerHTML = sell.length || other.length
+      ? `This will ${bits.join(" ")}. Untick anything you want to keep.`
+      : `Nothing is selected. Tick at least one item, or come back later.`;
+    el("approve").disabled = sell.length === 0 && other.length === 0;
+    el("approve").textContent = sell.length ? `Yes, list ${sell.length}` : "Yes, go ahead";
+    el("confirm").hidden = false;
+  }
+
+  el("plan").addEventListener("click", (e) => {
+    const id = e.target.closest("[data-pick]")?.dataset.pick;
+    if (!id || !plan || plan.approved) return;
+    if (kept.has(id)) kept.delete(id); else kept.add(id);
+    renderPlan();
+  });
+
+  el("cancel").addEventListener("click", () => {
+    plan = null;
+    kept.clear();
+    el("plan").innerHTML = "";
+    el("confirm").hidden = true;
+  });
 
   el("makePlan").addEventListener("click", async () => {
     el("makePlan").disabled = true;
     el("plan").innerHTML = `<div class="why">Planning…</div>`;
     try {
       plan = await api("/api/plans", { goal: chosen.goal });
+      kept.clear();
       renderPlan();
     } catch (err) {
       plan = null;
-      el("approve").hidden = true;
+      el("confirm").hidden = true;
       el("plan").innerHTML = `<div class="why">${esc(err.message)}</div>`;
     } finally {
       el("makePlan").disabled = false;
@@ -331,14 +404,17 @@ setInterval(pollItems, ITEM_POLL_MS);
           { timeout: 3000 }
         );
       });
-      const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/approve`, { location });
+      const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/approve`, {
+        location,
+        keep_item_ids: [...kept],
+      });
       plan.approved = true;
-      el("approve").hidden = true;
+      el("confirm").hidden = true;
       trackListings(result.listings.map((l) => l.id));
     } catch (err) {
       el("msg").textContent = err.message;
       el("approve").disabled = false;
-      el("approve").textContent = "Approve & list";
+      renderConfirm();
     }
   });
 
