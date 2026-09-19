@@ -1,0 +1,51 @@
+name: BloomKnights
+options:
+  bundleIdPrefix: com.bloomknights
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  meta-wearables-dat-ios:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    from: 0.8.0
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    from: 120.0.0
+targets:
+  BloomKnights:
+    type: application
+    platform: iOS
+    sources: [BloomKnights]
+    info:
+      path: BloomKnights/Info.plist
+      properties:
+        CFBundleDisplayName: BloomKnights
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [bloomknights]
+        UISupportedExternalAccessoryProtocols:
+          - com.meta.ar.wearable
+        UIBackgroundModes:
+          - audio
+          - external-accessory
+          - bluetooth-central
+          - bluetooth-peripheral
+        NSBluetoothAlwaysUsageDescription: "Needed to connect to Meta Ray-Ban glasses"
+        NSCameraUsageDescription: "Streams video from Meta Ray-Ban glasses"
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        MWDAT:
+          MetaAppID: "0"
+          TeamID: "$(DEVELOPMENT_TEAM)"
+          AppLinkURLScheme: "bloomknights://"
+          DAMEnabled: true
+    dependencies:
+      - package: meta-wearables-dat-ios
+        product: MWDATCore
+      - package: meta-wearables-dat-ios
+        product: MWDATCamera
+      - package: WebRTC
+        product: WebRTC
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.bloomknights.app
+      DEVELOPMENT_TEAM: A39763Q74K

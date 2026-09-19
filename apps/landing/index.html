@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReLoop — Look at the game. See the probability.</title>
+<meta name="description" content="ReLoop turns Meta Ray-Ban glasses into a live probability layer for sports. Look at the broadcast — our model estimates the outcome and compares it with the market-implied probability, right in your line of sight.">
+<style>
+  :root{
+    --bg:#0a0c0e;
+    --bg-raise:#0f1215;
+    --line:rgba(255,255,255,.08);
+    --line-soft:rgba(255,255,255,.05);
+    --ink:#eef2f1;
+    --ink-dim:#9aa3a1;
+    --ink-faint:#5c6664;
+    --accent:#3ce08a;
+    --accent-dim:rgba(60,224,138,.14);
+    --accent-line:rgba(60,224,138,.35);
+    --danger:#e0643c;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Geist","Satoshi",-apple-system,"Segoe UI Variable Display","Segoe UI",system-ui,Helvetica,Arial,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  ::selection{background:var(--accent);color:#06130c}
+  a{color:inherit;text-decoration:none}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  .wrap{max-width:1400px;margin:0 auto;padding:0 24px}
+  @media(min-width:768px){.wrap{padding:0 48px}}
+
+  /* ---------- reveal ---------- */
+  .rv{opacity:0;transform:translateY(26px);transition:opacity .8s cubic-bezier(.16,1,.3,1),transform .8s cubic-bezier(.16,1,.3,1)}
+  .rv.in{opacity:1;transform:none}
+  .rv-d1{transition-delay:.1s}.rv-d2{transition-delay:.2s}.rv-d3{transition-delay:.3s}.rv-d4{transition-delay:.4s}
+  @media(prefers-reduced-motion:reduce){
+    .rv{opacity:1;transform:none;transition:none}
+    *{animation-duration:.01ms !important;animation-iteration-count:1 !important}
+  }
+
+  /* ---------- nav ---------- */
+  nav{
+    position:sticky;top:0;z-index:40;
+    background:rgba(10,12,14,.78);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .wordmark{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em;font-size:17px}
+  .wordmark svg{display:block}
+  .nav-links{display:none;gap:28px;font-size:14px;color:var(--ink-dim)}
+  .nav-links a{transition:color .25s}
+  .nav-links a:hover{color:var(--ink)}
+  @media(min-width:768px){.nav-links{display:flex}}
+  .nav-cta{
+    font-size:13.5px;font-weight:600;color:#06130c;background:var(--accent);
+    padding:8px 16px;border-radius:99px;
+    transition:transform .2s cubic-bezier(.16,1,.3,1),background .2s;
+  }
+  .nav-cta:hover{background:#54e89b}
+  .nav-cta:active{transform:scale(.97)}
+
+  /* ---------- hero ---------- */
+  .hero{
+    min-height:calc(100dvh - 64px);
+    display:grid;align-items:center;
+    grid-template-columns:1fr;gap:48px;
+    padding:64px 0 80px;
+    position:relative;
+  }
+  @media(min-width:960px){
+    .hero{grid-template-columns:1.1fr .9fr;gap:32px;padding:32px 0 96px}
+  }
+  .hero-bg{
+    position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;
+  }
+  .hero-bg::before{
+    content:"";position:absolute;
+    width:720px;height:720px;right:-220px;top:-180px;border-radius:50%;
+    background:radial-gradient(circle,rgba(60,224,138,.07) 0%,transparent 62%);
+  }
+  .hero-copy{position:relative;z-index:1}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;
+    font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);
+    border:1px solid var(--accent-line);border-radius:99px;
+    padding:6px 14px;margin-bottom:28px;
+    background:var(--accent-dim);
+  }
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.75)}}
+  h1{
+    font-size:clamp(2.6rem,6.2vw,4.6rem);
+    line-height:1.02;letter-spacing:-.035em;font-weight:700;
+    margin-bottom:24px;
+  }
+  h1 .ghost{color:var(--ink-faint)}
+  .hero-sub{
+    font-size:clamp(1.02rem,1.4vw,1.2rem);color:var(--ink-dim);
+    max-width:56ch;margin-bottom:36px;
+  }
+  .hero-sub strong{color:var(--ink);font-weight:600}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .btn{
+    display:inline-flex;align-items:center;gap:10px;
+    font-size:15px;font-weight:600;
+    padding:14px 26px;border-radius:12px;
+    transition:transform .2s cubic-bezier(.16,1,.3,1),background .25s,border-color .25s;
+    border:1px solid transparent;
+  }
+  .btn:active{transform:translateY(1px) scale(.98)}
+  .btn-solid{background:var(--accent);color:#06130c}
+  .btn-solid:hover{background:#54e89b}
+  .btn-ghost{
+    color:var(--ink);border-color:var(--line);
+    background:rgba(255,255,255,.02);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .btn-ghost:hover{border-color:rgba(255,255,255,.22)}
+  .hero-note{margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--ink-faint)}
+
+  .hero-visual{position:relative;z-index:1}
+  .hero-visual svg{width:100%;height:auto;display:block}
+  .hud-float{animation:float 7s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+  .scanline{animation:scan 3.4s cubic-bezier(.45,0,.55,1) infinite}
+  @keyframes scan{0%,100%{transform:translateY(0)}50%{transform:translateY(148px)}}
+
+  /* ---------- stat band ---------- */
+  .band{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg-raise)}
+  .band-in{
+    display:grid;grid-template-columns:1fr;
+  }
+  @media(min-width:768px){.band-in{grid-template-columns:repeat(4,1fr)}}
+  .stat{
+    padding:36px 28px;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .stat:last-child{border-bottom:none}
+  @media(min-width:768px){
+    .stat{border-bottom:none;border-right:1px solid var(--line-soft);padding:44px 36px}
+    .stat:last-child{border-right:none}
+  }
+  .stat b{
+    display:block;font-family:var(--mono);font-weight:600;
+    font-size:clamp(1.7rem,2.6vw,2.3rem);letter-spacing:-.03em;
+    color:var(--ink);margin-bottom:6px;
+  }
+  .stat b em{font-style:normal;color:var(--accent)}
+  .stat span{font-size:13.5px;color:var(--ink-dim)}
+
+  /* ---------- section scaffolding ---------- */
+  section{padding:110px 0}
+  @media(min-width:768px){section{padding:150px 0}}
+  .kicker{
+    font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:18px;display:block;
+  }
+  h2{
+    font-size:clamp(1.9rem,4vw,3rem);
+    line-height:1.08;letter-spacing:-.03em;font-weight:700;
+    max-width:22ch;
+  }
+  .lead{color:var(--ink-dim);max-width:58ch;margin-top:18px;font-size:clamp(1rem,1.2vw,1.1rem)}
+
+  /* ---------- how it works ---------- */
+  .steps{
+    margin-top:72px;display:grid;gap:0;
+    border-top:1px solid var(--line);
+  }
+  .step{
+    display:grid;grid-template-columns:1fr;gap:20px;
+    padding:44px 0;border-bottom:1px solid var(--line);
+    align-items:center;
+  }
+  @media(min-width:820px){
+    .step{grid-template-columns:88px 96px 1fr 1.1fr;gap:36px;padding:52px 0}
+  }
+  .step-no{
+    font-family:var(--mono);font-size:13px;color:var(--ink-faint);letter-spacing:.1em;
+  }
+  .step-icon svg{width:64px;height:64px;display:block}
+  .step h3{font-size:clamp(1.25rem,1.9vw,1.6rem);letter-spacing:-.02em;font-weight:650;margin-bottom:8px}
+  .step p{color:var(--ink-dim);font-size:15px;max-width:52ch}
+  .step-read{
+    font-family:var(--mono);font-size:12.5px;color:var(--ink-faint);
+    border-left:2px solid var(--accent-line);padding-left:18px;line-height:1.9;
+  }
+  .step-read i{font-style:normal;color:var(--accent)}
+  .step-read u{text-decoration:none;color:var(--ink-dim)}
+
+  /* ---------- Super Bowl LI ---------- */
+  .sb{background:var(--bg-raise);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .sb-grid{display:grid;grid-template-columns:1fr;gap:56px;align-items:center}
+  @media(min-width:960px){.sb-grid{grid-template-columns:.9fr 1.1fr;gap:72px}}
+  .sb h2{max-width:16ch}
+  .big-quote{
+    font-size:clamp(2.4rem,5.4vw,4rem);line-height:1.04;letter-spacing:-.035em;font-weight:700;
+  }
+  .big-quote .num{color:var(--danger);font-weight:600}
+  .sb p{color:var(--ink-dim);margin-top:22px;max-width:52ch}
+  .sb p strong{color:var(--ink)}
+  .sb-fine{font-family:var(--mono);font-size:12px;color:var(--ink-faint);margin-top:26px}
+  .chart-card{
+    border:1px solid var(--line);border-radius:20px;
+    background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+    padding:26px 26px 18px;
+  }
+  .chart-card svg{width:100%;height:auto;display:block}
+  .chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+  .chart-head b{font-size:14px;font-weight:650;letter-spacing:-.01em}
+  .chart-head span{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+  .wp-line{stroke-dasharray:1200;stroke-dashoffset:1200;transition:stroke-dashoffset 2.6s cubic-bezier(.4,0,.2,1) .3s}
+  .in .wp-line{stroke-dashoffset:0}
+  .wp-marker{opacity:0;transition:opacity .6s ease 2.4s}
+  .in .wp-marker{opacity:1}
+
+  /* ---------- sports grid ---------- */
+  .matches{
+    margin-top:72px;display:grid;gap:16px;
+    grid-template-columns:1fr;
+  }
+  @media(min-width:700px){.matches{grid-template-columns:repeat(2,1fr)}}
+  @media(min-width:1060px){
+    .matches{grid-template-columns:repeat(6,1fr)}
+    .m-lg{grid-column:span 3}
+    .m-md{grid-column:span 2}
+  }
+  .match{
+    position:relative;overflow:hidden;
+    border:1px solid var(--line);border-radius:18px;
+    background:var(--bg-raise);
+    padding:28px;min-height:230px;
+    display:flex;flex-direction:column;justify-content:space-between;gap:28px;
+    transition:border-color .3s,transform .3s cubic-bezier(.16,1,.3,1);
+  }
+  .match:hover{border-color:rgba(60,224,138,.4);transform:translateY(-3px)}
+  .match-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .sport-tag{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-dim);border:1px solid var(--line);border-radius:99px;padding:5px 12px;
+  }
+  .match svg.mark{width:38px;height:38px;flex:none;opacity:.9}
+  .match h3{font-size:clamp(1.15rem,1.6vw,1.4rem);letter-spacing:-.02em;font-weight:650;line-height:1.2}
+  .match .sub{color:var(--ink-dim);font-size:13.5px;margin-top:6px}
+  .match-read{
+    display:flex;gap:22px;font-family:var(--mono);font-size:12px;color:var(--ink-faint);
+    border-top:1px solid var(--line-soft);padding-top:16px;flex-wrap:wrap;
+  }
+  .match-read b{display:block;font-weight:600;font-size:15px;color:var(--ink);margin-top:2px}
+  .match-read .gap b{color:var(--accent)}
+  .replay-chip{
+    position:absolute;top:0;right:0;
+    font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-faint);background:rgba(255,255,255,.04);
+    padding:6px 14px;border-bottom-left-radius:12px;border-left:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);
+  }
+
+  /* ---------- app + glasses ---------- */
+  .app-grid{display:grid;grid-template-columns:1fr;gap:56px;align-items:center}
+  @media(min-width:960px){.app-grid{grid-template-columns:1.05fr .95fr;gap:80px}}
+  .check-list{list-style:none;margin-top:34px;display:grid;gap:16px}
+  .check-list li{display:flex;gap:14px;align-items:flex-start;color:var(--ink-dim);font-size:15px}
+  .check-list li svg{flex:none;margin-top:3px}
+  .check-list li strong{color:var(--ink);font-weight:600}
+  .store-badge{
+    display:inline-flex;align-items:center;gap:12px;margin-top:36px;
+    border:1px solid var(--line);border-radius:14px;padding:12px 22px;
+    background:rgba(255,255,255,.03);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+    transition:border-color .3s,transform .2s cubic-bezier(.16,1,.3,1);
+  }
+  .store-badge:hover{border-color:rgba(255,255,255,.22)}
+  .store-badge:active{transform:scale(.98)}
+  .store-badge .lines{line-height:1.25}
+  .store-badge .lines small{display:block;font-size:11px;color:var(--ink-faint);letter-spacing:.06em;text-transform:uppercase}
+  .store-badge .lines b{font-size:16px;font-weight:650;letter-spacing:-.01em}
+  .badge-fine{display:block;margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+  .phone-frame svg{width:100%;max-width:420px;height:auto;display:block;margin:0 auto}
+
+  /* ---------- final CTA ---------- */
+  .final{
+    text-align:left;border-top:1px solid var(--line);
+  }
+  .final h2{max-width:26ch}
+  .final .cta-row{margin-top:40px}
+
+  /* ---------- footer ---------- */
+  footer{border-top:1px solid var(--line);background:var(--bg-raise)}
+  .foot-in{
+    padding:56px 0 40px;
+    display:grid;gap:36px;grid-template-columns:1fr;
+  }
+  @media(min-width:768px){.foot-in{grid-template-columns:1.4fr 1fr}}
+  .foot-links{display:flex;gap:28px;font-size:14px;color:var(--ink-dim);flex-wrap:wrap}
+  .foot-links a:hover{color:var(--ink)}
+  .fine{
+    font-size:12.5px;color:var(--ink-faint);max-width:72ch;line-height:1.7;
+    border-top:1px solid var(--line-soft);padding:24px 0 0;margin-top:8px;
+  }
+  .foot-bottom{
+    display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    padding-bottom:44px;font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);
+  }
+</style>
+</head>
+<body>
+
+<!-- ======================= NAV ======================= -->
+<nav>
+  <div class="wrap nav-in">
+    <a class="wordmark" href="/" aria-label="ReLoop home">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+        <rect x="1" y="8" width="11" height="9" rx="3.5" stroke="#3ce08a" stroke-width="1.8"/>
+        <rect x="14" y="8" width="11" height="9" rx="3.5" stroke="#3ce08a" stroke-width="1.8"/>
+        <path d="M12 11h2" stroke="#3ce08a" stroke-width="1.8" stroke-linecap="round"/>
+        <circle cx="19.5" cy="12.5" r="2" fill="#3ce08a"/>
+      </svg>
+      ReLoop
+    </a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#superbowl">Super Bowl LI</a>
+      <a href="#sports">Five sports</a>
+      <a href="#app">The app</a>
+    </div>
+    <a class="nav-cta" href="/">Try it live</a>
+  </div>
+</nav>
+
+<!-- ======================= HERO ======================= -->
+<header class="wrap hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+
+  <div class="hero-copy">
+    <span class="eyebrow rv"><span class="dot"></span>Live on Meta Ray-Ban glasses</span>
+    <h1 class="rv rv-d1">Look at the game.<br><span class="ghost">See the probability.</span></h1>
+    <p class="hero-sub rv rv-d2">
+      Point your glasses at any live broadcast. ReLoop reads the game state,
+      runs a <strong>model estimate</strong> of the outcome, and compares it with the live
+      <strong>market-implied probability</strong>. The difference — the potential mispricing —
+      appears in your line of sight. No app-switching. No searching for contracts. One look.
+    </p>
+    <div class="cta-row rv rv-d3">
+      <a class="btn btn-solid" href="/">
+        Try it live
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M2 7.5h10M8.5 3.5l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a class="btn btn-ghost" href="/capture">Connect your glasses</a>
+    </div>
+    <p class="hero-note rv rv-d4">NBA &middot; UFC &middot; Soccer &middot; NFL &middot; Golf — plus four famous replays you can re-live with the edge visible.</p>
+  </div>
+
+  <div class="hero-visual rv rv-d2" aria-hidden="true">
+    <div class="hud-float">
+    <svg viewBox="0 0 560 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stylized glasses lens showing a live probability readout">
+      <defs>
+        <linearGradient id="lensGlass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#141a1e"/>
+          <stop offset="1" stop-color="#0b0e10"/>
+        </linearGradient>
+        <linearGradient id="lensEdge" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="rgba(60,224,138,.5)"/>
+          <stop offset=".5" stop-color="rgba(255,255,255,.12)"/>
+          <stop offset="1" stop-color="rgba(60,224,138,.25)"/>
+        </linearGradient>
+        <clipPath id="lensClip"><rect x="60" y="70" width="440" height="290" rx="60"/></clipPath>
+      </defs>
+
+      <!-- temple arm hint -->
+      <path d="M500 120 h34 a12 12 0 0 1 12 12 v10" stroke="rgba(255,255,255,.14)" stroke-width="6" stroke-linecap="round"/>
+      <path d="M60 120 h-24 a12 12 0 0 0 -12 12 v10" stroke="rgba(255,255,255,.14)" stroke-width="6" stroke-linecap="round"/>
+
+      <!-- lens body -->
+      <rect x="60" y="70" width="440" height="290" rx="60" fill="url(#lensGlass)"/>
+      <rect x="60.75" y="70.75" width="438.5" height="288.5" rx="59.25" stroke="url(#lensEdge)" stroke-width="1.5"/>
+      <rect x="68" y="78" width="424" height="274" rx="52" stroke="rgba(255,255,255,.05)" stroke-width="1"/>
+
+      <g clip-path="url(#lensClip)">
+        <!-- faint court lines inside lens -->
+        <circle cx="280" cy="420" r="150" stroke="rgba(255,255,255,.05)" stroke-width="1.5"/>
+        <circle cx="280" cy="420" r="220" stroke="rgba(255,255,255,.035)" stroke-width="1.5"/>
+        <path d="M60 330 h440" stroke="rgba(255,255,255,.05)" stroke-width="1.5"/>
+        <!-- scanline -->
+        <g class="scanline">
+          <rect x="60" y="96" width="440" height="2" fill="rgba(60,224,138,.28)"/>
+          <rect x="60" y="98" width="440" height="14" fill="rgba(60,224,138,.05)"/>
+        </g>
+      </g>
+
+      <!-- HUD readout -->
+      <g font-family="SF Mono,ui-monospace,Menlo,Consolas,monospace">
+        <text x="96" y="118" font-size="12" letter-spacing="2.5" fill="#5c6664">BOS vs NYK &#183; 4Q 02:14</text>
+        <circle cx="452" cy="113" r="4" fill="#3ce08a"><animate attributeName="opacity" values="1;.3;1" dur="2.2s" repeatCount="indefinite"/></circle>
+        <text x="463" y="118" font-size="11" letter-spacing="1.5" fill="#3ce08a" text-anchor="start"></text>
+
+        <!-- model row -->
+        <text x="96" y="172" font-size="13" letter-spacing="2" fill="#9aa3a1">MODEL ESTIMATE</text>
+        <text x="96" y="216" font-size="42" font-weight="600" fill="#eef2f1">BOS 68%</text>
+
+        <!-- market row -->
+        <text x="96" y="262" font-size="13" letter-spacing="2" fill="#9aa3a1">MARKET-IMPLIED</text>
+        <text x="96" y="300" font-size="30" fill="#9aa3a1">59%</text>
+
+        <!-- gap chip -->
+        <rect x="330" y="238" width="150" height="66" rx="14" fill="rgba(60,224,138,.1)" stroke="rgba(60,224,138,.4)"/>
+        <text x="348" y="264" font-size="11" letter-spacing="2" fill="#3ce08a">GAP</text>
+        <text x="348" y="292" font-size="26" font-weight="600" fill="#3ce08a">+9 pts</text>
+
+        <text x="96" y="336" font-size="11" letter-spacing="1.5" fill="#5c6664">STATE CONFIDENCE: HIGH &#183; DATA 0.9s AGO</text>
+      </g>
+
+      <!-- nose bridge -->
+      <path d="M58 200 q-20 14 -20 40" stroke="rgba(255,255,255,.12)" stroke-width="5" stroke-linecap="round"/>
+    </svg>
+    </div>
+  </div>
+</header>
+
+<!-- ======================= STAT BAND ======================= -->
+<div class="band">
+  <div class="wrap band-in">
+    <div class="stat rv"><b><em>5</em> sports</b><span>NBA, UFC, soccer, NFL, and golf — one glance works across all of them.</span></div>
+    <div class="stat rv rv-d1"><b>&lt;2s</b><span>Glance-to-edge. A stable scoreboard change becomes a readable comparison in under two seconds.*</span></div>
+    <div class="stat rv rv-d2"><b><em>1</em> look</b><span>No market search, no second screen. The broadcast you are already watching is the input.</span></div>
+    <div class="stat rv rv-d3"><b>0 typing</b><span>Nothing to enter. The system resolves the game, the contract, and the comparison on its own.</span></div>
+  </div>
+</div>
+
+<!-- ======================= HOW IT WORKS ======================= -->
+<section id="how" class="wrap">
+  <span class="kicker rv">How it works</span>
+  <h2 class="rv rv-d1">Three things happen between your eyes and the number.</h2>
+  <p class="lead rv rv-d2">The broadcast is the interface. You never open a market list, never type a team name, never do probability math on your phone during a possession.</p>
+
+  <div class="steps">
+    <!-- step 1 -->
+    <div class="step rv">
+      <div class="step-no">01</div>
+      <div class="step-icon">
+        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="4" y="22" width="24" height="18" rx="7" stroke="#3ce08a" stroke-width="2.5"/>
+          <rect x="36" y="22" width="24" height="18" rx="7" stroke="#3ce08a" stroke-width="2.5"/>
+          <path d="M28 28h8" stroke="#3ce08a" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="49" cy="31" r="3.5" fill="#3ce08a"/>
+        </svg>
+      </div>
+      <div>
+        <h3>Look</h3>
+        <p>Watch the game like you already do — TV, laptop, a bar screen. Your Meta Ray-Ban glasses see what you see. That is the entire setup.</p>
+      </div>
+      <div class="step-read">
+        <i>frame captured</i><br>
+        <u>source: glasses &middot; 1920&#215;1080</u>
+      </div>
+    </div>
+
+    <!-- step 2 -->
+    <div class="step rv">
+      <div class="step-no">02</div>
+      <div class="step-icon">
+        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <rect x="8" y="10" width="48" height="34" rx="6" stroke="#3ce08a" stroke-width="2.5"/>
+          <rect x="14" y="30" width="22" height="9" rx="2.5" fill="rgba(60,224,138,.18)" stroke="#3ce08a" stroke-width="1.8"/>
+          <path d="M20 52h24M32 44v8" stroke="#3ce08a" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M16 18h14M16 23h9" stroke="rgba(255,255,255,.3)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <h3>We read the game</h3>
+        <p>AI vision finds the scoreboard, reads teams, score, period, and clock, and cross-checks frames so a replay or a shaky glance never poisons the state. Low confidence? It waits rather than guesses.</p>
+      </div>
+      <div class="step-read">
+        <i>state accepted</i><br>
+        <u>BOS 104 — NYK 101 &middot; 4Q 02:14 &middot; conf 0.95</u>
+      </div>
+    </div>
+
+    <!-- step 3 -->
+    <div class="step rv">
+      <div class="step-no">03</div>
+      <div class="step-icon">
+        <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <path d="M8 46 L22 32 L34 40 L56 14" stroke="#3ce08a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="56" cy="14" r="4" fill="#3ce08a"/>
+          <path d="M8 54h48" stroke="rgba(255,255,255,.25)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <h3>See the edge</h3>
+        <p>Our probability engine turns the game state into a model estimate, pulls the live market-implied probability for the same outcome, and shows you the gap in percentage points — a potential mispricing worth a second look, not a promise.</p>
+      </div>
+      <div class="step-read">
+        <i>model 68% &middot; market 59%</i><br>
+        <u>gap +9 pts &middot; model higher</u>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SUPER BOWL LI ======================= -->
+<section id="superbowl" class="sb">
+  <div class="wrap sb-grid">
+    <div>
+      <span class="kicker rv">Super Bowl LI &middot; February 2017</span>
+      <p class="big-quote rv rv-d1">The market said <span class="num">96%</span>.</p>
+      <p class="rv rv-d2">
+        Atlanta led 28&#8211;3 in the third quarter. Live markets priced the Falcons near
+        <span class="num">96%</span> to win. Then Tom Brady authored the largest comeback in
+        Super Bowl history, and that price collapsed to zero in about 20 game minutes.
+      </p>
+      <p class="rv rv-d2">
+        <strong>This is the moment ReLoop is built for.</strong> When the game flips faster
+        than the market breathes, the gap between what a model estimates and what the market
+        implies is exactly the thing you want in your line of sight — live, at the moment it opens.
+      </p>
+      <p class="sb-fine rv rv-d3">Replay it yourself: watch the model estimate and the market-implied price diverge play by play.</p>
+    </div>
+
+    <div class="chart-card rv rv-d2">
+      <div class="chart-head">
+        <b>ATL win probability &middot; market-implied</b>
+        <span>SB LI replay</span>
+      </div>
+      <svg viewBox="0 0 520 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Chart of Atlanta's market-implied win probability collapsing from 96 percent to zero in Super Bowl LI">
+        <!-- gridlines -->
+        <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+          <path d="M50 30 H500"/><path d="M50 90 H500"/><path d="M50 150 H500"/><path d="M50 210 H500"/><path d="M50 270 H500"/>
+        </g>
+        <g font-family="SF Mono,ui-monospace,Menlo,Consolas,monospace" font-size="11" fill="#5c6664">
+          <text x="14" y="34">100</text><text x="21" y="94">75</text><text x="21" y="154">50</text><text x="21" y="214">25</text><text x="28" y="274">0</text>
+          <text x="50" y="292">1Q</text><text x="162" y="292">2Q</text><text x="274" y="292">3Q</text><text x="386" y="292">4Q</text><text x="470" y="292">OT</text>
+        </g>
+        <!-- 96% peak marker -->
+        <g class="wp-marker">
+          <line x1="296" y1="39" x2="296" y2="270" stroke="rgba(224,100,60,.35)" stroke-dasharray="3 4"/>
+          <rect x="306" y="28" width="120" height="40" rx="8" fill="rgba(224,100,60,.1)" stroke="rgba(224,100,60,.45)"/>
+          <text x="318" y="45" font-family="SF Mono,ui-monospace,Menlo,Consolas,monospace" font-size="11" fill="#e0643c">ATL 28&#8211;3</text>
+          <text x="318" y="61" font-family="SF Mono,ui-monospace,Menlo,Consolas,monospace" font-size="13" font-weight="600" fill="#e0643c">market 96%</text>
+        </g>
+        <!-- the collapse line -->
+        <path class="wp-line" d="M50 165 C 90 158, 120 130, 162 108 C 205 86, 240 60, 296 39 C 330 42, 352 68, 375 105 C 398 145, 415 190, 438 232 C 455 254, 470 266, 500 270"
+              stroke="#e0643c" stroke-width="2.5" stroke-linecap="round"/>
+        <circle class="wp-marker" cx="500" cy="270" r="4.5" fill="#e0643c"/>
+        <text class="wp-marker" x="452" y="258" font-family="SF Mono,ui-monospace,Menlo,Consolas,monospace" font-size="11" fill="#5c6664">final: 0%</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SPORTS GRID ======================= -->
+<section id="sports" class="wrap">
+  <span class="kicker rv">Five sports, four legendary replays</span>
+  <h2 class="rv rv-d1">Re-live the wildest markets in sports — with the gap on screen.</h2>
+  <p class="lead rv rv-d2">Every famous-match run uses a historical replay. Point your glasses at the replay and watch what the readout would have shown.</p>
+
+  <div class="matches">
+    <!-- NBA -->
+    <div class="match m-lg rv">
+      <div class="match-top">
+        <div>
+          <span class="sport-tag">NBA &middot; Live</span>
+          <h3 style="margin-top:16px">Any game, tonight</h3>
+          <p class="sub">The flagship live experience. Look at the broadcast; the model estimate and market-implied probability track every scoreboard change.</p>
+        </div>
+        <svg class="mark" viewBox="0 0 38 38" fill="none" aria-hidden="true"><circle cx="19" cy="19" r="15" stroke="#3ce08a" stroke-width="2"/><path d="M19 4v30M6 12c8 5 18 5 26 0M6 26c8-5 18-5 26 0" stroke="#3ce08a" stroke-width="1.6"/></svg>
+      </div>
+      <div class="match-read num">
+        <div>model<b>68%</b></div>
+        <div>market<b>59%</b></div>
+        <div class="gap">gap<b>+9 pts</b></div>
+      </div>
+    </div>
+
+    <!-- World Cup -->
+    <div class="match m-lg rv rv-d1">
+      <span class="replay-chip">Replay</span>
+      <div class="match-top">
+        <div>
+          <span class="sport-tag">Soccer</span>
+          <h3 style="margin-top:16px">2022 World Cup Final</h3>
+          <p class="sub">Argentina vs France. Two Mbapp&#233; goals in 97 seconds turned a settled market into chaos. Watch the estimate whipsaw in real time.</p>
+        </div>
+        <svg class="mark" viewBox="0 0 38 38" fill="none" aria-hidden="true"><circle cx="19" cy="19" r="15" stroke="#3ce08a" stroke-width="2"/><path d="M19 11l6 4.5-2.3 7h-7.4L13 15.5 19 11z" stroke="#3ce08a" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 4v7M32.5 14.5l-7.5 1M28 31l-5.3-4.5M10 31l5.3-4.5M5.5 14.5l7.5 1" stroke="#3ce08a" stroke-width="1.4"/></svg>
+      </div>
+      <div class="match-read num">
+        <div>79'<b>ARG 87%</b></div>
+        <div>81'<b>ARG 51%</b></div>
+        <div class="gap">swing<b>-36 pts</b></div>
+      </div>
+    </div>
+
+    <!-- UFC 229 -->
+    <div class="match m-md rv">
+      <span class="replay-chip">Replay</span>
+      <div class="match-top">
+        <div>
+          <span class="sport-tag">UFC</span>
+          <h3 style="margin-top:16px">UFC 229</h3>
+          <p class="sub">Khabib vs McGregor. Round-by-round state, fight-ending swings.</p>
+        </div>
+        <svg class="mark" viewBox="0 0 38 38" fill="none" aria-hidden="true"><rect x="6" y="6" width="26" height="26" rx="8" stroke="#3ce08a" stroke-width="2" transform="rotate(45 19 19)"/><circle cx="19" cy="19" r="4" fill="#3ce08a"/></svg>
+      </div>
+      <div class="match-read num">
+        <div>R2<b>KHA 74%</b></div>
+        <div class="gap">gap<b>+11 pts</b></div>
+      </div>
+    </div>
+
+    <!-- Super Bowl LI -->
+    <div class="match m-md rv rv-d1">
+      <span class="replay-chip">Replay</span>
+      <div class="match-top">
+        <div>
+          <span class="sport-tag">NFL</span>
+          <h3 style="margin-top:16px">Super Bowl LI</h3>
+          <p class="sub">28&#8211;3. The 96% that went to zero. The signature swing.</p>
+        </div>
+        <svg class="mark" viewBox="0 0 38 38" fill="none" aria-hidden="true"><ellipse cx="19" cy="19" rx="15" ry="9.5" stroke="#3ce08a" stroke-width="2" transform="rotate(-32 19 19)"/><path d="M14 22l10-6M16 24.5l1.7-1M20.3 21.9l1.7-1M24.7 19.2l1.7-1" stroke="#3ce08a" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="match-read num">
+        <div>3Q<b>ATL 96%</b></div>
+        <div class="gap">final<b>0%</b></div>
+      </div>
+    </div>
+
+    <!-- Masters -->
+    <div class="match m-md rv rv-d2">
+      <span class="replay-chip">Replay</span>
+      <div class="match-top">
+        <div>
+          <span class="sport-tag">Golf</span>
+          <h3 style="margin-top:16px">2019 Masters</h3>
+          <p class="sub">Tiger's Sunday charge. Hole-by-hole probability, leaderboard reads.</p>
+        </div>
+        <svg class="mark" viewBox="0 0 38 38" fill="none" aria-hidden="true"><path d="M12 32V6l16 5-16 5" stroke="#3ce08a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><path d="M6 32h14" stroke="#3ce08a" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <div class="match-read num">
+        <div>hole 12<b>TW 31%</b></div>
+        <div class="gap">hole 15<b>TW 58%</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= APP + GLASSES ======================= -->
+<section id="app" class="sb">
+  <div class="wrap app-grid">
+    <div>
+      <span class="kicker rv">Built for Meta Ray-Ban</span>
+      <h2 class="rv rv-d1">Your glasses see the game. Your phone keeps the receipts.</h2>
+      <p class="lead rv rv-d2">The companion iOS app pairs with your glasses, streams the readout, and keeps a session log of every state, estimate, and market snapshot — with timestamps and confidence, so you can audit what you saw.</p>
+
+      <ul class="check-list">
+        <li class="rv"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="8" stroke="#3ce08a" stroke-width="1.5"/><path d="M5.5 9.2l2.3 2.3 4.7-4.8" stroke="#3ce08a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span><strong>Glance or listen.</strong> Read the HUD, or hear it: "Boston 68 percent. Market 59. Model is 9 points higher."</span></li>
+        <li class="rv rv-d1"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="8" stroke="#3ce08a" stroke-width="1.5"/><path d="M5.5 9.2l2.3 2.3 4.7-4.8" stroke="#3ce08a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span><strong>Confidence gating.</strong> If the scoreboard is unreadable or market data is stale, it says so instead of showing a stale number.</span></li>
+        <li class="rv rv-d2"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="8" stroke="#3ce08a" stroke-width="1.5"/><path d="M5.5 9.2l2.3 2.3 4.7-4.8" stroke="#3ce08a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span><strong>Privacy by default.</strong> Frames are processed for the analysis you asked for. Raw footage is not stored by default.</span></li>
+      </ul>
+
+      <a class="store-badge rv rv-d3" href="/capture" aria-label="Get the ReLoop companion app">
+        <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="31" height="31" rx="8.5" stroke="rgba(255,255,255,.25)"/>
+          <rect x="8" y="13" width="8" height="7" rx="3" stroke="#3ce08a" stroke-width="1.7"/>
+          <rect x="18" y="13" width="8" height="7" rx="3" stroke="#3ce08a" stroke-width="1.7"/>
+          <path d="M16 15.5h2" stroke="#3ce08a" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+        <span class="lines"><small>ReLoop companion</small><b>Get the iOS app</b></span>
+      </a>
+      <small class="badge-fine rv rv-d4">Stylized ReLoop artwork. Requires camera-enabled smart glasses or a phone camera for capture.</small>
+    </div>
+
+    <div class="phone-frame rv rv-d2" aria-hidden="true">
+      <svg viewBox="0 0 340 560" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stylized companion phone app showing the live comparison card">
+        <defs>
+          <linearGradient id="phoneBody" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#15191c"/><stop offset="1" stop-color="#0c0f11"/>
+          </linearGradient>
+        </defs>
+        <rect x="20" y="10" width="300" height="540" rx="44" fill="url(#phoneBody)" stroke="rgba(255,255,255,.14)" stroke-width="1.5"/>
+        <rect x="26" y="16" width="288" height="528" rx="38" stroke="rgba(255,255,255,.05)"/>
+        <rect x="130" y="26" width="80" height="20" rx="10" fill="#060809"/>
+        <g font-family="SF Mono,ui-monospace,Menlo,Consolas,monospace">
+          <!-- header -->
+          <text x="46" y="86" font-size="11" letter-spacing="2" fill="#5c6664">LIVE SESSION</text>
+          <circle cx="284" cy="82" r="4" fill="#3ce08a"><animate attributeName="opacity" values="1;.3;1" dur="2.2s" repeatCount="indefinite"/></circle>
+          <text x="46" y="112" font-size="17" font-weight="600" fill="#eef2f1" font-family="system-ui,sans-serif">Celtics vs Knicks</text>
+          <text x="46" y="132" font-size="11" fill="#5c6664">4Q &#183; 02:14 &#183; BOS 104&#8211;101</text>
+
+          <!-- main card -->
+          <rect x="42" y="152" width="256" height="150" rx="18" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.1)"/>
+          <text x="62" y="184" font-size="10" letter-spacing="2" fill="#9aa3a1">MODEL ESTIMATE</text>
+          <text x="62" y="222" font-size="34" font-weight="600" fill="#eef2f1">68%</text>
+          <text x="62" y="252" font-size="10" letter-spacing="2" fill="#9aa3a1">MARKET-IMPLIED</text>
+          <text x="62" y="280" font-size="22" fill="#9aa3a1">59%</text>
+          <rect x="192" y="196" width="88" height="52" rx="12" fill="rgba(60,224,138,.1)" stroke="rgba(60,224,138,.4)"/>
+          <text x="206" y="217" font-size="9" letter-spacing="1.5" fill="#3ce08a">GAP</text>
+          <text x="206" y="238" font-size="18" font-weight="600" fill="#3ce08a">+9 pts</text>
+
+          <!-- confidence row -->
+          <rect x="42" y="316" width="256" height="54" rx="14" fill="rgba(255,255,255,.02)" stroke="rgba(255,255,255,.07)"/>
+          <text x="62" y="339" font-size="10" letter-spacing="1.5" fill="#5c6664">STATE CONFIDENCE</text>
+          <text x="62" y="357" font-size="12" fill="#3ce08a">HIGH &#183; 0.95</text>
+          <text x="204" y="339" font-size="10" letter-spacing="1.5" fill="#5c6664">DATA AGE</text>
+          <text x="204" y="357" font-size="12" fill="#eef2f1">0.9s</text>
+
+          <!-- session log -->
+          <text x="46" y="404" font-size="10" letter-spacing="2" fill="#5c6664">SESSION LOG</text>
+          <rect x="42" y="416" width="256" height="34" rx="10" fill="rgba(255,255,255,.02)"/>
+          <text x="56" y="437" font-size="10" fill="#9aa3a1">20:14:32 &#183; BOS 104&#8211;101 &#183; model 68 / mkt 59</text>
+          <rect x="42" y="456" width="256" height="34" rx="10" fill="rgba(255,255,255,.02)"/>
+          <text x="56" y="477" font-size="10" fill="#9aa3a1">20:13:58 &#183; BOS 102&#8211;101 &#183; model 61 / mkt 58</text>
+          <rect x="42" y="496" width="256" height="34" rx="10" fill="rgba(255,255,255,.02)"/>
+          <text x="56" y="517" font-size="10" fill="#5c6664">20:13:41 &#183; scoreboard unclear &#183; holding state</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= FINAL CTA ======================= -->
+<section class="wrap final">
+  <span class="kicker rv">Get in</span>
+  <h2 class="rv rv-d1">The next 28&#8211;3 is coming. This time, you'll see the number move.</h2>
+  <p class="lead rv rv-d2">Run it live in your browser right now, or connect your glasses and point them at tonight's game.</p>
+  <div class="cta-row rv rv-d3">
+    <a class="btn btn-solid" href="/">
+      Try it live
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true"><path d="M2 7.5h10M8.5 3.5l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+    <a class="btn btn-ghost" href="/capture">Connect your glasses</a>
+  </div>
+</section>
+
+<!-- ======================= FOOTER ======================= -->
+<footer>
+  <div class="wrap">
+    <div class="foot-in">
+      <div>
+        <a class="wordmark" href="/" aria-label="ReLoop home">
+          <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+            <rect x="1" y="8" width="11" height="9" rx="3.5" stroke="#3ce08a" stroke-width="1.8"/>
+            <rect x="14" y="8" width="11" height="9" rx="3.5" stroke="#3ce08a" stroke-width="1.8"/>
+            <path d="M12 11h2" stroke="#3ce08a" stroke-width="1.8" stroke-linecap="round"/>
+            <circle cx="19.5" cy="12.5" r="2" fill="#3ce08a"/>
+          </svg>
+          ReLoop
+        </a>
+        <p class="fine">
+          Uses historical replays where live data is unavailable.
+          Estimates are model outputs, not financial advice. A displayed model&#8211;market gap is a
+          signal to inspect, not a prediction of profit. Probabilities are estimates and can be wrong.
+        </p>
+      </div>
+      <div>
+        <div class="foot-links">
+          <a href="/">Live app</a>
+          <a href="/capture">Connect glasses</a>
+          <a href="/data">Data &amp; methodology</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>&#169; 2026 ReLoop. Not affiliated with Meta, Apple, the NBA, NFL, UFC, FIFA, or Augusta National.</span>
+      <span>Look &#8594; Understand &#8594; Estimate &#8594; Compare &#8594; Inform</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var els = document.querySelectorAll('.rv');
+  if(!('IntersectionObserver' in window)){
+    for(var i=0;i<els.length;i++){ els[i].classList.add('in'); }
+    return;
+  }
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  },{threshold:0.15,rootMargin:'0px 0px -40px 0px'});
+  els.forEach(function(el){ io.observe(el); });
+
+  // chart draw-in: the .chart-card is itself a .rv, so the .in class
+  // added above also triggers .wp-line / .wp-marker transitions.
+})();
+</script>
+
+</body>
+</html>

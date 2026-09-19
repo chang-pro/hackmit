@@ -1,0 +1,415 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0CE92461825833FF8AF73202 /* CameraStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FC38D5126BFE7E6EA0A436B /* CameraStreamer.swift */; };
+		14C82E41AB2CC8251F79EB10 /* GlassesStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627FF8D1FB9297CF6F6663E2 /* GlassesStreamer.swift */; };
+		43724815E65EC3055236CE15 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23566C5718AF1CA6B9FAB540 /* Theme.swift */; };
+		4AE6DB57B944AA2C4610BBBE /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = E6E8C3F666E8D810AEEF61FF /* MWDATCamera */; };
+		518FC9C9C28AFB6F8A001641 /* ApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 785946F25766239E1F69DD91 /* ApiClient.swift */; };
+		54D3BC75D2AA0B13F6E128AB /* GlassesSDKSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6A7A9342D815D74442355E /* GlassesSDKSection.swift */; };
+		5A762F2D299C7809EC960EC8 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = D56F562E6E50527EFC1F2AA6 /* WebRTC */; };
+		6E351139870BCC53B3964154 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4D5C2007592E271E9B3200C9 /* MWDATCore */; };
+		856469D0BCA86391D7D1D6BC /* GlassesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F97D2A97209DEB15AF08E2 /* GlassesView.swift */; };
+		97B6FB7D1FF8A9C79A961FA2 /* RTCPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219B1C918C09F7B903564209 /* RTCPublisher.swift */; };
+		A46E8D29C44309CA80B50C7A /* BloomKnightsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A39A36BE3D6847F83ACFEE1 /* BloomKnightsApp.swift */; };
+		B01F181A45B5FEDA0CE75C2B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52BBDA6EE618C378C7C81F7F /* Models.swift */; };
+		D9EFF928FDC439CA6C1F6B6E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84050F17D30DDEDBD66AF81A /* HomeView.swift */; };
+		DED4F9CD8AA237357813ABA7 /* DemoCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6ABB69B64163244CCC0D00F /* DemoCatalog.swift */; };
+		E914BC32667E5FCEDD5435D4 /* Speaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D7062B3EDC305D78E5F97A /* Speaker.swift */; };
+		EB4C4AD74F4C55BED7B40D2F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 98EE8AE7E22D6709689120A8 /* Assets.xcassets */; };
+		EDC1AF67ADC4DD72823B959B /* SpeakView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 029DB055DCD5D3AA3C13635E /* SpeakView.swift */; };
+		F540B97D61354AC74066EEEC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E84F7DC29985C1ED28EDD5 /* SettingsView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		029DB055DCD5D3AA3C13635E /* SpeakView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakView.swift; sourceTree = "<group>"; };
+		0626C1FA0AD1A552A367CED3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		07F97D2A97209DEB15AF08E2 /* GlassesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesView.swift; sourceTree = "<group>"; };
+		0A39A36BE3D6847F83ACFEE1 /* BloomKnightsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloomKnightsApp.swift; sourceTree = "<group>"; };
+		1FC38D5126BFE7E6EA0A436B /* CameraStreamer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraStreamer.swift; sourceTree = "<group>"; };
+		219B1C918C09F7B903564209 /* RTCPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RTCPublisher.swift; sourceTree = "<group>"; };
+		23566C5718AF1CA6B9FAB540 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		2A6A75A9417CE32DE5A7CD97 /* BloomKnights.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BloomKnights.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		52BBDA6EE618C378C7C81F7F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		627FF8D1FB9297CF6F6663E2 /* GlassesStreamer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesStreamer.swift; sourceTree = "<group>"; };
+		785946F25766239E1F69DD91 /* ApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiClient.swift; sourceTree = "<group>"; };
+		84050F17D30DDEDBD66AF81A /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		98EE8AE7E22D6709689120A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B1E84F7DC29985C1ED28EDD5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E5D7062B3EDC305D78E5F97A /* Speaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speaker.swift; sourceTree = "<group>"; };
+		E6ABB69B64163244CCC0D00F /* DemoCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoCatalog.swift; sourceTree = "<group>"; };
+		FE6A7A9342D815D74442355E /* GlassesSDKSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSDKSection.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		949CBB8F89EC85D2BEC442BF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6E351139870BCC53B3964154 /* MWDATCore in Frameworks */,
+				4AE6DB57B944AA2C4610BBBE /* MWDATCamera in Frameworks */,
+				5A762F2D299C7809EC960EC8 /* WebRTC in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		862EE181071F2DA90410FF2F = {
+			isa = PBXGroup;
+			children = (
+				FD9D092120E66B7F6CBFDB86 /* BloomKnights */,
+				F9822C100848EC45F241CA1D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F9822C100848EC45F241CA1D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2A6A75A9417CE32DE5A7CD97 /* BloomKnights.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FD9D092120E66B7F6CBFDB86 /* BloomKnights */ = {
+			isa = PBXGroup;
+			children = (
+				785946F25766239E1F69DD91 /* ApiClient.swift */,
+				98EE8AE7E22D6709689120A8 /* Assets.xcassets */,
+				0A39A36BE3D6847F83ACFEE1 /* BloomKnightsApp.swift */,
+				1FC38D5126BFE7E6EA0A436B /* CameraStreamer.swift */,
+				E6ABB69B64163244CCC0D00F /* DemoCatalog.swift */,
+				FE6A7A9342D815D74442355E /* GlassesSDKSection.swift */,
+				627FF8D1FB9297CF6F6663E2 /* GlassesStreamer.swift */,
+				07F97D2A97209DEB15AF08E2 /* GlassesView.swift */,
+				84050F17D30DDEDBD66AF81A /* HomeView.swift */,
+				0626C1FA0AD1A552A367CED3 /* Info.plist */,
+				52BBDA6EE618C378C7C81F7F /* Models.swift */,
+				219B1C918C09F7B903564209 /* RTCPublisher.swift */,
+				B1E84F7DC29985C1ED28EDD5 /* SettingsView.swift */,
+				E5D7062B3EDC305D78E5F97A /* Speaker.swift */,
+				029DB055DCD5D3AA3C13635E /* SpeakView.swift */,
+				23566C5718AF1CA6B9FAB540 /* Theme.swift */,
+			);
+			path = BloomKnights;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		16EBB0B0818D97CAFFD1514C /* BloomKnights */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 571832EC8221AF6136CC59AB /* Build configuration list for PBXNativeTarget "BloomKnights" */;
+			buildPhases = (
+				803664DB06647DFC4FA5A1EC /* Sources */,
+				13E8F365D95D496E8140CA96 /* Resources */,
+				949CBB8F89EC85D2BEC442BF /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BloomKnights;
+			packageProductDependencies = (
+				4D5C2007592E271E9B3200C9 /* MWDATCore */,
+				E6E8C3F666E8D810AEEF61FF /* MWDATCamera */,
+				D56F562E6E50527EFC1F2AA6 /* WebRTC */,
+			);
+			productName = BloomKnights;
+			productReference = 2A6A75A9417CE32DE5A7CD97 /* BloomKnights.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9CE596B31BA30A2A36CB377E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					16EBB0B0818D97CAFFD1514C = {
+						DevelopmentTeam = A39763Q74K;
+					};
+				};
+			};
+			buildConfigurationList = 8C8F86308FA417ECC8AF8CF9 /* Build configuration list for PBXProject "BloomKnights" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 862EE181071F2DA90410FF2F;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A60A23E45932CB8CDA1CD044 /* XCRemoteSwiftPackageReference "WebRTC" */,
+				CFA36BD2997318A7277300AB /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F9822C100848EC45F241CA1D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				16EBB0B0818D97CAFFD1514C /* BloomKnights */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		13E8F365D95D496E8140CA96 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EB4C4AD74F4C55BED7B40D2F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		803664DB06647DFC4FA5A1EC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				518FC9C9C28AFB6F8A001641 /* ApiClient.swift in Sources */,
+				A46E8D29C44309CA80B50C7A /* BloomKnightsApp.swift in Sources */,
+				0CE92461825833FF8AF73202 /* CameraStreamer.swift in Sources */,
+				DED4F9CD8AA237357813ABA7 /* DemoCatalog.swift in Sources */,
+				54D3BC75D2AA0B13F6E128AB /* GlassesSDKSection.swift in Sources */,
+				14C82E41AB2CC8251F79EB10 /* GlassesStreamer.swift in Sources */,
+				856469D0BCA86391D7D1D6BC /* GlassesView.swift in Sources */,
+				D9EFF928FDC439CA6C1F6B6E /* HomeView.swift in Sources */,
+				B01F181A45B5FEDA0CE75C2B /* Models.swift in Sources */,
+				97B6FB7D1FF8A9C79A961FA2 /* RTCPublisher.swift in Sources */,
+				F540B97D61354AC74066EEEC /* SettingsView.swift in Sources */,
+				EDC1AF67ADC4DD72823B959B /* SpeakView.swift in Sources */,
+				E914BC32667E5FCEDD5435D4 /* Speaker.swift in Sources */,
+				43724815E65EC3055236CE15 /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0E5AF2D687CAA3E7DFF52DED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = A39763Q74K;
+				INFOPLIST_FILE = BloomKnights/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bloomknights.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		0F68773DA1079A3F113CA521 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3AA4A98297C42D9D7BB1A876 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		42FC7BF33E6DB7B809609D36 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = A39763Q74K;
+				INFOPLIST_FILE = BloomKnights/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.bloomknights.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		571832EC8221AF6136CC59AB /* Build configuration list for PBXNativeTarget "BloomKnights" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				42FC7BF33E6DB7B809609D36 /* Debug */,
+				0E5AF2D687CAA3E7DFF52DED /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8C8F86308FA417ECC8AF8CF9 /* Build configuration list for PBXProject "BloomKnights" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0F68773DA1079A3F113CA521 /* Debug */,
+				3AA4A98297C42D9D7BB1A876 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A60A23E45932CB8CDA1CD044 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 120.0.0;
+			};
+		};
+		CFA36BD2997318A7277300AB /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/facebook/meta-wearables-dat-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4D5C2007592E271E9B3200C9 /* MWDATCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CFA36BD2997318A7277300AB /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCore;
+		};
+		D56F562E6E50527EFC1F2AA6 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A60A23E45932CB8CDA1CD044 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
+		};
+		E6E8C3F666E8D810AEEF61FF /* MWDATCamera */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CFA36BD2997318A7277300AB /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCamera;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 9CE596B31BA30A2A36CB377E /* Project object */;
+}

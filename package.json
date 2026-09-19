@@ -1,0 +1,13 @@
+{
+  "name": "reloop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Wearable item identification: look at a room, get every resellable object priced live on the feed",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env services/api/server.js",
+    "phone:tunnel": "bash scripts/start-phone-tunnel.sh",
+    "test": "node --test \"tests/*.test.js\"",
+    "streams:validate": "node scripts/validate-demo-streams.js"
+  }
+}

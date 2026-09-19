@@ -1,0 +1,10 @@
+{
+  "event_id": "soccer_2022_12_18_arg_fra",
+  "away_team_id": "wc_arg",
+  "home_team_id": "wc_fra",
+  "away_score": 3,
+  "home_score": 3,
+  "period": 4,
+  "clock_seconds": null,
+  "extras": { "minute": 118 }
+}

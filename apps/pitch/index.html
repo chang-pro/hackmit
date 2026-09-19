@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReLoop: Look at the game. See the probability.</title>
+<style>
+  :root{
+    --bg:#0a0b0e;
+    --bg-2:#101218;
+    --ink:#f2f4f6;
+    --ink-dim:#9aa3ad;
+    --ink-faint:#565e68;
+    --acc:#3ef0a8;
+    --acc-dim:rgba(62,240,168,.14);
+    --line:rgba(255,255,255,.08);
+    --sans:"Geist","Satoshi","Outfit",ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"Geist Mono","JetBrains Mono",ui-monospace,"Cascadia Code",Consolas,"SF Mono",Menlo,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--sans);
+    overflow:hidden;-webkit-font-smoothing:antialiased;
+    cursor:default;user-select:none;
+  }
+  /* ---------- deck chrome ---------- */
+  #deck{position:fixed;inset:0}
+  .slide{
+    position:absolute;inset:0;display:none;
+    padding:clamp(2rem,6vw,6rem) clamp(1.5rem,7vw,8rem);
+    flex-direction:column;justify-content:center;
+  }
+  .slide.active{display:flex}
+  #hud{
+    position:fixed;left:0;right:0;bottom:0;z-index:10;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:1.1rem clamp(1.5rem,7vw,8rem);
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;
+    color:var(--ink-faint);pointer-events:none;
+  }
+  #bar{position:fixed;top:0;left:0;height:2px;background:var(--acc);width:0%;
+    transition:width .45s cubic-bezier(.16,1,.3,1);z-index:11}
+  /* ---------- reveal ---------- */
+  @keyframes rise{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+  .active .rv{opacity:0;animation:rise .7s cubic-bezier(.16,1,.3,1) forwards}
+  .active .rv:nth-of-type(1),.active [data-d="1"]{animation-delay:.05s}
+  .active [data-d="2"]{animation-delay:.16s}
+  .active [data-d="3"]{animation-delay:.27s}
+  .active [data-d="4"]{animation-delay:.38s}
+  .active [data-d="5"]{animation-delay:.49s}
+  .active [data-d="6"]{animation-delay:.60s}
+  .active [data-d="7"]{animation-delay:.71s}
+  /* ---------- type ---------- */
+  .kicker{
+    font-family:var(--mono);font-size:.78rem;letter-spacing:.32em;
+    text-transform:uppercase;color:var(--acc);margin-bottom:1.6rem;
+  }
+  h1{font-size:clamp(2.6rem,7.2vw,6.4rem);line-height:.98;letter-spacing:-.035em;font-weight:750}
+  h2{font-size:clamp(2rem,5.2vw,4.4rem);line-height:1.02;letter-spacing:-.03em;font-weight:700}
+  .dim{color:var(--ink-dim)}
+  .faint{color:var(--ink-faint)}
+  .acc{color:var(--acc)}
+  .sub{font-size:clamp(1rem,1.6vw,1.3rem);line-height:1.55;color:var(--ink-dim);max-width:56ch;margin-top:1.6rem}
+  .mono{font-family:var(--mono)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  /* ---------- grid helpers ---------- */
+  .split{display:grid;grid-template-columns:1.15fr 1fr;gap:clamp(2rem,5vw,5rem);align-items:center}
+  .rowline{border-top:1px solid var(--line);padding:1.3rem 0;display:grid;grid-template-columns:3.2rem 1fr;gap:1.4rem;align-items:baseline}
+  .rowline .ix{font-family:var(--mono);font-size:.75rem;color:var(--ink-faint);letter-spacing:.1em}
+  .rowline h3{font-size:clamp(1.05rem,1.8vw,1.45rem);font-weight:640;letter-spacing:-.01em}
+  .rowline p{font-size:.92rem;color:var(--ink-dim);line-height:1.5;margin-top:.35rem;max-width:52ch}
+  /* ---------- slide 1 ---------- */
+  .wordmark{font-weight:800;letter-spacing:-.045em}
+  .wordmark .k{color:var(--acc)}
+  .tick{display:inline-block;width:.55em;height:.55em;background:var(--acc);border-radius:2px;
+    margin-right:.35em;transform:translateY(-.05em)}
+  .titlefoot{margin-top:3.2rem;display:flex;gap:2.2rem;flex-wrap:wrap;
+    font-family:var(--mono);font-size:.74rem;letter-spacing:.18em;color:var(--ink-faint);text-transform:uppercase}
+  /* ---------- HUD mock (slide 4) ---------- */
+  .lens{
+    position:relative;border:1px solid var(--line);border-radius:26px;
+    background:
+      radial-gradient(120% 90% at 70% 10%,rgba(62,240,168,.05),transparent 55%),
+      linear-gradient(180deg,#12151b,#0c0e12);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 30px 60px -30px rgba(0,0,0,.8);
+    padding:1.6rem 1.7rem;font-family:var(--mono);
+  }
+  .lens .cam{position:absolute;top:14px;right:16px;width:9px;height:9px;border-radius:50%;
+    background:var(--acc);box-shadow:0 0 0 3px rgba(62,240,168,.12);animation:blink 2.6s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+  .lens .tag{font-size:.62rem;letter-spacing:.26em;color:var(--ink-faint);text-transform:uppercase}
+  .board{display:flex;align-items:baseline;justify-content:space-between;margin:1.15rem 0 .4rem}
+  .board .team{font-size:clamp(1.5rem,2.6vw,2.2rem);font-weight:700;letter-spacing:-.01em}
+  .board .clk{font-size:.8rem;color:var(--ink-dim)}
+  .divline{border:0;border-top:1px solid var(--line);margin:1.1rem 0}
+  .probrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;text-align:left}
+  .probrow .lbl{font-size:.6rem;letter-spacing:.24em;color:var(--ink-faint);text-transform:uppercase}
+  .probrow .val{font-size:clamp(1.6rem,3vw,2.5rem);font-weight:700;margin-top:.3rem;font-variant-numeric:tabular-nums}
+  .conf{margin-top:1.15rem;font-size:.68rem;letter-spacing:.14em;color:var(--ink-faint)}
+  .conf b{color:var(--acc);font-weight:600}
+  /* ---------- pipeline (slide 5) ---------- */
+  .pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .pipe .st{padding:1.6rem 1.3rem 1.8rem;border-left:1px solid var(--line);position:relative}
+  .pipe .st:first-child{border-left:0}
+  .pipe .n{font-family:var(--mono);font-size:.68rem;color:var(--acc);letter-spacing:.2em}
+  .pipe h3{font-size:clamp(.95rem,1.5vw,1.25rem);margin:.7rem 0 .5rem;letter-spacing:-.01em}
+  .pipe p{font-size:.8rem;color:var(--ink-dim);line-height:1.5}
+  .pipe .st::after{content:"→";position:absolute;right:-.55rem;top:1.45rem;color:var(--ink-faint);font-size:1rem;z-index:1}
+  .pipe .st:last-child::after{content:""}
+  /* ---------- chart (slide 6) ---------- */
+  .chartwrap{border:1px solid var(--line);border-radius:20px;background:var(--bg-2);
+    padding:1.4rem 1.6rem 1rem;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .chartwrap svg{width:100%;height:auto;display:block}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .active #wpline{stroke-dasharray:1400;stroke-dashoffset:1400;animation:draw 2.6s .5s cubic-bezier(.4,0,.2,1) forwards}
+  .active .chartnote{opacity:0;animation:rise .6s 2.5s cubic-bezier(.16,1,.3,1) forwards}
+  /* ---------- sports grid (slide 7) ---------- */
+  .sports{display:grid;grid-template-columns:2fr 1fr 1fr;grid-auto-rows:1fr;gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:18px;overflow:hidden}
+  .sports .cell{background:var(--bg);padding:1.5rem 1.6rem;display:flex;flex-direction:column;justify-content:space-between;min-height:9.5rem;transition:background .3s}
+  .sports .cell:hover{background:var(--bg-2)}
+  .sports .cell.feature{grid-row:span 2}
+  .sports .sp{font-family:var(--mono);font-size:.66rem;letter-spacing:.26em;text-transform:uppercase;color:var(--acc)}
+  .sports h3{font-size:clamp(1.05rem,1.9vw,1.5rem);letter-spacing:-.015em;margin-top:1.2rem;font-weight:680}
+  .sports p{font-size:.8rem;color:var(--ink-dim);margin-top:.4rem;line-height:1.45}
+  /* ---------- stat pair (slide 9) ---------- */
+  .bigstat{font-size:clamp(2.4rem,6vw,5rem);font-weight:750;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
+  .statlbl{font-family:var(--mono);font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);margin-top:.5rem}
+  /* ---------- close ---------- */
+  .center-final{align-items:flex-start}
+  /* ---------- mobile ---------- */
+  @media (max-width:820px){
+    .split{grid-template-columns:1fr;gap:2rem}
+    .pipe{grid-template-columns:1fr;border-left:1px solid var(--line);border-top:0;border-bottom:0}
+    .pipe .st{border-left:0;border-top:1px solid var(--line)}
+    .pipe .st::after{content:""}
+    .sports{grid-template-columns:1fr 1fr}
+    .sports .cell:first-child{grid-column:1/-1}
+    .probrow .val{font-size:1.4rem}
+  }
+  /* faint grain, fixed + inert */
+  #grain{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:.35;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E")}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="grain"></div>
+
+<div id="deck">
+
+  <!-- 1 · TITLE -->
+  <section class="slide active">
+    <div class="kicker rv" data-d="1">Hackathon 2026 &nbsp;·&nbsp; Wearable Visual Intelligence</div>
+    <h1 class="wordmark rv" data-d="2"><span class="tick"></span>BLOOM<span class="k">KNIGHTS</span></h1>
+    <p class="sub rv" data-d="3" style="font-size:clamp(1.2rem,2.4vw,1.9rem);color:var(--ink)">
+      Look at the game. <span class="dim">See the probability.</span>
+    </p>
+    <div class="titlefoot rv" data-d="4">
+      <span>Meta Ray-Ban glasses</span>
+      <span>Live broadcast vision</span>
+      <span>Prediction markets</span>
+    </div>
+  </section>
+
+  <!-- 2 · PROBLEM -->
+  <section class="slide">
+    <div class="kicker rv" data-d="1">The problem</div>
+    <h2 class="rv" data-d="2">Live markets move in seconds.<br>
+      <span class="dim">Following them takes a second screen, a search bar, and both hands.</span></h2>
+    <div style="margin-top:3rem;max-width:44rem">
+      <div class="rowline rv" data-d="3">
+        <span class="ix">01</span>
+        <div><h3>Find the contract</h3><p>Open an app, search the matchup, pick the right market from a list, all while the game keeps going.</p></div>
+      </div>
+      <div class="rowline rv" data-d="4">
+        <span class="ix">02</span>
+        <div><h3>Translate the moment</h3><p>Turn "up 3, two minutes left, no timeouts" into a probability in your head. Most people can't. Fast.</p></div>
+      </div>
+      <div class="rowline rv" data-d="5" style="border-bottom:1px solid var(--line)">
+        <span class="ix">03</span>
+        <div><h3>Beat the clock</h3><p>Live prices reprice on every possession. By the time you've typed, the moment you saw is already gone.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · INSIGHT -->
+  <section class="slide">
+    <div class="split">
+      <div>
+        <div class="kicker rv" data-d="1">The insight</div>
+        <h1 class="rv" data-d="2" style="font-size:clamp(2.8rem,6.5vw,5.6rem)">The live screen<br><span class="acc">is the input.</span></h1>
+        <p class="sub rv" data-d="3">No typing. No search. No second screen. You look at the broadcast. Vision reads the game state, the model estimates the outcome, and the market comparison comes to you.</p>
+      </div>
+      <div class="rv" data-d="4">
+        <div class="mono" style="border-left:2px solid var(--acc);padding:1.2rem 1.6rem;color:var(--ink-dim);font-size:clamp(.85rem,1.3vw,1.05rem);line-height:2">
+          <span class="faint">look</span> → understand<br>
+          <span class="faint">understand</span> → estimate<br>
+          <span class="faint">estimate</span> → compare<br>
+          <span class="faint">compare</span> → <span class="acc">inform</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · PRODUCT -->
+  <section class="slide">
+    <div class="split">
+      <div>
+        <div class="kicker rv" data-d="1">The product</div>
+        <h2 class="rv" data-d="2">A probability layer<br><span class="dim">inside your glasses.</span></h2>
+        <p class="sub rv" data-d="3">Point Meta Ray-Bans at any live broadcast. The scoreboard becomes structured state, the state becomes a model estimate, and the estimate is compared against the live market-implied price. Whispered or glanced in under three seconds.</p>
+      </div>
+      <div class="lens rv" data-d="4">
+        <span class="cam"></span>
+        <div class="tag">Glasses view · Live</div>
+        <div class="board">
+          <span class="team">BOS <span class="acc num">104</span></span>
+          <span class="clk num">Q4 · 2:14</span>
+          <span class="team num" style="color:var(--ink-dim)">101 NYK</span>
+        </div>
+        <hr class="divline">
+        <div class="probrow">
+          <div><div class="lbl">Model est.</div><div class="val acc num">68%</div></div>
+          <div><div class="lbl">Market</div><div class="val num" style="color:var(--ink-dim)">59%</div></div>
+          <div><div class="lbl">Gap</div><div class="val num">+9<span style="font-size:.5em;color:var(--ink-faint)">pts</span></div></div>
+        </div>
+        <div class="conf">state confidence <b>HIGH</b> &nbsp;·&nbsp; market data 0.9s old &nbsp;·&nbsp; potential mispricing</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · HOW IT WORKS -->
+  <section class="slide">
+    <div class="kicker rv" data-d="1">How it works</div>
+    <h2 class="rv" data-d="2">Broadcast in. <span class="dim">Probability out.</span></h2>
+    <div class="pipe rv" data-d="3" style="margin-top:3rem">
+      <div class="st"><div class="n">01 / FRAME</div><h3>Capture</h3><p>Glasses camera samples 1–2 sharp frames per second from the screen you're watching.</p></div>
+      <div class="st"><div class="n">02 / VISION</div><h3>Read</h3><p>Vision model parses the scoreboard into schema-locked JSON: teams, score, period, clock.</p></div>
+      <div class="st"><div class="n">03 / STATE</div><h3>Reconcile</h3><p>Temporal invariants reject replays, cuts, and OCR noise. Scores never go backwards.</p></div>
+      <div class="st"><div class="n">04 / MODEL</div><h3>Estimate</h3><p>Deterministic win-probability engine turns state into a calibrated, bounded estimate.</p></div>
+      <div class="st"><div class="n">05 / MARKET</div><h3>Compare</h3><p>Polymarket adapter pulls the live market-implied price. The gap is the signal.</p></div>
+    </div>
+    <p class="sub rv" data-d="4" style="font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;color:var(--ink-faint)">END-TO-END TARGET: TRUSTED UPDATE WITHIN 2–5 SECONDS OF A STABLE STATE CHANGE</p>
+  </section>
+
+  <!-- 6 · MONEY DEMO -->
+  <section class="slide">
+    <div class="kicker rv" data-d="1">Why live vision matters · Super Bowl LI</div>
+    <h2 class="rv" data-d="2"><span class="num">28–3.</span> <span class="dim">The market said 96% Atlanta.<br>Then the game changed faster than any feed.</span></h2>
+    <div class="chartwrap rv" data-d="3" style="margin-top:2.4rem;max-width:62rem">
+      <svg viewBox="0 0 900 320" role="img" aria-label="Atlanta market-implied win probability collapsing from 96 percent to zero during Super Bowl LI">
+        <!-- gridlines -->
+        <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+          <line x1="60" y1="40"  x2="880" y2="40"/>
+          <line x1="60" y1="110" x2="880" y2="110"/>
+          <line x1="60" y1="180" x2="880" y2="180"/>
+          <line x1="60" y1="250" x2="880" y2="250"/>
+        </g>
+        <g font-family="Consolas,monospace" font-size="12" fill="#565e68">
+          <text x="20" y="44">96%</text>
+          <text x="20" y="184">50%</text>
+          <text x="28" y="254">0%</text>
+          <text x="60"  y="290">Q1</text>
+          <text x="265" y="290">Q2</text>
+          <text x="470" y="290">Q3 · 28–3</text>
+          <text x="700" y="290">Q4</text>
+          <text x="830" y="290">OT</text>
+        </g>
+        <!-- ATL implied prob path: 50% start → 96% peak → 0 -->
+        <path id="wpline" d="M 60 180 L 130 168 L 200 130 L 265 96 L 330 72 L 400 55 L 470 40 L 540 52 L 610 84 L 680 138 L 740 176 L 790 210 L 830 236 L 880 250"
+          fill="none" stroke="#3ef0a8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="470" cy="40" r="5" fill="#3ef0a8"/>
+        <circle cx="880" cy="250" r="5" fill="#3ef0a8"/>
+        <g class="chartnote" font-family="Consolas,monospace" font-size="12">
+          <text x="415" y="24" fill="#3ef0a8">MARKET: 96% ATL</text>
+          <text x="600" y="130" fill="#9aa3ad">17 game-minutes later:</text>
+          <text x="600" y="148" fill="#9aa3ad">a coin flip</text>
+          <text x="760" y="240" fill="#f2f4f6">NE wins in OT</text>
+        </g>
+      </svg>
+    </div>
+    <p class="sub rv" data-d="4" style="margin-top:1.6rem">Every point on that collapse was visible on screen before it was priced in. A system that reads the broadcast state directly can surface the model-market gap the moment the state changes. That gap is a signal to inspect, not a promise of profit.</p>
+  </section>
+
+  <!-- 7 · FIVE SPORTS -->
+  <section class="slide">
+    <div class="kicker rv" data-d="1">Coverage</div>
+    <h2 class="rv" data-d="2">Five sports. <span class="dim">Proven on the most famous broadcasts ever aired.</span></h2>
+    <div class="sports rv" data-d="3" style="margin-top:2.6rem">
+      <div class="cell feature">
+        <span class="sp">NBA · Live</span>
+        <div><h3>Boston vs. New York</h3><p>The primary vertical slice: scoreboard to model estimate to market comparison, live through the glasses.</p></div>
+      </div>
+      <div class="cell">
+        <span class="sp">Soccer</span>
+        <div><h3>2022 World Cup Final</h3><p>ARG–FRA, 3–3. The wildest swing sequence in a final.</p></div>
+      </div>
+      <div class="cell">
+        <span class="sp">UFC</span>
+        <div><h3>UFC 229</h3><p>Khabib vs. McGregor. Round-by-round state, no clock games.</p></div>
+      </div>
+      <div class="cell">
+        <span class="sp">Football</span>
+        <div><h3>Super Bowl LI</h3><p>The 28–3 comeback. The definitive market-collapse case study.</p></div>
+      </div>
+      <div class="cell">
+        <span class="sp">Golf</span>
+        <div><h3>2019 Masters</h3><p>Tiger's Sunday charge, leaderboard state across 18 holes.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · TECH -->
+  <section class="slide">
+    <div class="split">
+      <div>
+        <div class="kicker rv" data-d="1">Under the hood</div>
+        <h2 class="rv" data-d="2">Small, sharp,<br><span class="dim">and built to show.</span></h2>
+        <p class="sub rv" data-d="3">Every layer sits behind an explicit interface: swap the camera, the model, or the market provider without touching the rest.</p>
+      </div>
+      <div>
+        <div class="rowline rv" data-d="3"><span class="ix">A</span><div><h3>Zero-dependency Node core</h3><p>One process, typed contracts between every stage. Nothing to install, nothing to break on stage.</p></div></div>
+        <div class="rowline rv" data-d="4"><span class="ix">B</span><div><h3>Gemini vision, schema-locked</h3><p>Frames in, structured scoreboard JSON out, with per-field confidence scores.</p></div></div>
+        <div class="rowline rv" data-d="5"><span class="ix">C</span><div><h3>Deterministic probability models</h3><p>Explainable per-sport engines: bounded, monotonic, scenario-tested. No black box.</p></div></div>
+        <div class="rowline rv" data-d="6"><span class="ix">D</span><div><h3>Polymarket adapter + iOS app</h3><p>Live market-implied prices behind a clean adapter; a companion app carries the glasses experience.</p></div></div>
+        <div class="rowline rv" data-d="7" style="border-bottom:1px solid var(--line)"><span class="ix">E</span><div><h3>Training-data flywheel</h3><p>Every session logs frame → state → outcome. Usage itself builds the dataset that sharpens the models.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · VISION -->
+  <section class="slide">
+    <div class="kicker rv" data-d="1">Where this goes</div>
+    <h2 class="rv" data-d="2">Two curves are crossing.<br><span class="dim">We're standing at the intersection.</span></h2>
+    <div class="split" style="margin-top:3rem;align-items:start">
+      <div>
+        <div class="rv" data-d="3">
+          <div class="bigstat">Millions</div>
+          <div class="statlbl">AI glasses shipping. The camera is already on your face</div>
+        </div>
+        <div class="rv" data-d="4" style="margin-top:2.4rem">
+          <div class="bigstat acc">Billions</div>
+          <div class="statlbl">In live prediction-market volume, repricing in seconds</div>
+        </div>
+      </div>
+      <div class="rv" data-d="5">
+        <p class="sub" style="margin-top:0">Sports is the wedge, not the ceiling. The same look-to-probability loop extends to every live event with a visible state and a market attached:</p>
+        <p class="mono" style="margin-top:1.4rem;font-size:.82rem;line-height:2.1;color:var(--ink-dim)">
+          esports · elections · award shows<br>
+          financial broadcasts · debates<br>
+          <span class="acc">every live event on earth</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 · CLOSE -->
+  <section class="slide center-final">
+    <div class="kicker rv" data-d="1">Team ReLoop</div>
+    <h1 class="wordmark rv" data-d="2"><span class="tick"></span>BLOOM<span class="k">KNIGHTS</span></h1>
+    <p class="rv" data-d="3" style="font-size:clamp(1.6rem,3.4vw,2.8rem);letter-spacing:-.02em;margin-top:1.8rem;font-weight:650">
+      Wear the edge<span class="acc">.</span>
+    </p>
+    <div class="titlefoot rv" data-d="4">
+      <span>Look at the game</span>
+      <span>See the probability</span>
+    </div>
+  </section>
+
+</div>
+
+<div id="hud">
+  <span>BLOOMKNIGHTS · PITCH</span>
+  <span id="counter">01 / 10</span>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var counter = document.getElementById('counter');
+  var bar = document.getElementById('bar');
+  var i = 0;
+
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+
+  function show(n){
+    if (n < 0 || n >= slides.length) return;
+    slides[i].classList.remove('active');
+    i = n;
+    // force reflow so reveal animations replay
+    void slides[i].offsetWidth;
+    slides[i].classList.add('active');
+    counter.textContent = pad(i + 1) + ' / ' + pad(slides.length);
+    bar.style.width = (((i + 1) / slides.length) * 100) + '%';
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown' || e.key === 'Enter') { e.preventDefault(); show(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') { show(0); }
+    else if (e.key === 'End') { show(slides.length - 1); }
+  });
+
+  document.addEventListener('click', function(e){
+    // left 20% of screen goes back, rest advances
+    if (e.clientX < window.innerWidth * 0.2) show(i - 1);
+    else show(i + 1);
+  });
+
+  var start = parseInt((location.hash || '').replace('#',''), 10);
+  show(!isNaN(start) && start >= 1 && start <= slides.length ? start - 1 : 0);
+})();
+</script>
+</body>
+</html>
