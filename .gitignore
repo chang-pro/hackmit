@@ -50,3 +50,6 @@ build/
 dist/
 .cache/
 .react-router/
+
+
+uv.lock
