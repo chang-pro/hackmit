@@ -411,9 +411,19 @@ export async function createProduct({
       price: formattedPrice,
       url: productUrl,
       previewUrl,
-      // False means the product exists in the admin but its storefront link
-      // will 404. publishError says why.
-      publishedToOnlineStore: Boolean(onlineStoreUrl),
+      // True when the product is actually reachable on the storefront.
+      //
+      // onlineStoreUrl alone is NOT a reliable signal: reading it needs the
+      // read_publications scope, which this app is not granted, so it comes
+      // back null even for products that are live and purchasable. Verified by
+      // hand — a product reporting null here was browsable, added to a cart,
+      // had its quantity changed and reached checkout. Trusting it alone
+      // reported every successful publish as a failure.
+      //
+      // So a confirmed publish to the Online Store channel counts too.
+      publishedToOnlineStore:
+        Boolean(onlineStoreUrl) ||
+        publication.channels.some((c) => /online store/i.test(c)),
       publishedChannels: publication.channels,
       publishError: publication.error,
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
