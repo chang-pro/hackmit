@@ -133,7 +133,7 @@ final class ComparisonStore: ObservableObject {
     /// Pulls the sport/fixture catalog from the backend so the app's demo
     /// moments always match the server's allowlist (ids can never drift).
     func loadCatalog() async {
-        guard let api = try? ApiClient.fromSettings(),
+        guard let api = try? await ApiClient.fromSettings(),
               let entries = try? await api.sports() else { return }
         var map = momentsBySport
         for entry in entries {
@@ -196,7 +196,7 @@ final class ComparisonStore: ObservableObject {
 
     func refresh() async {
         do {
-            let api = try ApiClient.fromSettings()
+            let api = try await ApiClient.fromSettings()
             let result = try await api.comparison(sport: sport.rawValue, fixture: moment.fixture)
             latest = result
             errorText = nil

@@ -68,6 +68,7 @@
     <div id="total">$0</div>
     <div id="cap">estimated resale value</div>
     <div id="list"></div>
+    <div id="pricingSources" style="font-size:12px;line-height:1.5;margin-top:12px"></div>
     <div id="bar">
       <span><span class="dot" id="dot"></span> <span id="state">no frames</span></span>
       <span>age <b id="age">—</b></span>
@@ -149,11 +150,35 @@ async function pollItems() {
   } catch { return; }
 
   if (data.error || !Array.isArray(data.items)) {
+    $("pricingSources").replaceChildren();
+    delete $("pricingSources").dataset.result;
     // A failing model is worth saying out loud rather than showing an empty
     // list that looks like "nothing here is worth anything".
     $("pAge").textContent = data?.queue?.last_error ? "error" : "—";
     if (data?.queue?.last_error) $("msg").textContent = "Pricing error: " + data.queue.last_error;
     return;
+  }
+  const refs = $("pricingSources");
+  if (refs.dataset.result !== data.generated_at) {
+    refs.dataset.result = data.generated_at;
+    refs.replaceChildren();
+    for (const warning of data.warnings ?? []) {
+      const p = document.createElement("p"); p.textContent = warning; refs.append(p);
+    }
+    for (const source of data.sources ?? []) {
+      if (!/^https?:\/\//.test(source.url)) continue;
+      const a = document.createElement("a");
+      a.href = source.url; a.textContent = source.title || "Source";
+      a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.style.cssText = "color:#a7dcff;display:block"; refs.append(a);
+    }
+    const html = data.grounding_metadata?.searchEntryPoint?.renderedContent;
+    if (html) {
+      const f = document.createElement("iframe");
+      f.title = "Google Search suggestions";
+      f.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
+      f.srcdoc = html; f.style.cssText = "width:100%;border:0"; refs.append(f);
+    }
   }
   const items = data.items;
   $("total").textContent = "$" + (data.total_value_usd ?? 0);
@@ -166,6 +191,7 @@ async function pollItems() {
     const n = document.createElement("span");
     n.className = "n";
     n.textContent = it.label;
+    row.title = it.price_basis || "Estimated resale value";
     const p = document.createElement("span");
     p.className = "p";
     p.textContent = "$" + it.price_usd;
