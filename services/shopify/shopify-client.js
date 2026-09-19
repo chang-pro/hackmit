@@ -163,6 +163,36 @@ mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
 }
 `;
 
+const PRODUCT_VARIANTS_BULK_UPDATE_MUTATION = `
+mutation ProductVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+    productVariants {
+      id
+      price
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+`;
+
+const PRODUCT_VARIANT_UPDATE_MUTATION = `
+mutation ProductVariantUpdate($input: ProductVariantInput!) {
+  productVariantUpdate(input: $input) {
+    productVariant {
+      id
+      price
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+`;
+
 /**
  * Creates a new product listing in the Shopify store.
  *
@@ -192,11 +222,6 @@ export async function createProduct({
     descriptionHtml,
     tags,
     status,
-    variants: [
-      {
-        price: Number(price).toFixed(2),
-      },
-    ],
   };
 
   const media = imageUrl
@@ -241,6 +266,39 @@ export async function createProduct({
 
   const prod = payload?.product;
   const numId = prod.id.split("/").pop();
+  const formattedPrice = Number(price).toFixed(2);
+  const variantId = prod?.variants?.nodes?.[0]?.id;
+
+  if (variantId && price !== undefined && price !== null) {
+    try {
+      const updateData = await shopifyGraphql(
+        PRODUCT_VARIANTS_BULK_UPDATE_MUTATION,
+        {
+          productId: prod.id,
+          variants: [{ id: variantId, price: formattedPrice }],
+        },
+        customFetch
+      );
+      if (updateData?.productVariantsBulkUpdate?.userErrors?.length) {
+        await shopifyGraphql(
+          PRODUCT_VARIANT_UPDATE_MUTATION,
+          { input: { id: variantId, price: formattedPrice } },
+          customFetch
+        );
+      }
+    } catch {
+      try {
+        await shopifyGraphql(
+          PRODUCT_VARIANT_UPDATE_MUTATION,
+          { input: { id: variantId, price: formattedPrice } },
+          customFetch
+        );
+      } catch (err) {
+        console.warn("Could not set variant price:", err.message);
+      }
+    }
+  }
+
   return {
     dry_run: false,
     product: {
@@ -248,7 +306,7 @@ export async function createProduct({
       title: prod.title,
       handle: prod.handle,
       status: prod.status,
-      price: prod.variants?.nodes?.[0]?.price ?? Number(price).toFixed(2),
+      price: formattedPrice,
       url: `https://${cleanDomain}/products/${prod.handle}`,
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
     },
