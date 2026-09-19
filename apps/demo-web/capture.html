@@ -537,6 +537,8 @@ let theaterSourceGeneration = 0;
 let lastTheaterSource = "none";
 let analysisRefreshInFlight = false;
 
+let lastItemSignature = "";
+
 const DETECTION_STYLES = {
   athlete: { stroke: "#83e9ff", fill: "rgba(87, 188, 255, .14)", glow: "rgba(87, 188, 255, .32)" },
   player: { stroke: "#83e9ff", fill: "rgba(87, 188, 255, .14)", glow: "rgba(87, 188, 255, .32)" },
@@ -664,7 +666,13 @@ function clearRenderedInsight({ queue = null, resetResearch = true } = {}) {
   setPredictionStatus(null, false);
   $("roGame").textContent = "—";
   $("roModel").textContent = "—";
+  // The signature guard below only tweens on CHANGE, so clearing the number
+  // without clearing the signature leaves the next identical result unrendered.
+  lastItemSignature = "";
   $("roModel").dataset.v = "";
+  $("itemList").hidden = true;
+  $("itemList").replaceChildren();
+  clearVisualDetections();
   $("roOutcome").textContent = "Estimated resale value";
   $("roMarket").textContent = "MKT —";
   $("roGap").textContent = "—";
@@ -985,11 +993,15 @@ function renderVisualDetections() {
 // tracker keeps running for its frame rate telemetry, but it must not paint
 // over the prices between model passes.
 const ITEM_BOX_TTL_MS = 12_000;
-let lastItemBoxesAt = 0;
+// When the priced result was GENERATED, not when it was last painted.
+let lastItemResultAt = 0;
+
+function itemBoxesFresh() {
+  return lastItemResultAt > 0 && Date.now() - lastItemResultAt < ITEM_BOX_TTL_MS;
+}
 
 function setVisualDetections(detections, source = "model") {
-  if (source === "items") lastItemBoxesAt = Date.now();
-  else if (Date.now() - lastItemBoxesAt < ITEM_BOX_TTL_MS) {
+  if (source !== "items" && itemBoxesFresh()) {
     renderHudTelemetry();
     return;
   }
@@ -1001,7 +1013,7 @@ function setVisualDetections(detections, source = "model") {
 }
 
 function clearVisualDetections() {
-  lastItemBoxesAt = 0;
+  lastItemResultAt = 0;
   visualDetections = [];
   visualDetectionSource = null;
   renderVisualDetections();
@@ -1783,7 +1795,6 @@ function renderInsight(insight) {
 }
 
 // The live view's job: draw every priced item over the feed and total it up.
-let lastItemSignature = "";
 
 function renderItems(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : [];
@@ -1792,22 +1803,35 @@ function renderItems(payload) {
     $("itemList").hidden = true;
     $("itemList").replaceChildren();
     $("roModel").textContent = "$0";
+    lastItemSignature = "";
     $("roSay").textContent = "Nothing resellable in view yet.";
     $("roMarket").textContent = "0 ITEMS";
     $("roGap").textContent = "SCANNING";
     return;
   }
 
-  setVisualDetections(
-    items.map((item) => ({
-      label: item.label,
-      kind: itemKind(item.price_usd),
-      tag: `${item.label.toUpperCase()}  $${item.price_usd}`,
-      bbox: item.bbox,
-      confidence: item.confidence,
-    })),
-    "items"
-  );
+  // Boxes are only meaningful over the image they were measured on. A
+  // webrtc_viewer snapshot is drawn from this very video at its own natural
+  // size, so normalized coordinates round-trip exactly. A still posted from
+  // the phone picker, or a result computed while a local replay is on screen,
+  // has different framing — its boxes would land on unrelated objects, which
+  // reads as the model being wrong. Show the prices, skip the boxes.
+  const boxesMatchFeed = payload.frame_source === "webrtc_viewer" && remoteFeedActive;
+  if (boxesMatchFeed) {
+    lastItemResultAt = Date.parse(payload.generated_at) || Date.now();
+    setVisualDetections(
+      items.map((item) => ({
+        label: item.label,
+        kind: itemKind(item.price_usd),
+        tag: `${item.label.toUpperCase()}  $${item.price_usd}`,
+        bbox: item.bbox,
+        confidence: item.confidence,
+      })),
+      "items"
+    );
+  } else {
+    clearVisualDetections();
+  }
 
   const total = Number(payload.total_value_usd) || 0;
   document.body.classList.add("has-read");

@@ -93,12 +93,15 @@ function sanitizedItem(raw, index) {
   height = Math.max(0, Math.min(1000 - y, height));
   if (width < 2 || height < 2) return null;
 
+  // Clamped, not just floored: an absurd value sums the room total to
+  // Infinity, which serializes as null and renders as "$0" beside a priced row.
   const price = Number(raw?.price_usd);
+  const MAX_PRICE_USD = 1_000_000;
   return {
     id: `item_${String(index + 1).padStart(3, "0")}`,
     label,
     condition: CONDITIONS.has(raw?.condition) ? raw.condition : "good",
-    price_usd: Number.isFinite(price) ? Math.max(0, Math.round(price)) : 0,
+    price_usd: Number.isFinite(price) ? Math.min(MAX_PRICE_USD, Math.max(0, Math.round(price))) : 0,
     price_basis: String(raw?.price_basis ?? "").trim().slice(0, 120),
     bbox: { x, y, width, height },
     confidence: Math.max(0, Math.min(1, Number(raw?.confidence) || 0)),
