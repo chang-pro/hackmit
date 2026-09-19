@@ -26,22 +26,32 @@ test("buildDescriptionHtml formats readable details", () => {
 });
 
 test("publishShopifyListing succeeds in dry-run mode", async () => {
-  const item = {
-    id: "item_999",
-    label: "Wireless gaming headset",
-    condition: "good",
-    price_usd: 45,
-    price_basis: "fair condition baseline",
-    foundBy: "GLASSES",
-  };
+  const prevDryRun = process.env.DRY_RUN;
+  process.env.DRY_RUN = "1";
+  try {
+    const item = {
+      id: "item_999",
+      label: "Wireless gaming headset",
+      condition: "good",
+      price_usd: 45,
+      price_basis: "fair condition baseline",
+      foundBy: "GLASSES",
+    };
 
-  const result = await publishShopifyListing(item);
-  assert.equal(result.success, true);
-  assert.equal(result.dry_run, true);
-  assert.equal(result.item_id, "item_999");
-  assert.equal(result.product.title, "Wireless gaming headset");
-  assert.equal(result.product.price, "45.00");
-  assert.ok(result.product.url.includes("wireless-gaming-headset"));
+    const result = await publishShopifyListing(item);
+    assert.equal(result.success, true);
+    assert.equal(result.dry_run, true);
+    assert.equal(result.item_id, "item_999");
+    assert.equal(result.product.title, "Wireless gaming headset");
+    assert.equal(result.product.price, "45.00");
+    assert.ok(result.product.url.includes("wireless-gaming-headset"));
+  } finally {
+    if (prevDryRun !== undefined) {
+      process.env.DRY_RUN = prevDryRun;
+    } else {
+      delete process.env.DRY_RUN;
+    }
+  }
 });
 
 test("createProduct sends expected GraphQL payload", async () => {
