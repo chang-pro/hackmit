@@ -47,7 +47,7 @@ test("disabled without DATASET_DIR: no writes, record() returns null", async () 
 });
 
 test("enabled: decodes base64 to a .jpg and pairs it with the state label", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "bloomknights-dataset-"));
+  const dir = await mkdtemp(join(tmpdir(), "reloop-dataset-"));
   try {
     const writer = new DatasetWriter({ dir });
     assert.equal(writer.enabled, true);
@@ -74,7 +74,7 @@ test("enabled: decodes base64 to a .jpg and pairs it with the state label", asyn
 });
 
 test("data-URL prefixes are stripped before decoding", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "bloomknights-dataset-"));
+  const dir = await mkdtemp(join(tmpdir(), "reloop-dataset-"));
   try {
     const writer = new DatasetWriter({ dir });
     const result = await writer.record({
@@ -91,7 +91,7 @@ test("data-URL prefixes are stripped before decoding", async () => {
 });
 
 test("no reconciled state yet: image saved unlabeled, label never invented", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "bloomknights-dataset-"));
+  const dir = await mkdtemp(join(tmpdir(), "reloop-dataset-"));
   try {
     const writer = new DatasetWriter({ dir });
     const result = await writer.record({
@@ -110,7 +110,7 @@ test("no reconciled state yet: image saved unlabeled, label never invented", asy
 });
 
 test("malformed input throws instead of writing garbage", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "bloomknights-dataset-"));
+  const dir = await mkdtemp(join(tmpdir(), "reloop-dataset-"));
   try {
     const writer = new DatasetWriter({ dir });
     await assert.rejects(

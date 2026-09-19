@@ -57,7 +57,7 @@ struct SettingsView: View {
                             .fill(BK.surfaceRaised)
                     )
 
-                Text("On a real iPhone, \"localhost\" is the phone itself. Use your computer's LAN IP, e.g. http://192.168.1.20:3000 (see the README).")
+                Text("On a real iPhone, \"localhost\" is the phone itself, so frames go nowhere. Use the Mac's Tailscale address, e.g. http://100.104.109.111:3000 — it survives a wifi/cell switch. A LAN IP like http://192.168.1.20:3000 also works while both are on the same network.")
                     .font(BK.body(12))
                     .foregroundStyle(BK.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

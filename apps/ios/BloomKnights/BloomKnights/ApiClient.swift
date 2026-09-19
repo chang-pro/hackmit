@@ -25,7 +25,10 @@ enum ApiError: LocalizedError {
 
 struct ApiClient {
     static let baseURLDefaultsKey = "backendBaseURL"
-    static let defaultBaseURL = "http://localhost:3000"
+    // "localhost" resolves to the phone itself on a real device, so every
+    // frame POST vanished. Default to the Mac's Tailscale address: it is stable
+    // across a wifi/cell switch, unlike a DHCP LAN address.
+    static let defaultBaseURL = "http://100.104.109.111:3000"
 
     let baseURL: URL
 

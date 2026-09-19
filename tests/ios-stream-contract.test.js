@@ -4,7 +4,6 @@ import test from "node:test";
 
 const roots = [
   "apps/ios/BloomKnights/BloomKnights",
-  "apps/ios/capture/BloomKnights",
 ];
 
 test("iOS glasses clients keep the Meta-supported low-latency frame path", async () => {
