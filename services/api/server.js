@@ -224,20 +224,27 @@ export function createReLoopServer({
       return;
     }
 
-    if (!analysisEnabled) {
-      sendJson(res, 202, {
-        analysis_status: "disabled",
-        analysis_enabled: false,
-        queue: itemAnalyzer.status(),
-      });
-      return;
-    }
-
+    // Ingest BEFORE the analysis gate. The gate exists to stop model calls, not
+    // to stop the live view: returning early here threw the frame away, so with
+    // analysis off the phone's POSTs were logged with their sizes while
+    // /api/live-frame reported "no frame has arrived" and the app's counters
+    // looked healthy. Nothing in the iOS app arms analysis, so every server
+    // restart reproduced it.
     let meta;
     try {
       meta = gateway.ingest(body);
     } catch (err) {
       sendJson(res, 400, { error: err.message });
+      return;
+    }
+
+    if (!analysisEnabled) {
+      sendJson(res, 202, {
+        frame: meta,
+        analysis_status: "disabled",
+        analysis_enabled: false,
+        queue: itemAnalyzer.status(),
+      });
       return;
     }
 
