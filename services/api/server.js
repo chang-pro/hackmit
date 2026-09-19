@@ -312,9 +312,39 @@ export function createReLoopServer({
 
     try {
       const frame = gateway.frame(meta.frame_id);
-      const result = await itemAnalyzer.submit(frame, {
-        force: body.force_analysis === true || body.source === "phone_photo",
-      });
+      const force = body.force_analysis === true || body.source === "phone_photo";
+      const pending = itemAnalyzer.submit(frame, { force });
+      pending.catch(() => {}); // submit() reports its own failures; never let one escape
+
+      // A live stream frame must NEVER wait on the model. The phone uploads one
+      // frame at a time, so awaiting a 5-15s pricing call here froze the entire
+      // feed for the length of every call, once per analysis interval: a frame
+      // or two, a multi-second stall, a frame or two. With a short client
+      // timeout those held POSTs also timed out and tore the connection down,
+      // which showed up as a new source port on every frame.
+      //
+      // A skip resolves without touching the network, so it settles in the
+      // microtask queue and wins the race; only a real model call loses it. A
+      // single photo (force) still waits, because that caller wants the answer.
+      const result = force
+        ? await pending
+        : await Promise.race([
+            pending,
+            new Promise((resolve) => setImmediate(() => resolve(null))),
+          ]);
+
+      if (result === null) {
+        sendJson(res, 202, {
+          frame: meta,
+          selection,
+          analysis_status: "analyzing",
+          items: itemAnalyzer.latest(),
+          queue: itemAnalyzer.status(),
+          ...(dataset ? { dataset } : {}),
+        });
+        return;
+      }
+
       sendJson(res, result.analysis_status === "analyzed" ? 201 : 202, {
         frame: meta,
         selection,

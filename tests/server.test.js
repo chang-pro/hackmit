@@ -216,3 +216,45 @@ test("a frame is stored even when analysis is off", async (t) => {
   // ...and no model call was made.
   assert.equal((await (await fetch(`${base}/api/items/latest`)).json()).error, "no analyzed items yet");
 });
+
+test("a live stream frame never waits for the model", async (t) => {
+  // The phone uploads one frame at a time. Awaiting the pricing call inside
+  // POST /api/frames froze the whole feed for the length of every call, once
+  // per analysis interval, which is what made the stream unusably laggy on a
+  // link that pinged at 2ms.
+  const MODEL_MS = 1500;
+  const slow = {
+    name: "slow-items",
+    async identifyItems() {
+      await new Promise((done) => setTimeout(done, MODEL_MS));
+      return {
+        items: [],
+        item_count: 0,
+        total_value_usd: 0,
+        model: "slow",
+        generated_at: new Date().toISOString(),
+      };
+    },
+  };
+  const server = createReLoopServer({
+    itemAnalyzer: new ItemAnalyzer({ backend: slow, intervalMs: 0 }),
+  });
+  server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+
+  const started = Date.now();
+  const { status, body } = await postFrame(base, framePayload({ source: "rayban_sdk" }));
+  const elapsed = Date.now() - started;
+
+  assert.equal(status, 202);
+  assert.equal(body.analysis_status, "analyzing");
+  assert.ok(body.frame.frame_id, "the frame is stored immediately");
+  assert.ok(elapsed < MODEL_MS / 2, `responded in ${elapsed}ms, must not wait ${MODEL_MS}ms for the model`);
+
+  // ...and the result still lands for the viewer to poll.
+  await new Promise((done) => setTimeout(done, MODEL_MS + 300));
+  const latest = await fetch(`${base}/api/items/latest`);
+  assert.equal(latest.status, 200, "the background analysis completed");
+});
