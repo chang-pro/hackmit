@@ -8,6 +8,7 @@
 //   POST /api/reset             — clear live session state
 //   GET  /api/health            — frame buffer + analysis queue status
 //   GET  /api/items/latest      — newest priced items for the live overlay
+//   POST /api/listings/draft    — hand one item to muse.ai for a Marketplace draft
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
 //   GET  /api/webrtc/active      — single viewer's active camera session
@@ -29,6 +30,7 @@ import { networkInterfaces } from "node:os";
 import { randomUUID } from "node:crypto";
 import { ItemAnalyzer } from "./item-analyzer.js";
 import { RIGHTCODES_ITEMS_MODEL } from "../vision/backends/rightcodes-items.js";
+import { draftListing } from "../../facebook-marketplace/muse-agent.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
@@ -367,6 +369,49 @@ export function createBloomServer({
     }
   }
 
+  // Hands one identified item to the muse.ai agent, which builds a Facebook
+  // Marketplace DRAFT. Publishing still needs a human tap in Facebook — the
+  // agent said so itself, and this route does not pretend otherwise.
+  async function handleDraftListing(req, res) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      sendJson(res, err.statusCode ?? 400, { error: err.message });
+      return;
+    }
+
+    // An item_id alone is resolved against the latest analysis, so the caller
+    // does not have to echo a price back and risk listing a stale one.
+    let item = body?.item ?? null;
+    if (!item && body?.item_id) {
+      item = (itemAnalyzer.latest()?.items ?? []).find((i) => i.id === body.item_id) ?? null;
+      if (!item) {
+        sendJson(res, 404, { error: `no identified item "${body.item_id}" in the latest analysis` });
+        return;
+      }
+    }
+    if (!item?.label) {
+      sendJson(res, 400, { error: "provide item_id from the latest analysis, or a full item" });
+      return;
+    }
+
+    try {
+      const result = await draftListing(item, {
+        photoUrls: Array.isArray(body.photo_urls) ? body.photo_urls : [],
+        location: body.location ?? null,
+        category: body.category ?? null,
+        floorUsd: body.floor_usd ?? null,
+        timeoutMs: 150_000,
+      });
+      sendJson(res, 201, result);
+    } catch (err) {
+      // A CDP failure is a setup problem (Chrome not running, wrong chat, moved
+      // selector), so it returns 503 with the message that names the fix.
+      sendJson(res, 503, { error: err.message, item_id: item.id ?? null });
+    }
+  }
+
   function handleLatestItems(res) {
     const latest = itemAnalyzer.latest();
     if (!latest) {
@@ -594,6 +639,8 @@ export function createBloomServer({
         await handleWebRtcConfig(res, url);
       } else if (req.method === "GET" && url.pathname === "/api/analysis/status") {
         handleAnalysisStatus(res);
+      } else if (req.method === "POST" && url.pathname === "/api/listings/draft") {
+        await handleDraftListing(req, res);
       } else if (req.method === "GET" && url.pathname === "/api/items/latest") {
         handleLatestItems(res);
       } else if (req.method === "GET" && url.pathname === "/api/playback") {

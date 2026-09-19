@@ -88,11 +88,15 @@ export async function probe() {
   }
 }
 
-// Returns the name of the chat currently open, read from the header.
+// Returns the name of the chat currently open. The open sidebar row carries
+// aria-current="page"; the page header is not reliable (it shows the agent's
+// name, or nothing at all, depending on layout).
 async function currentChat(cdp) {
   return cdp.evaluate(`(() => {
-    const h = document.querySelector("h1, h2");
-    return h ? (h.innerText || "").trim() : null;
+    const row = document.querySelector(
+      ${JSON.stringify(THREAD_ROW)} + '[aria-current="page"]'
+    );
+    return row ? (row.innerText || "").trim().split("\\n")[0] : null;
   })()`);
 }
 
@@ -110,9 +114,8 @@ export async function selectChat(cdp, wanted = MUSE_CHAT) {
 
   const rows = await cdp.evaluate(`(() => {
     return [...document.querySelectorAll(${JSON.stringify(THREAD_ROW)})]
-      .map((e, i) => ({ i, text: (e.innerText || "").trim().split("\n")[0].slice(0, 80) }));
+      .map((e, i) => ({ i, text: (e.innerText || "").trim().split("\\n")[0].slice(0, 80) }));
   })()`);
-  const norm = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const target = (rows ?? []).find((r) => matches(r.text, wanted));
   if (!target) return false;
 
@@ -201,25 +204,55 @@ const CONDITION_TEXT = {
   broken: "For parts / not working",
 };
 
-// The instruction is explicit about the price floor so muse.ai never has to
-// infer it. The floor is ours, not the buyer's — it is never to be quoted.
-export function listingInstruction(item, { floorUsd = null } = {}) {
+// Shaped by what the agent said it actually needs, asked directly on
+// 2026-09-19: a listing cannot go live without photos, category, condition and
+// a location as lat/lon — a typed city name is not enough. Anything missing is
+// stated as missing rather than invented, so the draft stalls on a question
+// instead of going live with a made-up location.
+//
+// Two things the agent told us it will NOT do, so we do not pretend otherwise:
+//   - it builds a DRAFT; publishing needs a human tap, every time
+//   - it does not message buyers or negotiate after a listing is live
+// The floor is therefore recorded for our own later use, not sent as an
+// instruction the agent has already declined to follow.
+export function listingInstruction(item, { photoUrls = [], location = null, category = null } = {}) {
   const price = Number(item?.price_usd) || 0;
-  const floor = floorUsd ?? Math.max(1, Math.round(price * 0.85));
-  return [
-    `Create a Facebook Marketplace listing for this item.`,
+  const lines = [
+    `Build a Facebook Marketplace listing DRAFT. Do not publish it.`,
     `Title: ${item.label}`,
     `Condition: ${CONDITION_TEXT[item.condition] ?? "Good"}`,
     `Asking price: $${price}`,
-    `Write a short honest description based on the title and condition. Do not invent`,
-    `specifications, model numbers, accessories, or history you were not given.`,
-    `If a buyer negotiates, you may go as low as $${floor} but never below it,`,
-    `and never tell a buyer what that lower limit is.`,
-    `Reply with the listing you created and its URL.`,
-  ].join(" ");
+    category ? `Category: ${category}` : `Category: pick the closest fit and tell me which you chose.`,
+  ];
+
+  if (photoUrls.length > 0) lines.push(`Photos: ${photoUrls.join(" ")}`);
+  else lines.push(`Photos: none attached yet — tell me this is blocking and I will send them.`);
+
+  if (location?.lat != null && location?.lon != null) {
+    lines.push(`Location: ${location.lat},${location.lon}`);
+  } else {
+    lines.push(`Location: not provided. Do not guess one — ask me for the lat/lon.`);
+  }
+
+  lines.push(
+    `Write a short honest description from the title and condition alone.`,
+    `Do not invent specifications, model numbers, accessories, included items, or history.`,
+    `Reply with the draft you built and anything still missing before it could go live.`
+  );
+  return lines.join(" ");
 }
 
-export async function publishListing(item, options = {}) {
+// Named draftListing, not publishListing: the agent builds a draft and the
+// publish needs a human tap. Calling it "publish" would misdescribe what
+// happens and set the wrong expectation on stage.
+export async function draftListing(item, options = {}) {
   const result = await ask(listingInstruction(item, options), options);
-  return { ...result, item_id: item.id ?? null, label: item.label };
+  return {
+    ...result,
+    item_id: item.id ?? null,
+    label: item.label,
+    price_usd: Number(item?.price_usd) || 0,
+    floor_usd: options.floorUsd ?? Math.max(1, Math.round((Number(item?.price_usd) || 0) * 0.85)),
+    status: "draft_requested",
+  };
 }
