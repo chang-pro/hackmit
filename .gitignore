@@ -53,3 +53,6 @@ dist/
 
 
 uv.lock
+# Runtime market state: listings, threads, sales. Regenerated at runtime;
+# committing it ships stale listings that point at deleted Shopify products.
+data/market_state.json
