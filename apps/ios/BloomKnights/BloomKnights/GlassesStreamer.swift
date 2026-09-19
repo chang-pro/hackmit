@@ -15,6 +15,7 @@
 
 import AVFoundation
 import CoreImage
+import ImageIO
 import CoreMedia
 import Foundation
 import SwiftUI
@@ -110,20 +111,21 @@ final class FrameUplink: @unchecked Sendable {
     private var streaming = false
     private var lastUploadAt = Date.distantPast
     private var lastPublishAt = Date.distantPast
-    private let uploadInterval: TimeInterval = 0.2   // ~4.8 fps to the backend
+    private let uploadInterval: TimeInterval = 0.12  // the pump self-throttles below this
     private let publishInterval: TimeInterval = 1.0 / 12.0
     // Every frame is base64'd into JSON, which inflates it by a third, and the
     // link is the bottleneck — not the encoder. Halving the payload buys more
     // frames per second than any encoder tuning does, and at 360x640 the
     // identification model cannot tell the difference.
     private let jpegQuality: CGFloat = 0.45
-    private let ciContext = CIContext()
+    private let ciContext = CIContext(options: [.cacheIntermediates: false])
     // Encoding must not happen on the SDK's frame-delivery thread (see the
     // note by tickDiagnostics): a JPEG encode there stalls delivery and the
     // whole stream throttles to a crawl. One serial queue, and at most one
     // upload in flight — a backlog would only ever deliver stale frames.
     private let uploadQueue = DispatchQueue(label: "reloop.frame-upload", qos: .userInitiated)
     private var uploadInFlight = false
+    private var pendingUpload: CVImageBuffer?
 
     // Counters mirror CameraStreamer's sent/accepted/skipped/failed so the
     // Glasses tab shows the same numbers for both sources.
@@ -296,18 +298,34 @@ final class FrameUplink: @unchecked Sendable {
         return f
     }()
 
-    // Hands the frame to the upload queue and returns immediately, so the
-    // SDK's delivery thread is never blocked on an encode or a network call.
+    // Latest frame wins. The decoder's callback only swaps in the newest buffer
+    // and returns; the pump does the work. Dropping the new frame while one is
+    // in flight (what this did before) ships whichever frame happened to land
+    // on an interval boundary — always the staler choice.
     private func scheduleUpload(_ imageBuffer: CVImageBuffer) {
         lock.lock()
-        if uploadInFlight { lock.unlock(); return }
-        uploadInFlight = true
+        pendingUpload = imageBuffer
+        let idle = !uploadInFlight
+        if idle { uploadInFlight = true }
         lock.unlock()
-        uploadQueue.async { [weak self] in
-            self?.encodeAndPost(imageBuffer)
-            self?.lock.lock()
-            self?.uploadInFlight = false
-            self?.lock.unlock()
+        if idle { uploadQueue.async { [weak self] in self?.pumpUpload() } }
+    }
+
+    // Holds the slot until the POST actually completes, so the send rate
+    // self-throttles to whatever the network can carry. Releasing it after the
+    // encode (the network call is a detached Task) let uploads pile up
+    // unbounded on a slow link, which is worse than sending fewer.
+    private func pumpUpload() {
+        lock.lock()
+        let next = pendingUpload
+        pendingUpload = nil
+        if next == nil { uploadInFlight = false }
+        lock.unlock()
+        guard let next else { return }
+
+        encodeAndPost(next) { [weak self] in
+            guard let self else { return }
+            self.uploadQueue.async { self.pumpUpload() }
         }
     }
 
@@ -317,15 +335,21 @@ final class FrameUplink: @unchecked Sendable {
     // phone->server hop is the slower link. So capture big, upload small.
     private let maxUploadEdge: CGFloat = 640
 
-    private func encodeAndPost(_ imageBuffer: CVImageBuffer) {
+    private func encodeAndPost(_ imageBuffer: CVImageBuffer, completion: @escaping () -> Void) {
         var ciImage = CIImage(cvImageBuffer: imageBuffer)
         let longest = max(ciImage.extent.width, ciImage.extent.height)
         if longest > maxUploadEdge {
             let scale = maxUploadEdge / longest
             ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent),
-              let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: jpegQuality) else { return }
+        // One call rather than CIImage -> CGImage -> UIImage -> jpegData; the
+        // intermediate images were pure overhead per frame.
+        guard let jpeg = ciContext.jpegRepresentation(
+            of: ciImage,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+            options: [CIImageRepresentationOption(
+                rawValue: kCGImageDestinationLossyCompressionQuality as String): jpegQuality]
+        ) else { return }
 
         let submission = FrameSubmission(
             source: "rayban_sdk",
@@ -338,6 +362,7 @@ final class FrameUplink: @unchecked Sendable {
 
         report(sentDelta: 1)
         Task { [weak self] in
+            defer { completion() }
             guard let self else { return }
             do {
                 let api = try ApiClient.fromSettings()
@@ -577,7 +602,7 @@ final class GlassesStreamer: ObservableObject {
                 // 15 "the lightest, fastest pipe", and we only need ~5fps for the
                 // uploads and 12 for the preview. Asking a congested Bluetooth
                 // link for 24 buys nothing and costs freshness.
-                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 15)
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 15)
                 guard let camera = try session.addCamera(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
