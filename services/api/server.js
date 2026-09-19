@@ -8,7 +8,6 @@
 //   POST /api/reset             — clear live session state
 //   GET  /api/health            — frame buffer + analysis queue status
 //   GET  /api/items/latest      — newest priced items for the live overlay
-//   GET  /live                  — barebones viewer: newest glasses frame, no WebRTC
 //   POST /api/listings/draft    — hand one item to muse.ai for a Marketplace draft
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
@@ -20,7 +19,7 @@
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/analysis/status    — whether analysis is armed, plus the queue
-//   GET  /, /capture, /phone, /data, /landing, /pitch — pages
+//   GET  /                     — the only page: glasses feed with prices on it
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
@@ -148,11 +147,6 @@ async function sendHtml(res, filename, appDir = "demo-web") {
   res.end(html);
 }
 
-async function sendDemoAsset(res, filename, contentType) {
-  const asset = await readFile(join(ROOT, "apps", "demo-web", filename));
-  res.writeHead(200, responseHeaders(contentType));
-  res.end(asset);
-}
 
 function parseByteRange(header, size) {
   if (!header) return null;
@@ -581,36 +575,11 @@ export function createReLoopServer({
         handleLatestItems(res);
       } else if (
         req.method === "GET" &&
-        (url.pathname === "/" || url.pathname === "/index.html")
+        ["/", "/index.html", "/live", "/live.html"].includes(url.pathname)
       ) {
-        await sendHtml(res, "index.html");
-      } else if (
-        req.method === "GET" &&
-        (url.pathname === "/live" || url.pathname === "/live.html")
-      ) {
+        // One page. The feed and the prices on it are the whole product; every
+        // other page was a different product's dashboard.
         await sendHtml(res, "live.html");
-      } else if (
-        req.method === "GET" &&
-        (url.pathname === "/capture" || url.pathname === "/capture.html")
-      ) {
-        await sendHtml(res, "capture.html");
-      } else if (req.method === "GET" && url.pathname === "/sunglasses.svg") {
-        await sendDemoAsset(res, "sunglasses.svg", "image/svg+xml");
-      } else if (req.method === "GET" && url.pathname === "/models/yolo11n.onnx") {
-        await sendDemoAsset(res, "models/yolo11n.onnx", "application/octet-stream");
-      } else if (req.method === "GET" && url.pathname === "/models/yolo11s.onnx") {
-        await sendDemoAsset(res, "models/yolo11s.onnx", "application/octet-stream");
-      } else if (
-        req.method === "GET" &&
-        (url.pathname === "/phone" || url.pathname === "/phone.html")
-      ) {
-        await sendHtml(res, "phone.html");
-      } else if (req.method === "GET" && (url.pathname === "/data" || url.pathname === "/data.html")) {
-        await sendHtml(res, "data.html");
-      } else if (req.method === "GET" && url.pathname === "/landing") {
-        await sendHtml(res, "index.html", "landing");
-      } else if (req.method === "GET" && url.pathname === "/pitch") {
-        await sendHtml(res, "index.html", "pitch");
       } else {
         sendJson(res, 404, { error: "not found" });
       }
