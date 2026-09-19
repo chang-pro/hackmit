@@ -8,6 +8,7 @@
 //   POST /api/reset             — clear live session state
 //   GET  /api/health            — frame buffer + analysis queue status
 //   GET  /api/items/latest      — newest priced items for the live overlay
+//   GET  /live                  — barebones viewer: newest glasses frame, no WebRTC
 //   POST /api/listings/draft    — hand one item to muse.ai for a Marketplace draft
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
@@ -519,6 +520,15 @@ export function createReLoopServer({
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      // RELOOP_LOG_REQUESTS=1 prints every inbound request with its source
+      // address. This is the difference between "the phone cannot reach the
+      // Mac" and "the phone reaches it and the request fails" — without it
+      // both look identical from the client side.
+      if (process.env.RELOOP_LOG_REQUESTS) {
+        const from = req.socket.remoteAddress ?? "?";
+        const size = req.headers["content-length"] ?? "0";
+        console.log(`[req] ${req.method} ${url.pathname} from ${from} (${size}B)`);
+      }
       if (req.method === "OPTIONS") {
         res.writeHead(204, responseHeaders());
         res.end();
@@ -567,6 +577,11 @@ export function createReLoopServer({
         (url.pathname === "/" || url.pathname === "/index.html")
       ) {
         await sendHtml(res, "index.html");
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/live" || url.pathname === "/live.html")
+      ) {
+        await sendHtml(res, "live.html");
       } else if (
         req.method === "GET" &&
         (url.pathname === "/capture" || url.pathname === "/capture.html")

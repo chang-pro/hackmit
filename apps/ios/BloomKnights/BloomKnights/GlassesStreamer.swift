@@ -138,18 +138,25 @@ final class FrameUplink: @unchecked Sendable {
         lock.lock()
         guard streaming else { lock.unlock(); return }
         let now = Date()
-        guard now.timeIntervalSince(lastPublishAt) >= publishInterval else {
-            lock.unlock()
-            return
-        }
-        lastPublishAt = now
+        // The HTTP upload and the local preview run on independent clocks: the
+        // preview wants every frame it can get, the upload wants ~1 fps. Both
+        // are decided here because routeRaw is the ONLY path the live stream
+        // actually takes — ingest() is not called by anything.
+        let wantUpload = httpUploadEnabled && now.timeIntervalSince(lastUploadAt) >= uploadInterval
+        if wantUpload { lastUploadAt = now }
+        let wantPublish = now.timeIntervalSince(lastPublishAt) >= publishInterval
+        if wantPublish { lastPublishAt = now }
         let tap = onDecodedFrame
         lock.unlock()
-        tap?(imageBuffer)
+        if wantPublish { tap?(imageBuffer) }
+        if wantUpload { encodeAndPost(imageBuffer) }
     }
-    // The 1 fps JPEG POST to /api/frames is legacy telemetry now that the
-    // desktop viewer samples the WebRTC stream itself. Off by default.
-    var httpUploadEnabled = false
+    // The ~1 fps JPEG POST to /api/frames. This is how the web viewer sees the
+    // glasses feed: the browser polls /api/live-frame rather than negotiating
+    // WebRTC with the phone, which needs no signalling, no ICE, no TURN and no
+    // HTTPS. It was switched off when the desktop viewer sampled WebRTC itself,
+    // which left the server receiving nothing at all.
+    var httpUploadEnabled = true
 
     // Diagnostics throttle (1-in-3), same trick as PokerAI: doing per-frame
     // work on the SDK's delivery thread can choke it and freeze the stream.
