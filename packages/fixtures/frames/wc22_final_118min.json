@@ -1,0 +1,27 @@
+{
+  "sport": "soccer",
+  "frame": {
+    "frame_id": "wc22_final_118min",
+    "captured_at": "2022-12-18T18:38:15.000Z",
+    "source": "fixture",
+    "image_uri": "packages/fixtures/frames/wc22_final_118min.png",
+    "width": 1920,
+    "height": 1080
+  },
+  "parsed_scoreboard": {
+    "sport": "soccer",
+    "league": "FIFA World Cup",
+    "away_team_text": "ARG",
+    "home_team_text": "FRA",
+    "away_score": 3,
+    "home_score": 3,
+    "period_text": "ET2",
+    "clock_text": "118'",
+    "field_confidences": {
+      "teams": 0.98,
+      "scores": 0.96,
+      "period": 0.95,
+      "clock": 0.94
+    }
+  }
+}
