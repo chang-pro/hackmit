@@ -8,7 +8,22 @@
 //   POST /api/reset             — clear live session state
 //   GET  /api/health            — frame buffer + analysis queue status
 //   GET  /api/items/latest      — newest priced items for the live overlay
-//   POST /api/listings/draft    — hand one item to muse.ai for a Marketplace draft
+//   POST /api/listings/draft    — queue one item for a muse.ai Marketplace draft
+//   POST /api/plans             — plan the latest priced items (or body.items) for a goal
+//   GET  /api/plans/:id         — a plan (never includes seller floors)
+//   POST /api/plans/:id/approve — list every SELL item in the store + queue Marketplace drafts
+//   GET  /api/drafts            — the sequential Marketplace draft queue
+//   GET  /catalog.json          — the public store catalog (what a buyer agent reads)
+//   GET  /api/listings/:id      — one public listing
+//   POST /api/listings/:id/messages    — buyer message/offer; the seller agent replies
+//   POST /api/listings/:id/checkout    — mock checkout of an agreed price -> SOLD
+//   POST /api/listings/:id/marketplace — report the Marketplace draft published -> LISTED
+//   GET  /api/photos/:id        — a stored listing photo
+//   GET  /api/events            — the append-only event log
+//   POST /api/events            — append one event (any lane: IDENTIFIED, SOLD, ...)
+//   GET  /api/events/stream     — the event log as server-sent events
+//   POST /api/events/seed       — replace the log with contracts/fixtures/events.json
+//   GET  /api/dashboard         — the dashboard fold over the event log
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
 //   GET  /api/webrtc/active      — single viewer's active camera session
@@ -19,7 +34,8 @@
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/analysis/status    — whether analysis is armed, plus the queue
-//   GET  /                     — the only page: glasses feed with prices on it
+//   GET  /, /live               — the glasses feed with prices on it
+//   GET  /dashboard             — the event-log dashboard (goal, recovered $, listing cards)
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
@@ -30,7 +46,10 @@ import { networkInterfaces } from "node:os";
 import { randomUUID } from "node:crypto";
 import { ItemAnalyzer } from "./item-analyzer.js";
 import { RIGHTCODES_ITEMS_MODEL } from "../vision/backends/rightcodes-items.js";
-import { draftListing } from "../../facebook-marketplace/muse-agent.js";
+import { DraftQueue } from "../market/draft-queue.js";
+import { Market } from "../market/market.js";
+import { EventLog } from "../events/event-log.js";
+import { foldDashboard } from "../events/dashboard-fold.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
@@ -42,6 +61,7 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 // SDP and ICE are compact setup metadata. This bound makes the tunnel unable
 // to become a substitute media relay even if a client is modified.
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
+const MAX_PHOTOS = 200;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
 
@@ -66,11 +86,21 @@ function readJsonBody(req) {
       try {
         resolveBody(JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {
-        reject(Object.assign(new Error("invalid JSON body"), { statusCode: 400 }));
+        reject(Object.assign(new Error("invalid JSON body"), { statusCode: 400, emptyBody: size === 0 }));
       }
     });
     req.on("error", reject);
   });
+}
+
+// Same as readJsonBody, but an empty body is {} (e.g. an approve with no options).
+async function readOptionalJsonBody(req) {
+  try {
+    return (await readJsonBody(req)) ?? {};
+  } catch (err) {
+    if (err.message === "invalid JSON body" && err.emptyBody) return {};
+    throw err;
+  }
 }
 
 function responseHeaders(contentType = "application/json") {
@@ -148,6 +178,12 @@ async function sendHtml(res, filename, appDir = "demo-web") {
 }
 
 
+async function sendDashboardFold(res) {
+  const asset = await readFile(join(ROOT, "services", "events", "dashboard-fold.js"));
+  res.writeHead(200, responseHeaders("text/javascript; charset=utf-8"));
+  res.end(asset);
+}
+
 function parseByteRange(header, size) {
   if (!header) return null;
   const match = String(header).match(/^bytes=(\d*)-(\d*)$/);
@@ -179,7 +215,11 @@ export function createReLoopServer({
   gateway = new CaptureGateway(),
   selector = new FrameSelector({ minIntervalMs: 750 }),
   itemAnalyzer = new ItemAnalyzer(),
+  eventLog = new EventLog(),
+  draftQueue = new DraftQueue({ eventLog }),
 } = {}) {
+  const market = new Market({ eventLog, draftQueue });
+  const photos = new Map();
   // Item identification is what the live camera path runs: every frame is
   // scored for resellable objects and a price, which the capture page draws
   // over the feed.
@@ -327,20 +367,151 @@ export function createReLoopServer({
       return;
     }
 
-    try {
-      const result = await draftListing(item, {
-        photoUrls: Array.isArray(body.photo_urls) ? body.photo_urls : [],
-        location: body.location ?? null,
-        category: body.category ?? null,
-        floorUsd: body.floor_usd ?? null,
-        timeoutMs: 150_000,
-      });
-      sendJson(res, 201, result);
-    } catch (err) {
+    // Through the shared queue, so it never runs alongside a plan's drafts in
+    // the one muse.ai chat. The DRAFTED event is appended by the queue.
+    const { done } = draftQueue.enqueue({
+      item,
+      photoUrls: Array.isArray(body.photo_urls) ? body.photo_urls : [],
+      location: body.location ?? null,
+      category: body.category ?? null,
+      floorUsd: body.floor_usd ?? null,
+    });
+    const job = await done;
+    if (job.status === "done") {
+      sendJson(res, 201, { ...job.result, draft_id: job.id, url: job.url });
+    } else {
       // A CDP failure is a setup problem (Chrome not running, wrong chat, moved
       // selector), so it returns 503 with the message that names the fix.
-      sendJson(res, 503, { error: err.message, item_id: item.id ?? null });
+      sendJson(res, 503, { error: job.error, item_id: item.id ?? null, draft_id: job.id });
     }
+  }
+
+  // ── Market (Lane C): plan -> approve -> store + Marketplace drafts ─────────
+
+  // Keeps a copy of the frame the plan was built from; the gateway's ring
+  // buffer would otherwise evict it long before Marketplace fetches it.
+  function storePhoto(frameId) {
+    const stored = frameId ? gateway.get(frameId) : null;
+    if (!stored) return null;
+    const id = `pho_${randomUUID().slice(0, 12)}`;
+    photos.set(id, { bytes: imageBytes(stored.image_base64), mime: stored.mime_type || "image/jpeg" });
+    while (photos.size > MAX_PHOTOS) photos.delete(photos.keys().next().value);
+    return id;
+  }
+
+  function publicBaseUrl(req) {
+    // muse.ai fetches photos from the internet, so this must be a public URL
+    // (a tunnel) in a real run. The request host is only right for local use.
+    return (process.env.PUBLIC_BASE_URL || `http://${req.headers.host || "localhost"}`).replace(/\/$/, "");
+  }
+
+  async function handleCreatePlan(req, res) {
+    const body = await readOptionalJsonBody(req);
+    const latest = itemAnalyzer.latest();
+    const items = Array.isArray(body.items) ? body.items : latest?.items ?? [];
+    if (!items.length) {
+      sendJson(res, 409, { error: "no priced items yet: start analysis and point the camera at something, or send items" });
+      return;
+    }
+    const photoId = Array.isArray(body.items) ? null : storePhoto(latest?.frame_id);
+    const plan = market.createPlan({
+      items,
+      goal: body.goal ?? {},
+      keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
+      photoUrl: photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null,
+      source: body.source ?? latest?.frame_source ?? null,
+    });
+    sendJson(res, 201, plan);
+  }
+
+  async function handleApprovePlan(req, res, planId) {
+    const body = await readOptionalJsonBody(req);
+    const result = market.approvePlan(planId, {
+      location: body.location ?? null,
+      categories: body.categories ?? {},
+      photoUrls: body.photo_urls ?? {},
+    });
+    sendJson(res, 200, { ...result, drafts: draftQueue.status() });
+  }
+
+  async function handleListingMessage(req, res, listingId) {
+    const body = await readOptionalJsonBody(req);
+    sendJson(res, 200, market.message(listingId, {
+      threadId: body.thread_id ?? null,
+      buyer: body.buyer ?? "buyer",
+      priceUsd: body.price_usd ?? null,
+      text: body.text ?? "",
+    }));
+  }
+
+  async function handleCheckout(req, res, listingId) {
+    const body = await readOptionalJsonBody(req);
+    sendJson(res, 200, market.checkout(listingId, { threadId: body.thread_id }));
+  }
+
+  async function handleMarketplaceLive(req, res, listingId) {
+    const body = await readOptionalJsonBody(req);
+    sendJson(res, 200, market.markMarketplaceLive(listingId, body.url ?? null));
+  }
+
+  // Routes /api/plans/:id[/approve] and /api/listings/:id[/messages|/checkout|/marketplace].
+  async function routeMarket(req, res, url) {
+    const parts = url.pathname.split("/").filter(Boolean); // ["api", "plans", id, action?]
+    try {
+      if (req.method === "POST" && url.pathname === "/api/plans") return await handleCreatePlan(req, res);
+      if (parts[1] === "plans" && parts[2]) {
+        if (req.method === "GET" && parts.length === 3) return sendJson(res, 200, market.getPlan(parts[2]));
+        if (req.method === "POST" && parts[3] === "approve") return await handleApprovePlan(req, res, parts[2]);
+      }
+      if (parts[1] === "listings" && parts[2] && parts[2] !== "draft") {
+        if (req.method === "GET" && parts.length === 3) return sendJson(res, 200, market.getListing(parts[2]));
+        if (req.method === "POST" && parts[3] === "messages") return await handleListingMessage(req, res, parts[2]);
+        if (req.method === "POST" && parts[3] === "checkout") return await handleCheckout(req, res, parts[2]);
+        if (req.method === "POST" && parts[3] === "marketplace") return await handleMarketplaceLive(req, res, parts[2]);
+      }
+      if (req.method === "GET" && parts[1] === "photos" && parts[2]) {
+        const photo = photos.get(parts[2]);
+        if (!photo) return sendJson(res, 404, { error: "photo not found" });
+        res.writeHead(200, responseHeaders(photo.mime));
+        return res.end(photo.bytes);
+      }
+      return false;
+    } catch (err) {
+      sendJson(res, err.statusCode ?? 400, { error: err.message });
+    }
+  }
+
+  async function handleAppendEvent(req, res) {
+    try {
+      const body = await readJsonBody(req);
+      sendJson(res, 201, eventLog.append(body));
+    } catch (err) {
+      sendJson(res, err.statusCode ?? 400, { error: err.message });
+    }
+  }
+
+  async function handleSeedEvents(res) {
+    const fixture = JSON.parse(await readFile(join(ROOT, "contracts", "fixtures", "events.json"), "utf8"));
+    eventLog.clear();
+    for (const event of fixture) eventLog.append(event);
+    sendJson(res, 200, { seeded: fixture.length });
+  }
+
+  function handleEventStream(req, res) {
+    res.writeHead(200, {
+      ...responseHeaders("text/event-stream; charset=utf-8"),
+      Connection: "keep-alive",
+    });
+    // Replay the whole log first, so a fresh dashboard needs no second request.
+    res.write(`event: snapshot\ndata: ${JSON.stringify(eventLog.list())}\n\n`);
+    const unsubscribe = eventLog.subscribe((event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    });
+    const heartbeat = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
   }
 
   function handleLatestItems(res) {
@@ -571,6 +742,34 @@ export function createReLoopServer({
         handleAnalysisStatus(res);
       } else if (req.method === "POST" && url.pathname === "/api/listings/draft") {
         await handleDraftListing(req, res);
+      } else if (req.method === "GET" && url.pathname === "/api/events") {
+        sendJson(res, 200, { events: eventLog.list() });
+      } else if (req.method === "POST" && url.pathname === "/api/events") {
+        await handleAppendEvent(req, res);
+      } else if (req.method === "GET" && url.pathname === "/api/events/stream") {
+        handleEventStream(req, res);
+      } else if (req.method === "POST" && url.pathname === "/api/events/seed") {
+        await handleSeedEvents(res);
+      } else if (req.method === "GET" && url.pathname === "/catalog.json") {
+        sendJson(res, 200, market.catalog());
+      } else if (req.method === "GET" && url.pathname === "/api/drafts") {
+        sendJson(res, 200, draftQueue.status());
+      } else if (
+        url.pathname === "/api/plans" ||
+        url.pathname.startsWith("/api/plans/") ||
+        (url.pathname.startsWith("/api/listings/") && url.pathname !== "/api/listings/draft") ||
+        url.pathname.startsWith("/api/photos/")
+      ) {
+        if ((await routeMarket(req, res, url)) === false) sendJson(res, 404, { error: "not found" });
+      } else if (req.method === "GET" && url.pathname === "/api/dashboard") {
+        sendJson(res, 200, foldDashboard(eventLog.list()));
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/dashboard" || url.pathname === "/dashboard.html")
+      ) {
+        await sendHtml(res, "dashboard.html");
+      } else if (req.method === "GET" && url.pathname === "/dashboard-fold.js") {
+        await sendDashboardFold(res);
       } else if (req.method === "GET" && url.pathname === "/api/items/latest") {
         handleLatestItems(res);
       } else if (
