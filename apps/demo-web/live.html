@@ -36,6 +36,26 @@
   .dot.live { background: #55e39b; box-shadow: 0 0 9px #55e39b88; }
   .dot.stale { background: #ffcf6b; }
   b { color: #e7ecf5; }
+
+  /* Approve panel: priced -> plan -> approve -> live on Shopify. */
+  button { font: inherit; color: #e7ecf5; background: #1a1f2c; border: 1px solid #2c3446;
+           border-radius: 8px; padding: .45rem .7rem; cursor: pointer; }
+  button:hover:not(:disabled) { background: #232a3a; border-color: #3d4761; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.go { background: #55e39b; border-color: #55e39b; color: #06251a; font-weight: 700; }
+  button.go:hover:not(:disabled) { background: #6cf0ab; }
+  #panel { margin-top: 1.1rem; border-top: 1px solid #222838; padding-top: .9rem; }
+  .eyebrow { color: #7d8aa3; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .5rem; }
+  #goals { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; }
+  #goals button.on { background: #2b3550; border-color: #55e39b; }
+  .acts { display: flex; gap: .4rem; flex-wrap: wrap; }
+  #plan { margin-top: .8rem; display: flex; flex-direction: column; gap: .5rem; max-height: 40vh; overflow: auto; }
+  .d { border-left: 3px solid var(--c, #3d4761); padding: .3rem 0 .3rem .5rem; }
+  .d .h { display: flex; justify-content: space-between; gap: .6rem; }
+  .d .why { color: #7d8aa3; font-size: .7rem; line-height: 1.45; margin-top: .15rem; }
+  .d a { color: #55e39b; font-size: .7rem; }
+  .d .st { font-size: .7rem; color: #9aa6bd; }
+  .tot { display: flex; justify-content: space-between; border-top: 1px solid #222838; padding-top: .45rem; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -55,6 +75,18 @@
       <span>priced <b id="pAge">—</b></span>
     </div>
     <div id="msg"></div>
+
+    <section id="panel">
+      <div class="eyebrow">Goal</div>
+      <div id="goals"></div>
+      <div class="acts">
+        <button id="analyze" type="button">Start pricing</button>
+        <button id="makePlan" type="button">Plan these items</button>
+        <button id="approve" class="go" type="button" hidden>Approve &amp; list</button>
+        <a href="/dashboard" style="align-self:center;color:#55e39b;font-size:.72rem">Dashboard</a>
+      </div>
+      <div id="plan"></div>
+    </section>
   </aside>
 
 <script>
@@ -163,6 +195,160 @@ async function pollItems() {
 pollFrame(); pollItems();
 setInterval(pollFrame, POLL_MS);
 setInterval(pollItems, ITEM_POLL_MS);
+</script>
+
+<!-- Approve panel. The camera sees and prices; this is where a person decides.
+     Nothing is listed anywhere until Approve is tapped (plan v2 §2), and
+     approval both lists in the ReLoop store and publishes live to Shopify. -->
+<script>
+(() => {
+  const el = (id) => document.getElementById(id);
+  const usd = (n) => `$${Math.round(Number(n) || 0).toLocaleString("en-US")}`;
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const ACTION_COLOR = { SELL: "#55e39b", DONATE: "#79c8ff", RECYCLE: "#ffcf6b", KEEP: "#9fb0d5" };
+  const GOALS = [
+    { id: "cash", label: "$300 cash", goal: { mode: "CASH", targetUsd: 300 } },
+    { id: "zero", label: "Waste nothing", goal: { mode: "ZERO_WASTE", targetUsd: 300 } },
+    { id: "clear", label: "Clear out fast", goal: { mode: "CLEAR_OUT" } },
+  ];
+  let chosen = GOALS[0];
+  let plan = null;
+  let pricingOn = false;
+
+  el("goals").innerHTML = GOALS.map((g) => `<button type="button" data-goal="${g.id}">${esc(g.label)}</button>`).join("");
+  function paintGoals() {
+    for (const b of el("goals").children) b.classList.toggle("on", b.dataset.goal === chosen.id);
+  }
+  el("goals").addEventListener("click", (e) => {
+    const id = e.target.closest("button")?.dataset.goal;
+    if (!id) return;
+    chosen = GOALS.find((g) => g.id === id);
+    paintGoals();
+  });
+  paintGoals();
+
+  async function api(path, body) {
+    const res = await fetch(path, body
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    return json;
+  }
+
+  // Pricing is off until someone asks for it, so no frame reaches a model
+  // unasked. This button is that ask -- it used to need a terminal.
+  async function refreshAnalyze() {
+    try {
+      const status = await (await fetch("/api/analysis/status", { cache: "no-store" })).json();
+      pricingOn = status.analysis_enabled === true;
+    } catch { /* the status bar already reports an unreachable server */ }
+    el("analyze").textContent = pricingOn ? "Stop pricing" : "Start pricing";
+  }
+  el("analyze").addEventListener("click", async () => {
+    el("analyze").disabled = true;
+    try {
+      await api(pricingOn ? "/api/analysis/stop" : "/api/analysis/start");
+      pricingOn = !pricingOn;
+    } catch (err) {
+      el("msg").textContent = err.message;
+    } finally {
+      el("analyze").disabled = false;
+      refreshAnalyze();
+    }
+  });
+  refreshAnalyze();
+
+  function renderPlan() {
+    const rows = plan.decisions.map((d) => {
+      const price = d.action === "SELL" ? usd(d.listUsd) : d.action.toLowerCase();
+      return `<div class="d" style="--c:${ACTION_COLOR[d.action] ?? "#3d4761"}" data-item="${esc(d.itemId)}">
+        <div class="h"><span>${esc(d.label ?? d.itemId)}</span><span>${price}</span></div>
+        ${d.reason ? `<div class="why">${esc(d.reason)}</div>` : ""}
+        <div class="st"></div>
+      </div>`;
+    }).join("");
+    const gap = plan.goalGapUsd ? `${usd(plan.goalGapUsd)} short of goal` : "meets the goal";
+    el("plan").innerHTML = `${rows}<div class="tot"><span>expected</span><span>${usd(plan.expectedUsd)}</span></div>
+      <div class="why">${esc(gap)}. Nothing is listed until you approve.</div>`;
+    el("approve").hidden = plan.approved === true;
+  }
+
+  el("makePlan").addEventListener("click", async () => {
+    el("makePlan").disabled = true;
+    el("plan").innerHTML = `<div class="why">Planning…</div>`;
+    try {
+      plan = await api("/api/plans", { goal: chosen.goal });
+      renderPlan();
+    } catch (err) {
+      plan = null;
+      el("approve").hidden = true;
+      el("plan").innerHTML = `<div class="why">${esc(err.message)}</div>`;
+    } finally {
+      el("makePlan").disabled = false;
+    }
+  });
+
+  el("approve").addEventListener("click", async () => {
+    if (!plan) return;
+    el("approve").disabled = true;
+    el("approve").textContent = "Listing…";
+    try {
+      // The phone knows where it is; Marketplace drafts need it, and Shopify
+      // ignores it. Approval must not wait on a location prompt.
+      const location = await new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        const done = setTimeout(() => resolve(null), 3000);
+        navigator.geolocation.getCurrentPosition(
+          (p) => { clearTimeout(done); resolve({ lat: p.coords.latitude, lon: p.coords.longitude }); },
+          () => { clearTimeout(done); resolve(null); },
+          { timeout: 3000 }
+        );
+      });
+      const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/approve`, { location });
+      plan.approved = true;
+      el("approve").hidden = true;
+      trackListings(result.listings.map((l) => l.id));
+    } catch (err) {
+      el("msg").textContent = err.message;
+      el("approve").disabled = false;
+      el("approve").textContent = "Approve & list";
+    }
+  });
+
+  // Publishing happens after approval returns, so each card polls its listing
+  // until it is live (or failed) and then shows the product link.
+  function trackListings(ids) {
+    for (const id of ids) pollListing(id, 0);
+  }
+  async function pollListing(id, attempt) {
+    let listing;
+    try {
+      listing = await (await fetch(`/api/listings/${encodeURIComponent(id)}`, { cache: "no-store" })).json();
+    } catch { return; }
+    const card = el("plan").querySelector(`[data-item="${CSS.escape(listing.itemId ?? "")}"] .st`);
+    const shop = listing.shopify ?? {};
+    if (card) {
+      if (shop.status === "live") {
+        card.innerHTML = shop.url
+          ? `live · <a href="${esc(shop.url)}" target="_blank" rel="noopener">open listing</a>${shop.dryRun ? " (dry run)" : ""}`
+          : `live${shop.dryRun ? " (dry run)" : ""}`;
+      } else if (shop.status === "failed") {
+        card.textContent = `not listed: ${shop.error ?? "unknown error"}`;
+      } else {
+        card.textContent = "listing…";
+      }
+      if (listing.marketplace?.status === "drafted") {
+        card.innerHTML += listing.marketplace.url
+          ? ` · <a href="${esc(listing.marketplace.url)}" target="_blank" rel="noopener">Marketplace draft</a>`
+          : " · Marketplace draft ready";
+      }
+    }
+    const settled = ["live", "failed"].includes(shop.status) &&
+      ["off", "drafted", "failed"].includes(listing.marketplace?.status);
+    if (!settled && attempt < 60) setTimeout(() => pollListing(id, attempt + 1), 2000);
+  }
+})();
 </script>
 
 <!-- Live agent updates from the event log: the "keeps working" moment is

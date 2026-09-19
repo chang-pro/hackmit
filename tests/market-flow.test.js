@@ -7,7 +7,7 @@ import { createReLoopServer } from "../services/api/server.js";
 import { DraftQueue } from "../services/market/draft-queue.js";
 import { EventLog } from "../services/events/event-log.js";
 
-function setupTestServer(t, { marketFile = null, mockDraft = null } = {}) {
+function setupTestServer(t, { marketFile = null, mockDraft = null, publish = null, marketplaceDrafts = true } = {}) {
   const eventLog = new EventLog();
   const draftQueue = new DraftQueue({
     eventLog,
@@ -20,6 +20,15 @@ function setupTestServer(t, { marketFile = null, mockDraft = null } = {}) {
     eventLog,
     draftQueue,
     marketFile,
+    // Marketplace drafts are opt-in in production; this suite covers the queue,
+    // so it turns them on. The Shopify publisher is stubbed so no test can
+    // reach the live store even if a token is present in the environment.
+    marketplaceDrafts,
+    publish: publish || (async (item) => ({
+      success: true,
+      dry_run: true,
+      product: { id: "gid://shopify/Product/1", url: `https://reloop-dev.myshopify.com/products/${encodeURIComponent(String(item.label).toLowerCase().replace(/\s+/g, "-"))}` },
+    })),
   });
 
   server.listen(0);

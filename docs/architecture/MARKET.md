@@ -30,17 +30,40 @@ POST /api/plans/:id/approve  { location: {lat, lon}, categories: {itemId: name},
   -> every SELL item: a ReLoop store listing (live now) + a Marketplace draft (queued)
 ```
 
-Two channels per SELL item:
+Two channels per SELL item, plus an optional third:
 
-1. **ReLoop store** — live on approval at `/catalog.json`. Our seller agent
-   negotiates here with a floor enforced in code. This is the stage demo.
-2. **Facebook Marketplace** — a draft built by muse.ai (reach). muse.ai builds
-   a draft only and does not negotiate. A human publishes it, then reports it
-   with `POST /api/listings/:id/marketplace { url }`, which appends `LISTED`.
+1. **Shopify** — the channel that actually goes live. One Admin API call creates
+   a real, purchasable product; no browser and no human tap. Approval publishes
+   to it and appends `LISTED` with the product URL, or `PUBLISH_FAILED` with the
+   reason. Without `SHOPIFY_ADMIN_ACCESS_TOKEN` (or with `DRY_RUN=1`) it runs in
+   dry-run mode and returns a simulated URL, labelled as such in the UI.
+2. **ReLoop store** — live on approval at `/catalog.json`. Our seller agent
+   negotiates here with a floor enforced in code, which is what makes the
+   negotiation and "sold after you walked away" demo possible.
+3. **Facebook Marketplace (opt-in)** — set `RELOOP_MARKETPLACE_DRAFTS=1`. muse.ai
+   builds a *draft* only: it needs a logged-in Chrome, a public photo URL and up
+   to 150 s per item, and it does not publish or negotiate. A human publishes the
+   draft, then reports it with `POST /api/listings/:id/marketplace { url }`. Off
+   by default, because the demo should not depend on it.
+
+## The approve flow (what a person actually does)
+
+On `/`:
+
+1. **Start pricing** — arms the model (the same gate as `POST /api/analysis/start`;
+   no frame reaches a model unasked).
+2. Point the glasses or phone at the items; prices appear on the feed.
+3. Pick a goal chip, then **Plan these items** — `POST /api/plans`, showing each
+   decision with its reason and the expected total. Nothing is listed yet.
+4. **Approve & list** — `POST /api/plans/:id/approve`. Each SELL item is listed
+   in the ReLoop store and published to Shopify; each card then shows "live" with
+   a link to the product (and the Marketplace draft link when that is enabled).
 
 ### Photos, location, category
 
-A Marketplace draft cannot go live without photos, a category and a lat/lon.
+Shopify needs none of this: a title, a price and a description are enough, and a
+photo is used when there is one. The rest matters only for Marketplace drafts,
+which cannot go live without photos, a category and a lat/lon.
 
 - **Photos:** planning from the live feed stores a copy of the analyzed frame
   and serves it at `/api/photos/:id`. muse.ai fetches it from the internet, so
