@@ -25,7 +25,22 @@ test("item boxes are colour-keyed by what the item is worth", () => {
 
 test("the on-device tracker never paints over a fresh price overlay", () => {
   assert.match(capture, /ITEM_BOX_TTL_MS/);
-  assert.match(capture, /if \(source === "items"\) lastItemBoxesAt = Date\.now\(\)/);
+  assert.match(capture, /source !== "items" && itemBoxesFresh\(\)/);
+  // Freshness is measured from when the result was GENERATED, not from the
+  // last repaint — otherwise re-rendering a cached result renews the lease
+  // forever and the tracker never gets the overlay back.
+  assert.match(capture, /lastItemResultAt = Date\.parse\(payload\.generated_at\)/);
+});
+
+test("priced boxes are only drawn over the image they were measured on", () => {
+  assert.match(capture, /boxesMatchFeed/);
+  assert.match(capture, /payload\.frame_source === "webrtc_viewer"/);
+});
+
+test("clearing the readout also drops the priced boxes and the total", () => {
+  // Stopping analysis used to leave prices painted over live video.
+  assert.match(capture, /lastItemSignature = ""/);
+  assert.match(capture, /clearVisualDetections\(\);\n  \$\("roOutcome"\)/);
 });
 
 test("live analysis uses one frame per request and the viewer samples WebRTC for glasses", () => {

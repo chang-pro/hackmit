@@ -21,6 +21,9 @@ export class ItemAnalyzer {
   #latestAt = 0;
   #lastError = null;
   #analyzedCount = 0;
+  // Bumped by reset(). A call that was already in flight when the analyzer
+  // was reset must not write its result back afterwards.
+  #generation = 0;
 
   constructor({ backend = rightcodesItemsBackend, intervalMs = DEFAULT_INTERVAL_MS } = {}) {
     this.#backend = backend;
@@ -28,6 +31,7 @@ export class ItemAnalyzer {
   }
 
   reset() {
+    this.#generation += 1;
     this.#inFlight = false;
     this.#lastStartedAt = 0;
     this.#latest = null;
@@ -64,18 +68,35 @@ export class ItemAnalyzer {
 
     this.#inFlight = true;
     this.#lastStartedAt = now;
+    const generation = this.#generation;
     try {
       const result = await this.#backend.identifyItems(frame);
-      this.#latest = { ...result, frame_id: frame?.frame_id ?? null };
+      // A reset landed while this was in flight: the result describes a
+      // session the caller already ended, so it is dropped rather than
+      // resurrected as the "latest" items.
+      if (generation !== this.#generation) {
+        return { analysis_status: "stale", reason: "reset_during_analysis", items: null };
+      }
+      this.#latest = {
+        ...result,
+        frame_id: frame?.frame_id ?? null,
+        frame_source: frame?.source ?? null,
+      };
       this.#latestAt = Date.now();
       this.#lastError = null;
       this.#analyzedCount += 1;
       return { analysis_status: "analyzed", items: this.#latest };
     } catch (err) {
+      if (generation !== this.#generation) {
+        return { analysis_status: "stale", reason: "reset_during_analysis", items: null };
+      }
       this.#lastError = err.message;
       return { analysis_status: "error", error: err.message, items: this.#latest };
     } finally {
-      this.#inFlight = false;
+      // Only the call that still owns the slot may release it; otherwise a
+      // superseded call clears the guard out from under a live one and two
+      // model calls run at once.
+      if (generation === this.#generation) this.#inFlight = false;
     }
   }
 }
