@@ -391,6 +391,82 @@ final class FrameUplink: @unchecked Sendable {
     }
 }
 
+// Ported verbatim from the PokerAI capture app (commit 85c4689). The glasses
+// deliver already-encoded HEVC, so this writes those samples straight to an
+// mp4 — no decode, no re-encode, no network. Full capture quality regardless
+// of how bad the wifi is.
+final class RecorderBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var writer: AVAssetWriter?
+    private var input: AVAssetWriterInput?
+    private var started = false
+    private var recording = false
+    private(set) var url: URL?
+
+    func setRecording(_ on: Bool) { lock.lock(); recording = on; lock.unlock() }
+
+
+
+    func start() {
+        lock.lock(); defer { lock.unlock() }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let u = docs.appendingPathComponent("reloop_\(Int(Date().timeIntervalSince1970)).mp4")
+        try? FileManager.default.removeItem(at: u)
+        writer = nil; input = nil; started = false; url = u
+    }
+
+    // The glasses deliver already-encoded HEVC (hvc1) samples, so we write them
+    // straight to disk — no re-encode, no decode. outputSettings: nil = passthrough;
+    // the sourceFormatHint carries the HEVC parameter sets the writer needs.
+    private func makeWriter(formatDescription: CMFormatDescription) {
+        guard let u = url, let w = try? AVAssetWriter(outputURL: u, fileType: .mp4) else { return }
+        let inp = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: formatDescription)
+        inp.expectsMediaDataInRealTime = true
+        // Fail fast if the input can't attach — otherwise appends silently no-op
+        // and we'd think we're recording into a writer that never writes.
+        guard w.canAdd(inp) else { return }
+        w.add(inp)
+        writer = w; input = inp
+    }
+
+    // A sample is a keyframe unless it is explicitly flagged NotSync. HEVC files
+    // must begin on a keyframe or they are undecodable from the front.
+    private static func isKeyframe(_ sb: CMSampleBuffer) -> Bool {
+        guard let arr = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: false),
+              CFArrayGetCount(arr) > 0 else { return true }
+        let dict = unsafeBitCast(CFArrayGetValueAtIndex(arr, 0), to: CFDictionary.self) as NSDictionary
+        if let notSync = dict[kCMSampleAttachmentKey_NotSync as String] as? Bool { return !notSync }
+        return true
+    }
+
+
+    func append(_ frame: VideoFrame) {
+        lock.lock(); defer { lock.unlock() }
+        guard recording else { return }
+        let sb = frame.sampleBuffer
+        if writer == nil {
+            guard let fmt = CMSampleBufferGetFormatDescription(sb) else { return }
+            makeWriter(formatDescription: fmt)
+        }
+        guard let w = writer, let inp = input else { return }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sb)
+        if !started {
+            guard Self.isKeyframe(sb) else { return }   // wait for the first keyframe
+            w.startWriting(); w.startSession(atSourceTime: pts); started = true
+        }
+        if inp.isReadyForMoreMediaData { inp.append(sb) }
+    }
+
+    func stop(completion: @escaping @Sendable (URL?) -> Void) {
+        lock.lock(); recording = false
+        guard let w = writer, let inp = input else { lock.unlock(); completion(nil); return }
+        let u = url; writer = nil; input = nil
+        lock.unlock()
+        inp.markAsFinished()
+        w.finishWriting { completion(u) }
+    }
+}
+
 @MainActor
 final class GlassesStreamer: ObservableObject {
     @Published var latestFrame: UIImage?
@@ -424,6 +500,9 @@ final class GlassesStreamer: ObservableObject {
     private var tokens: [any AnyListenerToken] = []
     private var compatTokens: [DeviceIdentifier: any AnyListenerToken] = [:]
     private let uplink = FrameUplink()
+    private let recorder = RecorderBox()
+    @Published var isRecording = false
+    @Published var savedFile = ""
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
     let preview = PreviewSink()
 
@@ -538,6 +617,17 @@ final class GlassesStreamer: ObservableObject {
         keepAlive.stop()
         UIApplication.shared.isIdleTimerDisabled = false
         uplink.setStreaming(false); isStreaming = false
+        if isRecording {
+            isRecording = false
+            recorder.stop { [weak self] url in
+                Task { @MainActor in
+                    self?.savedFile = url?.lastPathComponent ?? ""
+                    if let name = url?.lastPathComponent {
+                        self?.status = "Saved \(name)"
+                    }
+                }
+            }
+        }
         stream?.stop(); stream = nil
         camera?.stop(); camera = nil
         session?.stop(); session = nil
@@ -614,7 +704,13 @@ final class GlassesStreamer: ObservableObject {
 
                 let uplink = self.uplink
                 let preview = self.preview
+                // Captured locally like the others: this closure runs on the
+                // SDK's thread and GlassesStreamer is @MainActor.
+                let recorder = self.recorder
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
+                    // Disk first: recording is the one thing that must survive a
+                    // dead network, so it never waits on the uplink or the decoder.
+                    recorder.append(frame)
                     // .hvc1 arrives encoded, so it goes through the decode path.
                     // ingest() hands off to VTDecompressionSession and never
                     // blocks the SDK's delivery thread.
@@ -660,6 +756,9 @@ final class GlassesStreamer: ObservableObject {
                 // Arm the uplink BEFORE starting the stream so the very first
                 // frame/keyframe is never dropped (ingest() no-ops until armed,
                 // and gates on the first keyframe anyway).
+                recorder.start()
+                recorder.setRecording(true)
+                self.isRecording = true
                 uplink.setStreaming(true)
                 self.isStreaming = true
                 self.lastRestartAt = .distantPast   // fresh session: clear stale debounce
