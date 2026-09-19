@@ -54,6 +54,8 @@ import { foldDashboard } from "../events/dashboard-fold.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
+import { attachMcpToServer } from "../market/mcp-catalog.js";
+import { publishShopifyListing } from "../shopify/shopify-agent.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -224,9 +226,10 @@ export function createReLoopServer({
   draftQueue = new DraftQueue({ eventLog }),
   marketFile = process.env.RELOOP_MARKET_FILE ?? (process.env.NODE_ENV === "test" ? null : join(ROOT, "data", "market_state.json")),
   market: customMarket = null,
+  publisher = publishShopifyListing,
   enableRepricing = process.env.ENABLE_REPRICING === "1",
 } = {}) {
-  const market = customMarket ?? new Market({ eventLog, draftQueue, file: marketFile });
+  const market = customMarket ?? new Market({ eventLog, draftQueue, publisher, file: marketFile });
   const repricingJob = new RepricingJob({
     market,
     intervalMs: Number(process.env.REPRICING_INTERVAL_MS ?? 60_000),
@@ -442,12 +445,48 @@ export function createReLoopServer({
       photoUrl: body.photo_url ?? (photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null),
       source: body.source ?? latest?.frame_source ?? null,
     });
+
+    if (body.auto_approve) {
+      const result = await market.approvePlan(plan.id, {
+        location: body.location ?? null,
+        categories: body.categories ?? {},
+        photoUrls: body.photo_urls ?? {},
+      });
+      sendJson(res, 201, { ...result, drafts: draftQueue.status() });
+      return;
+    }
+
     sendJson(res, 201, plan);
+  }
+
+  async function handleQuickList(req, res) {
+    const body = await readOptionalJsonBody(req);
+    const latest = itemAnalyzer.latest();
+    const items = Array.isArray(body.items) ? body.items : latest?.items ?? [];
+    if (!items.length) {
+      sendJson(res, 409, { error: "no priced items yet: start analysis and point the camera at something, or send items" });
+      return;
+    }
+    const photoId = Array.isArray(body.items) ? null : storePhoto(latest?.frame_id);
+    const plan = market.createPlan({
+      items,
+      goal: body.goal ?? { mode: "CLEAR_SPACE" },
+      keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
+      photoUrl: body.photo_url ?? (photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null),
+      source: body.source ?? latest?.frame_source ?? "GLASSES",
+    });
+
+    const result = await market.approvePlan(plan.id, {
+      location: body.location ?? null,
+      categories: body.categories ?? {},
+      photoUrls: body.photo_urls ?? {},
+    });
+    sendJson(res, 201, { ...result, drafts: draftQueue.status() });
   }
 
   async function handleApprovePlan(req, res, planId) {
     const body = await readOptionalJsonBody(req);
-    const result = market.approvePlan(planId, {
+    const result = await market.approvePlan(planId, {
       location: body.location ?? null,
       categories: body.categories ?? {},
       photoUrls: body.photo_urls ?? {},
@@ -479,6 +518,7 @@ export function createReLoopServer({
   async function routeMarket(req, res, url) {
     const parts = url.pathname.split("/").filter(Boolean); // ["api", "plans", id, action?]
     try {
+      if (req.method === "POST" && url.pathname === "/api/plans/quick-list") return await handleQuickList(req, res);
       if (req.method === "POST" && url.pathname === "/api/plans") return await handleCreatePlan(req, res);
       if (parts[1] === "plans" && parts[2]) {
         if (req.method === "GET" && parts.length === 3) return sendJson(res, 200, market.getPlan(parts[2]));
@@ -838,6 +878,9 @@ export function createReLoopServer({
       sendJson(res, 500, { error: err.message });
     }
   });
+
+  httpServer._reloopMarket = market;
+  return httpServer;
 }
 
 function lanAddresses(port) {
@@ -856,12 +899,17 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
   const server = createReLoopServer();
+
+  // Attach the MCP catalog on the same HTTP server at /mcp/sse
+  // Any MCP-compatible agent can connect to: http://localhost:{port}/mcp/sse
+  if (server._reloopMarket) {
+    attachMcpToServer(server, server._reloopMarket, "/mcp");
+  }
+
   server.listen(port, host, () => {
     console.log(`ReLoop desktop: http://localhost:${port}`);
+    console.log(`ReLoop MCP:     http://localhost:${port}/mcp/sse`);
     for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);
-    // Must test the SAME variable the backend reads. Checking the Claude-channel
-    // key here printed "ready" while every call 401'd, and "unavailable" while
-    // it worked — the banner lied in both directions.
     console.log(
       process.env.RIGHTCODES_KEY_GEMINI
         ? `Item pricing: ${RIGHTCODES_ITEMS_MODEL}`
