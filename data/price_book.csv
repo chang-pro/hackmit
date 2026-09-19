@@ -1,0 +1,10 @@
+category,label,normal_usd,spread_pct,min_listable_usd,e_waste,source,researched,is_demo
+console.ps4_slim,Sony PS4 Slim,185,13,20,true,v2 plan fixture - replace with sold comparables,,true
+console.ps4_pro,Sony PS4 Pro,220,15,20,true,unresearched development fixture,,true
+console.ps5,Sony PS5,450,13,20,true,v2 upgrade example - not a current retail quote,,true
+audio.headset_wireless,Wireless gaming headset,60,15,15,true,v1 plan fixture - replace with sold comparables,,true
+display.monitor_24,24 inch 1080p monitor,95,15,20,true,v1 plan fixture - replace with sold comparables,,true
+phone.generic,Phone - model requires confirmation,80,20,20,true,unresearched development fixture,,true
+input.keyboard,Keyboard,35,15,10,true,unresearched development fixture,,true
+lighting.desk_lamp,Desk lamp,25,20,10,true,unresearched development fixture,,true
+accessories.cables,Cable bundle,5,20,15,true,unresearched development fixture,,true

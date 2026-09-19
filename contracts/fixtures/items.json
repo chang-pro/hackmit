@@ -1,0 +1,106 @@
+[
+  {
+    "id": "it_ps4",
+    "captureIds": [
+      "cap_ps4"
+    ],
+    "label": "Sony PS4 Slim",
+    "category": "console.ps4_slim",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_headset",
+    "captureIds": [
+      "cap_headset"
+    ],
+    "label": "Wireless gaming headset",
+    "category": "audio.headset_wireless",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_monitor",
+    "captureIds": [
+      "cap_monitor"
+    ],
+    "label": "24 inch 1080p monitor",
+    "category": "display.monitor_24",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_phone",
+    "captureIds": [
+      "cap_phone"
+    ],
+    "label": "Old phone (fixture)",
+    "category": "phone.generic",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_keyboard",
+    "captureIds": [
+      "cap_keyboard"
+    ],
+    "label": "Keyboard",
+    "category": "input.keyboard",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_lamp",
+    "captureIds": [
+      "cap_lamp"
+    ],
+    "label": "Desk lamp",
+    "category": "lighting.desk_lamp",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_cables",
+    "captureIds": [
+      "cap_cables"
+    ],
+    "label": "Cable bundle",
+    "category": "accessories.cables",
+    "condition": "GOOD",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  },
+  {
+    "id": "it_dead_phone",
+    "captureIds": [
+      "cap_dead_phone"
+    ],
+    "label": "Dead phone (fixture)",
+    "category": "phone.generic",
+    "condition": "BROKEN",
+    "confidence": 0.95,
+    "foundBy": "FIXTURE",
+    "question": null,
+    "confirmedByUser": true
+  }
+]
