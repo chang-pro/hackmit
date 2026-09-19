@@ -45,7 +45,7 @@ import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
 import { randomUUID } from "node:crypto";
 import { ItemAnalyzer } from "./item-analyzer.js";
-import { RIGHTCODES_ITEMS_MODEL } from "../vision/backends/rightcodes-items.js";
+import { selectedItemsBackend } from "../vision/backends/items-provider.js";
 import { DraftQueue } from "../market/draft-queue.js";
 import { Market } from "../market/market.js";
 import { RepricingJob } from "../market/repricing.js";
@@ -376,7 +376,7 @@ export function createReLoopServer({
         items: null,
         analysis: {
           status: "error",
-          backend: "rightcodes-items",
+          backend: selectedItemsBackend().name,
           error: err.message,
         },
         ...(dataset ? { dataset } : {}),
@@ -898,13 +898,6 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   server.listen(port, host, () => {
     console.log(`ReLoop desktop: http://localhost:${port}`);
     for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);
-    // Must test the SAME variable the backend reads. Checking the Claude-channel
-    // key here printed "ready" while every call 401'd, and "unavailable" while
-    // it worked — the banner lied in both directions.
-    console.log(
-      process.env.RIGHTCODES_KEY_GEMINI
-        ? `Item pricing: ${RIGHTCODES_ITEMS_MODEL}`
-        : "Item pricing unavailable: RIGHTCODES_KEY_GEMINI is not set"
-    );
+    console.log(`Item pricing provider: ${selectedItemsBackend().name}`);
   });
 }
