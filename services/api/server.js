@@ -493,6 +493,7 @@ export function createReLoopServer({
       location: body.location ?? null,
       categories: body.categories ?? {},
       photoUrls: body.photo_urls ?? {},
+      keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
     });
     sendJson(res, 200, { ...result, drafts: draftQueue.status() });
   }
