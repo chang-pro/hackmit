@@ -148,6 +148,8 @@ mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
       title
       handle
       status
+      onlineStoreUrl
+      onlineStorePreviewUrl
       variants(first: 1) {
         nodes {
           id
@@ -299,6 +301,8 @@ export async function createProduct({
     }
   }
 
+  const productUrl = prod.onlineStoreUrl || prod.onlineStorePreviewUrl || `https://${cleanDomain}/products/${prod.handle}`;
+
   return {
     dry_run: false,
     product: {
@@ -307,7 +311,8 @@ export async function createProduct({
       handle: prod.handle,
       status: prod.status,
       price: formattedPrice,
-      url: `https://${cleanDomain}/products/${prod.handle}`,
+      url: productUrl,
+      previewUrl: prod.onlineStorePreviewUrl || null,
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
     },
   };

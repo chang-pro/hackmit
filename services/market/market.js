@@ -31,15 +31,17 @@ export class Market {
   #eventLog;
   #draftQueue;
   #file;
+  #publisher;
   #rules = new Map(); // listingId -> { floorUsd, autoAcceptUsd, maxRounds }
   #pendingRules = new Map(); // planId -> Map(itemId -> rules), until approval
   plans = new Map();
   listings = new Map();
   threads = new Map();
 
-  constructor({ eventLog, draftQueue, file = process.env.RELOOP_MARKET_FILE || null } = {}) {
+  constructor({ eventLog, draftQueue, publisher = null, file = process.env.RELOOP_MARKET_FILE || null } = {}) {
     this.#eventLog = eventLog;
     this.#draftQueue = draftQueue;
+    this.#publisher = publisher;
     this.#file = file;
     this.#load();
   }
@@ -114,7 +116,7 @@ export class Market {
   }
 
   // options: { location: {lat, lon}, categories: {itemId: name}, photoUrls: {itemId: [url]} }
-  approvePlan(planId, { location = null, categories = {}, photoUrls = {} } = {}) {
+  async approvePlan(planId, { location = null, categories = {}, photoUrls = {} } = {}) {
     const plan = this.plans.get(planId);
     if (!plan) throw fail(404, `no plan "${planId}"`);
     if (plan.approved) throw fail(409, "plan is already approved");
@@ -166,10 +168,15 @@ export class Market {
         status: "ACTIVE",
         soldUsd: null,
         marketplace: { status: "queued", url: null, draftId: null },
+        shopify: null,
       };
       this.listings.set(listing.id, listing);
       this.#rules.set(listing.id, rules.get(item.id));
       created.push(listing);
+
+      if (this.#publisher) {
+        await this.#publishToShopify(listing, item);
+      }
 
       const photos = photoUrls[item.id] ?? (plan.photoUrl ? [plan.photoUrl] : []);
       const { job } = this.#draftQueue.enqueue({
@@ -189,10 +196,54 @@ export class Market {
     return { plan: this.publicPlan(plan), listings: created.map((l) => this.publicListing(l)) };
   }
 
+  async #publishToShopify(listing, item) {
+    if (!this.#publisher) return;
+    try {
+      const res = await this.#publisher({
+        id: item.id,
+        label: item.label,
+        listUsd: listing.listUsd,
+        condition: item.condition,
+        price_basis: item.price_basis,
+        photoUrl: listing.photoUrl,
+        foundBy: listing.foundBy || "GLASSES",
+      });
+      listing.shopify = {
+        status: "listed",
+        url: res?.product?.url ?? null,
+        productId: res?.product?.id ?? null,
+        dryRun: Boolean(res?.dry_run),
+        error: null,
+      };
+      this.#emit({
+        kind: "LISTED",
+        itemId: item.id,
+        listingId: listing.id,
+        amountUsd: listing.listUsd,
+        url: listing.shopify.url,
+        text: `Listed on Shopify: ${listing.title} at $${listing.listUsd}`,
+      });
+    } catch (err) {
+      listing.shopify = {
+        status: "failed",
+        url: null,
+        productId: null,
+        dryRun: false,
+        error: err.message,
+      };
+      this.#emit({
+        kind: "PUBLISH_FAILED",
+        itemId: item.id,
+        listingId: listing.id,
+        text: `Failed to publish to Shopify: ${err.message}`,
+      });
+    }
+  }
+
   publicListing(listing) {
     // Explicit allowlist: nothing from #rules can ride along by accident.
-    const { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, marketplace } = listing;
-    return { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, marketplace: { ...marketplace } };
+    const { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, marketplace, shopify } = listing;
+    return { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, marketplace: { ...marketplace }, shopify: shopify ?? null };
   }
 
   #listing(listingId) {
