@@ -51,33 +51,89 @@ by hand in that window. The session persists in the profile, so this is once.
 ### 3. Create the posting chat
 
 All Marketplace posting goes through **one dedicated muse.ai chat**, so listing
-traffic never lands in a personal thread. Create a chat named:
+traffic never lands in a personal thread. In muse.ai, create a new chat and name
+it exactly:
 
 ```
-post items to facebook marketplace
+Post items to Facebook Marketplace
 ```
 
-Override with `MUSE_CHAT` if you name it something else. The bridge switches to
-this chat by name before every send and **refuses to send** if it cannot get
-there — every muse.ai chat shares the same URL (`https://muse.ai/`), so the
-sidebar row is the only handle, and a silent failure would post into whatever
-thread happened to be open.
+Matching is case- and punctuation-insensitive; override with `MUSE_CHAT` if you
+name it something else.
+
+Confirm the bridge can find it:
+
+```bash
+node -e "
+import('./facebook-marketplace/cdp.js').then(async ({CdpSession,findTarget}) => {
+  const {selectChat} = await import('./facebook-marketplace/muse-agent.js');
+  const cdp = await CdpSession.attach(await findTarget('muse.ai'));
+  console.log('switched:', await selectChat(cdp));
+  cdp.close();
+})"
+```
+
+The bridge switches to this chat before every send and **refuses to send** if it
+cannot get there. Every muse.ai chat shares the same URL (`https://muse.ai/`),
+so the sidebar row is the only handle — a silent failure would post a
+Marketplace listing into whatever personal thread happened to be open. The open
+chat is identified by `aria-current="page"` on its sidebar row; the page header
+is unreliable (it shows the agent's name, or nothing, depending on layout).
 
 ## Usage
 
-```js
-import { publishListing } from "./facebook-marketplace/muse-agent.js";
+Over HTTP, against the latest identified items:
 
-await publishListing({
-  id: "item_001",
-  label: "Sony PS4 Slim",
-  condition: "good",
-  price_usd: 185,
-});
+```bash
+curl -X POST http://localhost:3000/api/listings/draft \
+  -H "Content-Type: application/json" \
+  -d '{"item_id":"item_001","location":{"lat":28.60,"lon":-81.20}}'
 ```
 
-The instruction states a hard price floor (85% of asking by default) and tells
-muse.ai never to reveal it to a buyer. The floor is ours, not the buyer's.
+An `item_id` is resolved against the latest analysis, so the caller never echoes
+a price back and cannot list a stale one. Pass a full `item` object instead when
+driving it outside the live pipeline.
+
+Or directly:
+
+```js
+import { draftListing } from "./facebook-marketplace/muse-agent.js";
+
+await draftListing(
+  { id: "item_001", label: "Sony PS4 Slim", condition: "good", price_usd: 185 },
+  { photoUrls: ["https://…/ps4.jpg"], location: { lat: 28.60, lon: -81.20 } }
+);
+```
+
+### What the agent actually does — asked directly, 2026-09-19
+
+It **builds a draft and stops**. It does not publish. Verified end to end: the
+call above produced a real draft with a listing ID and a
+`facebook.com/marketplace/item/…` URL, not live.
+
+| It will | It will not |
+|---|---|
+| Build a draft from title, condition, price | Publish anything — that needs your tap, every time |
+| Add photos, category, location when given | Invent a location |
+| Edit, delete, or publish a draft later on request | Message buyers, haggle, or manage a live listing |
+
+Two consequences the code reflects:
+
+- The function is called **`draftListing`, not `publishListing`**. Naming it
+  "publish" would misdescribe what happens and set the wrong expectation.
+- **No negotiation instruction is sent.** The agent has said it will not haggle,
+  so telling it a price floor would be theatre. The floor is still returned on
+  the result (`floor_usd`, 85% of asking) for whatever handles negotiation
+  later.
+
+### A listing cannot go live without
+
+- **Photos.** Not optional. Missing photos are reported as the blocker.
+- **Location as lat/lon.** Facebook needs coordinates; a typed city name is not
+  enough. The instruction explicitly tells the agent **not to guess one**, so a
+  missing location stalls the draft on a question rather than going live
+  somewhere wrong.
+- **Category.** The agent picks the closest fit and says which it chose.
 
 ## Recording a browser flow
 
@@ -131,14 +187,26 @@ bubble makes reply detection return the echo of what was just sent.
   assignment that fires no key events — the box looks filled and submits empty.
   Typing goes through `Input.insertText`.
 - **Backgrounded tabs get throttled.** Chrome slows timers in background
-  renderers, and `Runtime.evaluate` can time out. Keep the CDP window visible
-  during a demo, or raise the session timeout.
+  renderers, and `Runtime.evaluate` times out whenever the window is not in
+  front. `start-cdp-chrome.sh` passes `--disable-background-timer-throttling`,
+  `--disable-renderer-backgrounding` and
+  `--disable-backgrounding-occluded-windows` to prevent it. If you launch Chrome
+  by hand without those flags, the bridge only works while you are looking at it.
 - **A reply is detected by waiting for it to settle**, not by grabbing the first
   text that appears, so a streaming answer is not truncated mid-sentence. A
   stream that never settles returns whatever arrived rather than throwing.
 - **No verification.** Whatever muse.ai says it did is taken at its word. The
-  bridge does not independently confirm a listing exists.
+  bridge does not open Facebook to confirm the draft exists.
+- **Escaping in injected page scripts.** Page-side code is built as a JS
+  template literal, so a `\n` inside it becomes a real newline and produces
+  `SyntaxError: Invalid or unexpected token` in the page. Write `\\n`.
+- **It posts under the personal Facebook account, not a throwaway.** The agent
+  told us this unprompted: the integration is bound to whichever account is
+  connected in muse.ai, and it is the personal one. So the "just use a burner"
+  mitigation does not apply unless that account is reconnected inside muse.ai
+  first.
 - **Account risk.** Automating Marketplace can get a Facebook account
-  restricted, and if that account is also the Meta account your glasses
-  developer registration is tied to, a flag costs you the glasses demo too.
-  Consider a throwaway Facebook account for this.
+  restricted. If that account is also the Meta account your glasses developer
+  registration is tied to, a flag costs you the glasses demo too. Since drafts
+  never auto-publish, the exposure is smaller than it would be for a fully
+  autonomous poster — but it is not zero.

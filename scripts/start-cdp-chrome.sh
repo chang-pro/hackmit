@@ -7,6 +7,10 @@
 #   - Chrome cannot have a debugging port attached to an already-running
 #     instance, so it has to be launched with the flag
 #
+# The backgrounding flags matter: Chrome throttles timers in background
+# renderers, which makes Runtime.evaluate time out whenever the window is not
+# in front. Without them the bridge only works while you are looking at it.
+#
 # The profile persists at ~/.reloop/cdp-profile, so you log into muse.ai once.
 # That directory holds live session cookies — it is chmod 700 and must never be
 # committed.
@@ -37,6 +41,9 @@ chmod 700 "$PROFILE"
   --user-data-dir="$PROFILE" \
   --no-first-run \
   --no-default-browser-check \
+  --disable-background-timer-throttling \
+  --disable-renderer-backgrounding \
+  --disable-backgrounding-occluded-windows \
   "$START_URL" >/dev/null 2>&1 &
 
 for _ in $(seq 1 30); do
