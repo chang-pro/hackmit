@@ -28,7 +28,12 @@ struct ApiClient {
     // "localhost" resolves to the phone itself on a real device, so every
     // frame POST vanished. Default to the Mac's Tailscale address: it is stable
     // across a wifi/cell switch, unlike a DHCP LAN address.
-    static let defaultBaseURL = "http://100.104.109.111:3000"
+    // The Mac's LAN address, not its Tailscale one. Verified reachable from the
+    // phone's browser: the venue wifi passes TCP between clients even though it
+    // blocks the UDP that Tailscale needs to go direct, so every frame was
+    // relaying through New York for no reason. On the LAN the frames never
+    // touch the internet at all.
+    static let defaultBaseURL = "http://192.168.234.1:3000"
 
     let baseURL: URL
 
@@ -41,8 +46,8 @@ struct ApiClient {
         // already committed to the tunnel and re-sends a full frame into a link
         // that is mid-recovery. The resource timeout matters more: its default is
         // 7 days, so a request dribbling a packet every few seconds runs forever.
-        config.timeoutIntervalForRequest = 5
-        config.timeoutIntervalForResource = 10
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
         config.waitsForConnectivity = false
         return URLSession(configuration: config)
     }()

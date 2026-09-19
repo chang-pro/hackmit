@@ -117,7 +117,7 @@ final class FrameUplink: @unchecked Sendable {
     // link is the bottleneck — not the encoder. Halving the payload buys more
     // frames per second than any encoder tuning does, and at 360x640 the
     // identification model cannot tell the difference.
-    private let jpegQuality: CGFloat = 0.45
+    private let jpegQuality: CGFloat = 0.40
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
     // Encoding must not happen on the SDK's frame-delivery thread (see the
     // note by tickDiagnostics): a JPEG encode there stalls delivery and the
@@ -333,6 +333,15 @@ final class FrameUplink: @unchecked Sendable {
     // .medium (504x896) is what keeps the GLASSES link healthy, but uploading
     // it whole nearly doubled our POST bodies (30-41KB -> 53-76KB) and the
     // phone->server hop is the slower link. So capture big, upload small.
+    // 540p (960x540 landscape / 540x960 portrait). Bigger than the 640 edge we
+    // needed while every frame crossed a relay — on the LAN the link is no
+    // longer the constraint, so spend the bytes on a sharper picture.
+    // Back to a 640 edge. 540p measured at 90-120KB a frame on this link,
+    // every POST then outran the request timeout, and URLSession discards a
+    // connection on timeout — so each frame paid a fresh handshake and TCP
+    // slow-start. The server log showed a NEW source port on every single
+    // POST, which is that churn. 640/0.40 measured 30-41KB and 2.4fps even
+    // over the relay, which is the best this pipeline has done all night.
     private let maxUploadEdge: CGFloat = 640
 
     private func encodeAndPost(_ imageBuffer: CVImageBuffer, completion: @escaping () -> Void) {
@@ -349,7 +358,16 @@ final class FrameUplink: @unchecked Sendable {
             colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
             options: [CIImageRepresentationOption(
                 rawValue: kCGImageDestinationLossyCompressionQuality as String): jpegQuality]
-        ) else { return }
+        ) else {
+            // EVERY exit must release the slot. Returning here without calling
+            // completion left uploadInFlight set forever, so a single failed
+            // encode silently ended all uploads for the rest of the session:
+            // the stream looked alive on the phone while the server received
+            // two frames and then nothing.
+            report(failedDelta: 1)
+            completion()
+            return
+        }
 
         let submission = FrameSubmission(
             source: "rayban_sdk",
