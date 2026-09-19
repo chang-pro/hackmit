@@ -19,3 +19,6 @@ secrets.*
 /apps/demo-web/streams/*.mp4
 /apps/demo-web/streams/*.mov
 /apps/demo-web/streams/*.webm
+
+# XcodeGen regenerates the project and workspace; only project.yml is the source.
+apps/ios/BloomKnights/BloomKnights.xcodeproj/project.xcworkspace/

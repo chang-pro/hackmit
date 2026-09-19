@@ -348,6 +348,10 @@ final class GlassesStreamer: ObservableObject {
     private let wearables = Wearables.shared
     private let deviceSelector: AutoDeviceSelector
     private var session: DeviceSession?
+    // DAT 0.9.0 consolidated streaming under Camera: the session hands back a
+    // Camera that owns the hardware, and the stream is its child. The camera
+    // reference must be held — stopping it cascades to the stream.
+    private var camera: MWDATCamera.Camera?
     private var stream: MWDATCamera.Stream?
     private var tokens: [any AnyListenerToken] = []
     private var compatTokens: [DeviceIdentifier: any AnyListenerToken] = [:]
@@ -467,6 +471,7 @@ final class GlassesStreamer: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         uplink.setStreaming(false); isStreaming = false
         stream?.stop(); stream = nil
+        camera?.stop(); camera = nil
         session?.stop(); session = nil
         // Drop the stream's frame/state/error listeners so a restart doesn't
         // stack duplicate subscriptions (double callbacks + leak). Compatibility
@@ -514,11 +519,13 @@ final class GlassesStreamer: ObservableObject {
 
                 // Match Meta's supported CameraAccess sample exactly.
                 let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 24)
-                guard let stream = try session.addStream(config: config) else {
+                guard let camera = try session.addCamera(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
                     return
                 }
+                self.camera = camera
+                let stream = camera.stream
                 self.stream = stream
 
                 let uplink = self.uplink

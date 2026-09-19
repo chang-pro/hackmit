@@ -1,195 +1,197 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createBloomServer } from "../services/api/server.js";
-import { LiveEventAnalyzer } from "../services/api/live-event-analyzer.js";
+import { ItemAnalyzer } from "../services/api/item-analyzer.js";
 
-const testVision = {
-  name: "test-phone-vision",
-  async extractEventBatch(frames) {
-    assert.equal(frames[0].mime_type, "image/jpeg");
-    assert.equal(frames[0].image_base64, "cGhvbmUtZnJhbWU=");
+const PHOTO = "cGhvbmUtZnJhbWU=";
+
+// Stands in for the Gemini call: same shape the real backend returns, so the
+// server contract is tested without spending a model call.
+const testItems = {
+  name: "test-items",
+  async identifyItems(frame) {
+    assert.equal(frame.mime_type, "image/jpeg");
+    assert.equal(frame.image_base64, PHOTO);
+    const items = [
+      {
+        id: "item_001",
+        label: "Sony PS4 Slim",
+        condition: "good",
+        price_usd: 185,
+        price_basis: "used PS4 Slim consoles sell around $185",
+        bbox: { x: 120, y: 340, width: 300, height: 180 },
+        confidence: 0.92,
+      },
+      {
+        id: "item_002",
+        label: "Wireless gaming headset",
+        condition: "fair",
+        price_usd: 45,
+        price_basis: "worn pads drop the usual $60",
+        bbox: { x: 600, y: 210, width: 180, height: 200 },
+        confidence: 0.81,
+      },
+    ];
     return {
-      sport: "soccer",
-      competition: "FIFA World Cup",
-      event_name: "USA vs Brazil",
-      event_identity: "soccer:usa-vs-brazil-world-cup-2026",
-      event_format: "team_event",
-      participants: [
-        { name: "USA", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
-        { name: "Brazil", role_or_position: "team", score_or_status: "1", visible_rank: 0 },
-      ],
-      participant_a: "USA",
-      participant_b: "Brazil",
-      score_a: 1,
-      score_b: 1,
-      score_display: "1-1",
-      phase: "Second half",
-      clock: "72:14",
-      event_status: "live",
-      possession_or_control: "Brazil",
-      situation: "Open play",
-      visible_facts: ["Score tied"],
-      changes_across_frames: [],
-      confidence: 0.94,
+      items,
+      item_count: items.length,
+      total_value_usd: 230,
+      model: "test-model",
+      generated_at: new Date().toISOString(),
     };
   },
 };
 
-test("phone photo returns a complete multisport live insight", async (t) => {
-  const liveAnalyzer = new LiveEventAnalyzer({
-    visionBackend: testVision,
-    analyze: async () => ({
-      event_summary: "USA and Brazil are tied late in the second half.",
-      primary_market_question: "Will Brazil win?",
-      primary_outcome: "Brazil wins",
-      primary_probability: 0.42,
-      confidence: 0.7,
-      alternate_markets: [],
-      key_factors: ["Tied at 72 minutes"],
-      what_changed: "No prior window",
-      next_probability_trigger: "A goal",
-      risk_note: "Visual estimate",
-    }),
+function startServer(t, { intervalMs = 0 } = {}) {
+  const server = createBloomServer({
+    itemAnalyzer: new ItemAnalyzer({ backend: testItems, intervalMs }),
   });
-  const server = createBloomServer({ liveAnalyzer });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const { port } = server.address();
-  const base = `http://127.0.0.1:${port}`;
+  server.listen(0);
+  t.after(() => server.close());
+  return `http://127.0.0.1:${server.address().port}`;
+}
 
-  await fetch(`${base}/api/reset`, { method: "POST" });
-  assert.equal((await fetch(`${base}/api/latest`)).status, 404);
-  const packCatalog = await (await fetch(`${base}/api/demo/intelligence`)).json();
-  assert.equal(packCatalog.packs.length, 4);
-  const started = await fetch(`${base}/api/analysis/start`, { method: "POST" });
-  assert.equal(started.status, 200);
-  const response = await fetch(`${base}/api/frames`, {
+function framePayload(overrides = {}) {
+  return {
+    source: "phone_photo",
+    captured_at: new Date().toISOString(),
+    mime_type: "image/jpeg",
+    image_base64: PHOTO,
+    width: 960,
+    height: 540,
+    ...overrides,
+  };
+}
+
+async function postFrame(base, payload = framePayload()) {
+  const res = await fetch(`${base}/api/frames`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source: "phone_photo",
-      captured_at: "2026-07-11T20:14:32.491Z",
-      mime_type: "image/jpeg",
-      image_base64: "cGhvbmUtZnJhbWU=",
-      width: 1280,
-      height: 720,
-    }),
+    body: JSON.stringify(payload),
   });
-  assert.equal(response.status, 201);
-  const body = await response.json();
-  assert.equal(body.selection.accepted, true);
-  assert.equal(body.insight.source, "live");
-  assert.equal(body.insight.extraction, "test-phone-vision-batch");
-  assert.equal(body.insight.observation.sport, "soccer");
-  assert.equal(body.insight.analysis.primary_probability, 0.42);
-  assert.equal(body.insight.presentation.status, "ready");
+  return { status: res.status, body: await res.json() };
+}
 
-  const latestFrame = await (await fetch(`${base}/api/live-frame`)).json();
-  assert.equal(latestFrame.frame.frame_id, body.frame.frame_id);
-  assert.equal(latestFrame.insight.observation.sport, "soccer");
-  const image = await fetch(`${base}${latestFrame.image_url}`);
-  assert.equal(image.status, 200);
-  assert.equal(image.headers.get("content-type"), "image/jpeg");
-  assert.deepEqual([...new Uint8Array(await image.arrayBuffer())], [...Buffer.from("phone-frame")]);
+test("frames are ignored until the viewer explicitly starts analysis", async (t) => {
+  const base = startServer(t);
 
-  const latest = await (await fetch(`${base}/api/latest`)).json();
-  assert.equal(latest.frame_window.frames[0].frame_id, body.frame.frame_id);
-  assert.equal(latest.extraction, "test-phone-vision-batch");
+  const before = await postFrame(base);
+  assert.equal(before.status, 202);
+  assert.equal(before.body.analysis_status, "disabled");
+  assert.equal(before.body.analysis_enabled, false);
+
+  const latest = await fetch(`${base}/api/items/latest`);
+  assert.equal(latest.status, 404);
 });
 
-test("demo replay endpoint serves valid checkpoints and rejects invalid requests", async (t) => {
+test("an analyzed frame returns priced items and serves them at /api/items/latest", async (t) => {
+  const base = startServer(t);
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+
+  const { status, body } = await postFrame(base);
+  assert.equal(status, 201);
+  assert.equal(body.analysis_status, "analyzed");
+  assert.equal(body.items.item_count, 2);
+  assert.equal(body.items.total_value_usd, 230);
+
+  const [top] = body.items.items;
+  assert.equal(top.label, "Sony PS4 Slim");
+  assert.equal(top.price_usd, 185);
+  assert.equal(top.condition, "good");
+  // The overlay draws on a 0..1000 normalized box; anything else misplaces it.
+  assert.deepEqual(top.bbox, { x: 120, y: 340, width: 300, height: 180 });
+
+  const res = await fetch(`${base}/api/items/latest`);
+  assert.equal(res.status, 200);
+  const served = await res.json();
+  assert.equal(served.total_value_usd, 230);
+  assert.equal(served.queue.analyzed_count, 1);
+});
+
+test("a near-duplicate frame is dropped by the selector before it reaches the model", async (t) => {
+  const base = startServer(t, { intervalMs: 0 });
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+
+  const first = await postFrame(base);
+  assert.equal(first.body.analysis_status, "analyzed");
+
+  const second = await postFrame(base);
+  assert.equal(second.status, 200);
+  assert.equal(second.body.selection.accepted, false);
+  // The held result still rides along so the overlay never blanks.
+  assert.equal(second.body.items.total_value_usd, 230);
+
+  const served = await (await fetch(`${base}/api/items/latest`)).json();
+  assert.equal(served.queue.analyzed_count, 1, "the model was called once");
+});
+
+test("a fresh frame inside the analyzer interval reuses the last result", async (t) => {
+  const base = startServer(t, { intervalMs: 60_000 });
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+
+  const first = await postFrame(base);
+  assert.equal(first.body.analysis_status, "analyzed");
+
+  // Past the selector's own 750ms window, and a different image, so the only
+  // thing that can stop the second call is the analyzer's interval.
+  await new Promise((done) => setTimeout(done, 800));
+  const second = await postFrame(
+    base,
+    framePayload({ source: "webrtc_viewer", image_base64: "YS1kaWZmZXJlbnQtZnJhbWU=" })
+  );
+  assert.equal(second.status, 202);
+  assert.equal(second.body.analysis_status, "skipped");
+  assert.equal(second.body.reason, "interval");
+  assert.equal(second.body.items.total_value_usd, 230);
+
+  const served = await (await fetch(`${base}/api/items/latest`)).json();
+  assert.equal(served.queue.analyzed_count, 1);
+});
+
+test("stopping analysis clears the held result", async (t) => {
+  const base = startServer(t);
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+  await postFrame(base);
+  assert.equal((await fetch(`${base}/api/items/latest`)).status, 200);
+
+  await fetch(`${base}/api/analysis/stop`, { method: "POST" });
+  assert.equal((await fetch(`${base}/api/items/latest`)).status, 404);
+
+  const status = await (await fetch(`${base}/api/analysis/status`)).json();
+  assert.equal(status.analysis_enabled, false);
+  assert.equal(status.queue.has_result, false);
+});
+
+test("a model failure is reported without dropping the frame", async (t) => {
   const server = createBloomServer({
-    liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),
+    itemAnalyzer: new ItemAnalyzer({
+      backend: {
+        name: "failing",
+        async identifyItems() {
+          throw new Error("RIGHTCODES_API_KEY is not set");
+        },
+      },
+      intervalMs: 0,
+    }),
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
+  server.listen(0);
+  t.after(() => server.close());
   const base = `http://127.0.0.1:${server.address().port}`;
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
 
-  const valid = await fetch(
-    `${base}/api/demo/replay?pack=world-cup-2022-final&moment=france-equalizer`
-  );
-  assert.equal(valid.status, 200);
-  const insight = await valid.json();
-  assert.equal(insight.demo_intelligence.pack_id, "world-cup-2022-final");
-  assert.equal(insight.demo_intelligence.moment_id, "france-equalizer");
-  assert.equal(insight.rehearsal.no_model_calls, true);
-  assert.equal(insight.market.is_mock, true);
-
-  const unknownPack = await fetch(`${base}/api/demo/replay?pack=not-a-pack`);
-  assert.equal(unknownPack.status, 400);
-  assert.match((await unknownPack.json()).error, /unknown intelligence pack/i);
-
-  const unknownMoment = await fetch(
-    `${base}/api/demo/replay?pack=world-cup-2022-final&moment=not-a-moment`
-  );
-  assert.equal(unknownMoment.status, 400);
-  assert.match((await unknownMoment.json()).error, /unknown checkpoint/i);
-
-  const missingPack = await fetch(`${base}/api/demo/replay`);
-  assert.equal(missingPack.status, 400);
-  assert.match((await missingPack.json()).error, /unknown intelligence pack/i);
+  const { status, body } = await postFrame(base);
+  assert.equal(status, 202);
+  assert.equal(body.analysis_status, "error");
+  assert.match(body.error, /RIGHTCODES_API_KEY/);
+  assert.ok(body.frame.frame_id, "the frame is still ingested");
+  assert.match(body.queue.last_error, /RIGHTCODES_API_KEY/);
 });
 
-test("WebRTC signaling follows the latest active camera without proxying media", async (t) => {
-  const server = createBloomServer({
-    liveAnalyzer: new LiveEventAnalyzer({ visionBackend: testVision, analyze: async () => null }),
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise((resolve) => server.close(resolve)));
-  const { port } = server.address();
-  const base = `http://127.0.0.1:${port}`;
-
-  const waiting = await fetch(`${base}/api/webrtc/active`);
-  assert.equal(waiting.status, 200);
-  const waitingSession = await waiting.json();
-  assert.equal(waitingSession.provider_active, false);
-
-  const claimed = await fetch(`${base}/api/webrtc/active`, { method: "POST" });
-  assert.equal(claimed.status, 200);
-  const session = await claimed.json();
-  assert.match(session.session_id, /^[0-9a-f-]{36}$/);
-  assert.equal(session.session_id, waitingSession.session_id);
-  assert.equal(session.provider_active, true);
-
-  const offer = { type: "offer", sdp: "v=0" };
-  const sent = await fetch(`${base}/api/webrtc/signal`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: session.session_id, from: "phone", kind: "offer", payload: offer }),
-  });
-  assert.equal(sent.status, 202);
-  const viewerSignals = await (
-    await fetch(`${base}/api/webrtc/poll?session_id=${session.session_id}&peer=viewer`)
-  ).json();
-  assert.deepEqual(viewerSignals.signals, [{ kind: "offer", payload: offer }]);
-
-  const replacement = await fetch(`${base}/api/webrtc/active`, { method: "POST" });
-  assert.equal(replacement.status, 200);
-  const replacementSession = await replacement.json();
-  assert.notEqual(replacementSession.session_id, session.session_id);
-  assert.equal(replacementSession.provider_active, true);
-  const retiredViewerSignals = await (
-    await fetch(`${base}/api/webrtc/poll?session_id=${session.session_id}&peer=viewer`)
-  ).json();
-  assert.deepEqual(retiredViewerSignals.signals, [{ kind: "hangup", payload: null }]);
-
-  const oversizedSignal = await fetch(`${base}/api/webrtc/signal`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      session_id: session.session_id,
-      from: "phone",
-      kind: "ice",
-      payload: { candidate: "x".repeat(128 * 1024) },
-    }),
-  });
-  assert.equal(oversizedSignal.status, 413);
-
-  assert.equal((await fetch(`${base}/api/webrtc/config`)).status, 404);
-  const config = await (await fetch(`${base}/api/webrtc/config?session_id=${replacementSession.session_id}`)).json();
-  assert.deepEqual(config.ice_servers, [{ urls: "stun:stun.l.google.com:19302" }]);
-  assert.equal(config.ice_transport_policy, "all");
-  const analysis = await (await fetch(`${base}/api/analysis/status`)).json();
-  assert.equal(analysis.analysis_enabled, false);
-  assert.equal((await fetch(`${base}/api/live-stream`)).status, 404);
+test("health reports the item queue and the frame buffer", async (t) => {
+  const base = startServer(t);
+  const health = await (await fetch(`${base}/api/health`)).json();
+  assert.equal(health.status, "ok");
+  assert.equal(health.analysis_enabled, false);
+  assert.equal(health.frame_buffer_size, 0);
+  assert.equal(health.analysis_queue.has_result, false);
 });

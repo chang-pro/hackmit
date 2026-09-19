@@ -1,12 +1,13 @@
-// BloomKnights API server. The mobile client posts base64 frames; frames are
-// batched through the quota-aware LiveEventAnalyzer (Cerebras vision +
-// analytics, one model call per interval). The demo pages replay famous-match
-// fixtures across five sports. Zero dependencies (node:http).
+// BloomKnights API server. The mobile client and the capture viewer post
+// base64 frames; each frame is identified by the item vision backend, which
+// returns every resellable object it can see with a price and a normalized
+// bounding box. Zero dependencies (node:http).
 //
 // Routes:
-//   POST /api/frames            — live frame in (sport-tagged); batched analysis
+//   POST /api/frames            — live frame in; item identification + pricing
 //   POST /api/reset             — clear live session state
-//   GET  /api/health            — vision backend + buffer + quota status
+//   GET  /api/health            — frame buffer + analysis queue status
+//   GET  /api/items/latest      — newest priced items for the live overlay
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
 //   GET  /api/webrtc/active      — single viewer's active camera session
@@ -16,13 +17,7 @@
 //   GET  /api/webrtc/config      — session-bound browser-safe ICE configuration
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
-//   GET  /api/comparison        — ?sport=<id>&fixture=<name>, live insight, or default
-//   GET  /api/latest            — latest live insight only (never fixture fallback)
-//   GET  /api/demo/intelligence — precollected four-event demo pack catalog
-//   GET  /api/demo/replay       — quota-free, explicitly labeled UI rehearsal insight
-//   GET  /api/sports            — sport selector data for the frontends
-//   GET  /api/stats             — compact summaries of saved ESPN snapshots
-//   GET  /api/stats/raw?sport=  — full latest snapshot for one sport
+//   GET  /api/analysis/status    — whether analysis is armed, plus the queue
 //   GET  /, /capture, /phone, /data, /landing, /pitch — pages
 
 import { createServer } from "node:http";
@@ -32,21 +27,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
 import { randomUUID } from "node:crypto";
-import { runPipeline, resetLivePipeline } from "./pipeline.js";
-import { LiveEventAnalyzer } from "./live-event-analyzer.js";
+import { ItemAnalyzer } from "./item-analyzer.js";
+import { RIGHTCODES_ITEMS_MODEL } from "../vision/backends/rightcodes-items.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
-import { BACKENDS, liveBackendName, visionStatus } from "../vision/index.js";
-import { CEREBRAS_ANALYTICS_MODEL } from "../analytics/cerebras.js";
-import { CEREBRAS_VISION_MODEL } from "../vision/backends/cerebras.js";
-import { rightcodesGeminiBackend } from "../vision/backends/rightcodes-gemini.js";
-import { Reconciler } from "../vision/reconciler.js";
-import { getSport, listSports, DEFAULT_SPORT_ID } from "../sports/index.js";
-import {
-  getDemoRehearsalInsight,
-  listDemoIntelligencePacks,
-} from "../demo/intelligence.js";
 import { PlaybackDirector } from "../demo/playback-director.js";
 import {
   DEFAULT_DEMO_STREAMS_DIR,
@@ -56,10 +41,7 @@ import {
 } from "../demo/streams.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const FIXTURES_DIR = join(ROOT, "packages", "fixtures", "frames");
-const STATS_DIR = join(ROOT, "packages", "fixtures", "stats");
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-const LIVE_SESSION_TTL_MS = 30_000;
 const WEBRTC_SESSION_TTL_MS = 10 * 60_000;
 const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 // SDP and ICE are compact setup metadata. This bound makes the tunnel unable
@@ -67,18 +49,6 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
-function registrySportId(value) {
-  return {
-    basketball: "nba",
-    nba: "nba",
-    soccer: "soccer",
-    american_football: "football",
-    football: "football",
-    mma: "ufc",
-    ufc: "ufc",
-    golf: "golf",
-  }[String(value ?? "").trim().toLowerCase()] ?? "unknown";
-}
 
 function isIceServerList(value) {
   return Array.isArray(value) && value.length > 0 && value.every((server) => server && server.urls);
@@ -273,91 +243,29 @@ async function sendDemoStream(req, res, streamId, mediaDir, verifyStream = demoS
 // ── Saved ESPN stats snapshots (scripts/pull-stats.js) ──────────────────────
 // Served from disk only — no network calls at request time.
 
-const STATS_SPORTS = ["soccer", "football", "ufc", "golf"];
-
-async function latestSnapshotFile(sportId) {
-  let files;
-  try {
-    files = await readdir(STATS_DIR);
-  } catch {
-    return null; // stats dir doesn't exist yet — no snapshots pulled
-  }
-  const matches = files
-    .filter((f) => f.startsWith(`${sportId}-`) && f.endsWith(".json"))
-    .sort(); // names embed the date, so lexicographic sort is chronological
-  return matches.length > 0 ? join(STATS_DIR, matches.at(-1)) : null;
-}
-
-async function loadLatestSnapshot(sportId) {
-  const file = await latestSnapshotFile(sportId);
-  if (!file) return null;
-  return JSON.parse(await readFile(file, "utf8"));
-}
-
-async function handleStats(res) {
-  const sports = {};
-  for (const sportId of STATS_SPORTS) {
-    const snapshot = await loadLatestSnapshot(sportId);
-    if (!snapshot) {
-      sports[sportId] = {
-        data: null,
-        reason: "no snapshot pulled yet — run scripts/pull-stats.js",
-      };
-    } else if (snapshot.ok === false) {
-      sports[sportId] = {
-        data: null,
-        reason: `last pull failed: ${snapshot.error}`,
-        pulled_at: snapshot.pulled_at,
-      };
-    } else {
-      sports[sportId] = { data: snapshot.summary, pulled_at: snapshot.pulled_at };
-    }
-  }
-  sendJson(res, 200, { sports });
-}
-
-async function handleStatsRaw(res, sportId) {
-  if (!STATS_SPORTS.includes(sportId)) {
-    sendJson(res, 400, { error: `unknown stats sport; known: ${STATS_SPORTS.join(", ")}` });
-    return;
-  }
-  const snapshot = await loadLatestSnapshot(sportId);
-  if (!snapshot) {
-    sendJson(res, 404, {
-      error: `no snapshot saved for ${sportId} — run scripts/pull-stats.js`,
-    });
-    return;
-  }
-  sendJson(res, 200, snapshot);
-}
 
 // ── Server factory ───────────────────────────────────────────────────────────
 
 export function createBloomServer({
   gateway = new CaptureGateway(),
   selector = new FrameSelector({ minIntervalMs: 750 }),
-  visionBackend = undefined,
-  liveAnalyzer = undefined,
+  itemAnalyzer = new ItemAnalyzer(),
   demoStreamsDir = DEFAULT_DEMO_STREAMS_DIR,
   demoStreamStatus = demoStreamVerifiedStatus,
 } = {}) {
-  const configuredVisionBackend = visionBackend ??
-    (process.env.VISION_BACKEND ? BACKENDS[liveBackendName()] : undefined);
-  const analyzer = liveAnalyzer ?? new LiveEventAnalyzer({ visionBackend: configuredVisionBackend });
+  // Item identification is what the live camera path runs: every frame is
+  // scored for resellable objects and a price, which the capture page draws
+  // over the feed.
   const playbackDirector = new PlaybackDirector();
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
-  let latestInsight = null;
-  let latestInsightAt = 0;
   let analysisEnabled = false;
   const webrtcSessions = new Map();
   let activeWebRtcSessionId = null;
 
   function resetAnalysisState() {
-    analyzer.reset();
+    itemAnalyzer.reset();
     gateway.clear();
     selector.reset();
-    latestInsight = null;
-    latestInsightAt = 0;
   }
 
   function pruneWebRtcSessions() {
@@ -388,22 +296,8 @@ export function createBloomServer({
       sendJson(res, 202, {
         analysis_status: "disabled",
         analysis_enabled: false,
-        queue: analyzer.status(),
+        queue: itemAnalyzer.status(),
       });
-      return;
-    }
-
-    let requestedSport = null;
-    try {
-      if (body.sport != null && typeof body.sport !== "string") {
-        throw new Error("sport must be a string");
-      }
-      const sportHint = body.sport?.trim().toLowerCase();
-      if (sportHint && sportHint !== "auto") {
-        requestedSport = { id: sportHint };
-      }
-    } catch (err) {
-      sendJson(res, 400, { error: err.message });
       return;
     }
 
@@ -419,24 +313,23 @@ export function createBloomServer({
     if (!selection.accepted) {
       sendJson(res, 200, {
         frame: meta,
-        sport: latestInsight?.observation?.sport ?? requestedSport?.id ?? "auto",
         selection,
-        insight: latestInsight,
+        items: itemAnalyzer.latest(),
       });
       return;
     }
 
     // Training-data collector (§16): writes only when DATASET_DIR is set, and
     // a dataset failure must never break frame ingestion. The label is the
-    // latest extracted observation for this sport, when one exists.
+    // latest set of priced items, when one exists.
     let dataset = null;
     if (datasetWriter.enabled) {
       try {
         const files = await datasetWriter.record({
-          sport: latestInsight?.observation?.sport ?? requestedSport?.id ?? "unknown",
+          sport: "items",
           frame: meta,
           imageBase64: body.image_base64,
-          state: latestInsight?.state ?? latestInsight?.observation ?? null,
+          state: itemAnalyzer.latest(),
         });
         dataset = { saved: true, labeled: files.label != null };
       } catch (err) {
@@ -445,50 +338,28 @@ export function createBloomServer({
     }
 
     try {
-      const frame = {
-        ...gateway.frame(meta.frame_id),
-        ...(requestedSport ? { requested_sport_hint: requestedSport.id } : {}),
-      };
-      const result = await analyzer.submit(frame, {
+      const frame = gateway.frame(meta.frame_id);
+      const result = await itemAnalyzer.submit(frame, {
         force: body.force_analysis === true || body.source === "phone_photo",
       });
-      let responseResult = result;
-      if (result.analysis_status === "analyzed") {
-        const streamId = result.insight?.demo_intelligence?.playback?.stream_id;
-        const streamFile = streamId
-          ? await demoStreamStatus(streamId, demoStreamsDir)
-          : { available: false };
-        const playback = playbackDirector.consider(result.insight, {
-          assetAvailable: streamFile.verified === true,
-        });
-        latestInsight = {
-          ...result.insight,
-          sport: registrySportId(result.insight.observation?.sport ?? requestedSport?.id),
-          playback,
-        };
-        latestInsightAt = Date.now();
-        responseResult = { ...result, insight: latestInsight };
-      }
       sendJson(res, result.analysis_status === "analyzed" ? 201 : 202, {
         frame: meta,
-        sport:
-          result.insight?.observation?.sport ??
-          latestInsight?.observation?.sport ??
-          requestedSport?.id ??
-          "auto",
         selection,
-        ...responseResult,
+        analysis_status: result.analysis_status,
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.error ? { error: result.error } : {}),
+        items: result.items,
+        queue: itemAnalyzer.status(),
         ...(dataset ? { dataset } : {}),
       });
     } catch (err) {
       sendJson(res, 422, {
         frame: meta,
-        sport: requestedSport?.id ?? "auto",
         selection,
-        insight: null,
+        items: null,
         analysis: {
           status: "error",
-          backend: visionStatus().selected,
+          backend: "rightcodes-items",
           error: err.message,
         },
         ...(dataset ? { dataset } : {}),
@@ -496,63 +367,16 @@ export function createBloomServer({
     }
   }
 
-  async function handleComparison(res, url) {
-    const requestedSportId = url.searchParams.get("sport");
-    let sport;
-    try {
-      sport = getSport(requestedSportId);
-    } catch (err) {
-      sendJson(res, 400, { error: err.message });
-      return;
-    }
-    const requestedFixture = url.searchParams.get("fixture");
-    // Allowlist per sport — the fixture param never touches the filesystem
-    // directly, and a fixture can only be served under its own sport.
-    if (requestedFixture && !sport.fixtures.includes(requestedFixture)) {
-      sendJson(res, 400, {
-        error: `unknown fixture for sport "${sport.id}"; known: ${sport.fixtures.join(", ")}`,
+  function handleLatestItems(res) {
+    const latest = itemAnalyzer.latest();
+    if (!latest) {
+      sendJson(res, 404, {
+        error: "no analyzed items yet",
+        queue: itemAnalyzer.status(),
       });
       return;
     }
-    if (requestedFixture) {
-      // Each fixture request is an independent demo moment, so it gets a
-      // fresh Reconciler with the sport's §7.5 invariants.
-      sendJson(
-        res,
-        200,
-        await runPipeline(join(FIXTURES_DIR, `${requestedFixture}.json`), undefined, null, {
-          reconciler: new Reconciler(sport.reconcilerRules),
-          sportId: sport.id,
-        })
-      );
-      return;
-    }
-    // With no explicit fixture or sport filter, the latest auto-detected event
-    // wins. An explicit sport query keeps the legacy dashboard isolated.
-    if (
-      latestInsight &&
-      (!requestedSportId || latestInsight.sport === sport.id) &&
-      Date.now() - latestInsightAt <= LIVE_SESSION_TTL_MS
-    ) {
-      sendJson(res, 200, latestInsight);
-      return;
-    }
-    sendJson(
-      res,
-      200,
-      await runPipeline(join(FIXTURES_DIR, `${sport.defaultFixture}.json`), undefined, null, {
-        reconciler: new Reconciler(sport.reconcilerRules),
-        sportId: sport.id,
-      })
-    );
-  }
-
-  function handleLatestInsight(res) {
-    if (!latestInsight) {
-      sendJson(res, 404, { error: "no analyzed live camera insight yet" });
-      return;
-    }
-    sendJson(res, 200, latestInsight);
+    sendJson(res, 200, { ...latest, queue: itemAnalyzer.status() });
   }
 
   function handleLatestFrame(res) {
@@ -565,7 +389,7 @@ export function createBloomServer({
       frame: latest.meta,
       age_ms: Math.max(0, Date.now() - Date.parse(latest.meta.captured_at)),
       image_url: `/api/live-frame/image?frame_id=${encodeURIComponent(latest.meta.frame_id)}`,
-      insight: latestInsight,
+      items: itemAnalyzer.latest(),
     });
   }
 
@@ -697,13 +521,13 @@ export function createBloomServer({
   }
 
   function handleAnalysisStatus(res) {
-    sendJson(res, 200, { analysis_enabled: analysisEnabled, queue: analyzer.status() });
+    sendJson(res, 200, { analysis_enabled: analysisEnabled, queue: itemAnalyzer.status() });
   }
 
   function handleAnalysisControl(res, enabled) {
     analysisEnabled = enabled;
     resetAnalysisState();
-    sendJson(res, 200, { analysis_enabled: analysisEnabled, queue: analyzer.status() });
+    sendJson(res, 200, { analysis_enabled: analysisEnabled, queue: itemAnalyzer.status() });
   }
 
   function handleLatestFrameImage(res, url) {
@@ -717,21 +541,6 @@ export function createBloomServer({
     res.end(imageBytes(stored.image_base64));
   }
 
-  function handleSports(res) {
-    sendJson(
-      res,
-      200,
-      listSports().map((s) => ({
-        id: s.id,
-        label: s.label,
-        league: s.league,
-        default: s.id === DEFAULT_SPORT_ID,
-        default_fixture: s.defaultFixture,
-        fixtures: [...s.fixtures],
-        demo_moments: s.demo_moments.map((m) => ({ ...m })),
-      }))
-    );
-  }
 
   return createServer(async (req, res) => {
     try {
@@ -753,7 +562,6 @@ export function createBloomServer({
         handleAnalysisControl(res, false);
       } else if (req.method === "POST" && url.pathname === "/api/reset") {
         analysisEnabled = false;
-        resetLivePipeline();
         resetAnalysisState();
         webrtcSessions.clear();
         activeWebRtcSessionId = null;
@@ -763,17 +571,10 @@ export function createBloomServer({
         const demoStreams = await listDemoStreams({ mediaDir: demoStreamsDir });
         sendJson(res, 200, {
           status: "ok",
-          vision: visionStatus(),
-          cerebras_models: {
-            vision: CEREBRAS_VISION_MODEL,
-            analytics: CEREBRAS_ANALYTICS_MODEL,
-          },
           frame_buffer_size: gateway.size,
-          has_live_insight: Boolean(latestInsight),
           analysis_enabled: analysisEnabled,
           webrtc_sessions: webrtcSessions.size,
-          analysis_queue: analyzer.status(),
-          demo_intelligence_packs: listDemoIntelligencePacks().length,
+          analysis_queue: itemAnalyzer.status(),
           demo_streams: {
             total: demoStreams.length,
             files_available: demoStreams.filter((stream) => stream.file_available).length,
@@ -793,35 +594,12 @@ export function createBloomServer({
         await handleWebRtcConfig(res, url);
       } else if (req.method === "GET" && url.pathname === "/api/analysis/status") {
         handleAnalysisStatus(res);
-      } else if (req.method === "GET" && url.pathname === "/api/comparison") {
-        await handleComparison(res, url);
-      } else if (req.method === "GET" && url.pathname === "/api/latest") {
-        handleLatestInsight(res);
+      } else if (req.method === "GET" && url.pathname === "/api/items/latest") {
+        handleLatestItems(res);
       } else if (req.method === "GET" && url.pathname === "/api/playback") {
         sendJson(res, 200, playbackDirector.snapshot());
-      } else if (req.method === "GET" && url.pathname === "/api/demo/intelligence") {
-        sendJson(res, 200, { packs: listDemoIntelligencePacks() });
       } else if (req.method === "GET" && url.pathname === "/api/demo/streams") {
         sendJson(res, 200, { streams: await listDemoStreams({ mediaDir: demoStreamsDir }) });
-      } else if (req.method === "GET" && url.pathname === "/api/demo/replay") {
-        try {
-          sendJson(
-            res,
-            200,
-            getDemoRehearsalInsight(
-              url.searchParams.get("pack"),
-              url.searchParams.get("moment")
-            )
-          );
-        } catch (err) {
-          sendJson(res, 400, { error: err.message });
-        }
-      } else if (req.method === "GET" && url.pathname === "/api/sports") {
-        handleSports(res);
-      } else if (req.method === "GET" && url.pathname === "/api/stats/raw") {
-        await handleStatsRaw(res, url.searchParams.get("sport"));
-      } else if (req.method === "GET" && url.pathname === "/api/stats") {
-        await handleStats(res);
       } else if (
         req.method === "GET" &&
         (url.pathname === "/" || url.pathname === "/index.html")
@@ -878,19 +656,14 @@ function lanAddresses(port) {
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
-  // VISION_BACKEND=rightcodes-gemini runs the live classifier on gemini-3.5-flash
-  // via the right.codes gateway instead of Cerebras gemma-4-31b.
-  const liveVisionBackend =
-    process.env.VISION_BACKEND === "rightcodes-gemini" ? rightcodesGeminiBackend : undefined;
-  const server = createBloomServer({ visionBackend: liveVisionBackend });
+  const server = createBloomServer();
   server.listen(port, host, () => {
     console.log(`BloomKnights desktop: http://localhost:${port}`);
     for (const address of lanAddresses(port)) console.log(`BloomKnights phone:   ${address}`);
-    const status = visionStatus();
     console.log(
-      status.selected
-        ? `Vision backend: ${status.selected}`
-        : `Vision backend unavailable: ${status.error}`
+      process.env.RIGHTCODES_API_KEY
+        ? `Item pricing: ${RIGHTCODES_ITEMS_MODEL}`
+        : "Item pricing unavailable: RIGHTCODES_API_KEY is not set"
     );
   });
 }
