@@ -8,6 +8,7 @@
 //   POST /api/reset             — clear live session state
 //   GET  /api/health            — frame buffer + analysis queue status
 //   GET  /api/items/latest      — newest priced items for the live overlay
+//   GET  /live                  — barebones viewer: newest glasses frame, no WebRTC
 //   POST /api/listings/draft    — queue one item for a muse.ai Marketplace draft
 //   POST /api/plans             — plan the latest priced items (or body.items) for a goal
 //   GET  /api/plans/:id         — a plan (never includes seller floors)
@@ -262,20 +263,27 @@ export function createReLoopServer({
       return;
     }
 
-    if (!analysisEnabled) {
-      sendJson(res, 202, {
-        analysis_status: "disabled",
-        analysis_enabled: false,
-        queue: itemAnalyzer.status(),
-      });
-      return;
-    }
-
+    // Ingest BEFORE the analysis gate. The gate exists to stop model calls, not
+    // to stop the live view: returning early here threw the frame away, so with
+    // analysis off the phone's POSTs were logged with their sizes while
+    // /api/live-frame reported "no frame has arrived" and the app's counters
+    // looked healthy. Nothing in the iOS app arms analysis, so every server
+    // restart reproduced it.
     let meta;
     try {
       meta = gateway.ingest(body);
     } catch (err) {
       sendJson(res, 400, { error: err.message });
+      return;
+    }
+
+    if (!analysisEnabled) {
+      sendJson(res, 202, {
+        frame: meta,
+        analysis_status: "disabled",
+        analysis_enabled: false,
+        queue: itemAnalyzer.status(),
+      });
       return;
     }
 
@@ -689,6 +697,15 @@ export function createReLoopServer({
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      // RELOOP_LOG_REQUESTS=1 prints every inbound request with its source
+      // address. This is the difference between "the phone cannot reach the
+      // Mac" and "the phone reaches it and the request fails" — without it
+      // both look identical from the client side.
+      if (process.env.RELOOP_LOG_REQUESTS) {
+        const from = req.socket.remoteAddress ?? "?";
+        const size = req.headers["content-length"] ?? "0";
+        console.log(`[req] ${req.method} ${url.pathname} from ${from} (${size}B)`);
+      }
       if (req.method === "OPTIONS") {
         res.writeHead(204, responseHeaders());
         res.end();
@@ -765,6 +782,11 @@ export function createReLoopServer({
         (url.pathname === "/" || url.pathname === "/index.html")
       ) {
         await sendHtml(res, "index.html");
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/live" || url.pathname === "/live.html")
+      ) {
+        await sendHtml(res, "live.html");
       } else if (
         req.method === "GET" &&
         (url.pathname === "/capture" || url.pathname === "/capture.html")
