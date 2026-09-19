@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>ReLoop · Confirm</title>
+<style>
+  :root { color-scheme: dark; --ok: #57d18b; --warn: #f2b94b; --bad: #ff6b6b; --dim: #8b95a7; --line: #232a37; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.25rem; min-height: 100vh; background: #0b0d12; color: #e7ecf5;
+    font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+    display: flex; justify-content: center;
+  }
+  main { width: min(100%, 760px); display: grid; gap: 1rem; align-content: start; }
+  h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+  .sub { color: var(--dim); margin: .25rem 0 0; }
+  .card { background: #141821; border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--dim); font-weight: 400; padding: .3rem .4rem; border-bottom: 1px solid var(--line); }
+  td { padding: .5rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  tr.kept td { color: var(--dim); text-decoration: line-through; }
+  tr.flash td { animation: flash 1.4s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--warn) 30%, transparent); } to { background: transparent; } }
+  .total { display: flex; justify-content: space-between; padding: .6rem .4rem 0; font-weight: 700; }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+  button {
+    font: inherit; font-weight: 700; padding: .65rem 1rem; border-radius: 9px; border: 1px solid var(--line);
+    background: #1b2130; color: inherit; cursor: pointer;
+  }
+  button.primary { background: var(--ok); color: #06140c; border-color: transparent; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #state { display: flex; align-items: center; gap: .5rem; color: var(--dim); }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dim); }
+  body[data-state="listening"] #dot { background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 1.6s infinite; }
+  body[data-state="speaking"] #dot { background: var(--warn); }
+  body[data-state="error"] #dot { background: var(--bad); }
+  body[data-state="done"] #dot { background: var(--ok); }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  #log { display: grid; gap: .45rem; max-height: 38vh; overflow-y: auto; }
+  .turn { padding: .45rem .6rem; border-radius: 8px; background: #0f131b; line-height: 1.45; }
+  .turn.you { border-left: 3px solid var(--ok); }
+  .turn.bot { border-left: 3px solid var(--warn); }
+  .turn.sys { border-left: 3px solid var(--dim); color: var(--dim); }
+  .turn b { display: block; font-size: 11px; color: var(--dim); font-weight: 400; margin-bottom: .1rem; }
+  #result { border-color: var(--ok); }
+  #result[hidden] { display: none; }
+  a { color: #8ab4ff; }
+</style>
+</head>
+<body data-state="idle">
+<main>
+  <header>
+    <h1>CONFIRM BEFORE PUBLISHING</h1>
+    <p class="sub" id="planLine">Loading plan…</p>
+  </header>
+
+  <section class="card">
+    <table>
+      <thead><tr><th>Item</th><th>Condition</th><th class="num">List price</th></tr></thead>
+      <tbody id="items"></tbody>
+    </table>
+    <div class="total"><span>Expected</span><span id="total">—</span></div>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <button id="talk" class="primary" disabled>Talk it through</button>
+      <button id="approve" disabled>Approve without voice</button>
+      <button id="stop" class="danger" hidden>End conversation</button>
+      <span id="state"><span id="dot"></span><span id="stateText">Idle</span></span>
+    </div>
+    <p class="sub">Nothing is listed until you say yes. Corrections you speak show up in the table above.</p>
+  </section>
+
+  <section class="card"><div id="log"><div class="turn sys">The conversation will appear here.</div></div></section>
+
+  <section class="card" id="result" hidden></section>
+</main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const planId = new URLSearchParams(location.search).get("plan");
+
+let plan = null;
+let ws = null;
+let micStream = null;
+let micContext = null;
+let playContext = null;
+let playCursor = 0;
+let playing = [];
+// Everything the person has said, one entry per utterance. An approval is
+// judged on the latest of these -- never on the model's tool call -- and only
+// on ones spoken after the last correction (consentFloor), since a yes given
+// before a price changed is not a yes to the new price.
+let utterances = [];
+let consentFloor = 0;
+const consentHeard = () => (utterances.length > consentFloor ? utterances.at(-1).trim() : "");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let liveTurn = { you: null, bot: null };
+
+async function api(path, options) {
+  const res = await fetch(path, options && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(options) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error ?? `HTTP ${res.status}`), { status: res.status, body });
+  return body;
+}
+
+function setState(state, text) {
+  document.body.dataset.state = state;
+  $("stateText").textContent = text;
+}
+
+function say(who, text) {
+  const log = $("log");
+  if (log.firstElementChild?.classList.contains("sys") && log.children.length === 1 && who !== "sys") log.replaceChildren();
+  const el = document.createElement("div");
+  el.className = `turn ${who}`;
+  const label = document.createElement("b");
+  label.textContent = who === "you" ? "You" : who === "bot" ? "ReLoop" : "System";
+  const body = document.createElement("span");
+  body.textContent = text;
+  el.append(label, body);
+  log.append(el);
+  log.scrollTop = log.scrollHeight;
+  return body;
+}
+
+function renderPlan(next, changedItemId = null) {
+  plan = next;
+  const selling = plan.decisions.filter((d) => d.action === "SELL");
+  $("planLine").textContent = plan.approved
+    ? `Plan ${plan.id} is already approved.`
+    : `Plan ${plan.id} · ${selling.length} item${selling.length === 1 ? "" : "s"} to list on Shopify and Facebook Marketplace`;
+  $("items").replaceChildren(...plan.decisions.map((d) => {
+    const tr = document.createElement("tr");
+    if (d.action !== "SELL") tr.className = "kept";
+    if (d.itemId === changedItemId) tr.classList.add("flash");
+    const cells = [d.label, String(d.condition ?? "—").replace(/_/g, " "), d.action === "SELL" ? `$${d.listUsd}` : d.action.toLowerCase()];
+    cells.forEach((text, i) => {
+      const td = document.createElement("td");
+      if (i === 2) td.className = "num";
+      td.textContent = text;
+      tr.append(td);
+    });
+    return tr;
+  }));
+  $("total").textContent = `$${plan.expectedUsd}`;
+  $("talk").disabled = $("approve").disabled = Boolean(plan.approved);
+}
+
+function showResult(result) {
+  const box = $("result");
+  box.hidden = false;
+  box.replaceChildren();
+  const head = document.createElement("h1");
+  head.textContent = `PUBLISHED · ${result.listings?.length ?? 0} LISTING${result.listings?.length === 1 ? "" : "S"}`;
+  box.append(head);
+  for (const listing of result.listings ?? []) {
+    const p = document.createElement("p");
+    p.className = "sub";
+    p.textContent = `${listing.title} — $${listing.listUsd}`;
+    box.append(p);
+  }
+  const link = document.createElement("p");
+  link.innerHTML = '<a href="/dashboard">Open the dashboard</a>';
+  box.append(link);
+}
+
+// ── Approval. The same gate whether it came from a click or from speech. ─────
+async function approve({ viaVoice }) {
+  const body = { expected_revision: plan.revision ?? 0 };
+  if (viaVoice) Object.assign(body, { via: "voice", heard: consentHeard() });
+  const result = await api(`/api/plans/${plan.id}/approve`, body);
+  renderPlan({ ...plan, approved: true });
+  showResult(result);
+  setState("done", "Published");
+  return result;
+}
+
+// ── Tools the model can call. Each reply is what the model hears back. ───────
+const tools = {
+  async revise_item(args) {
+    const next = await api(`/api/plans/${plan.id}/revise`, {
+      item_id: args.item_id, list_usd: args.list_usd, title: args.title, condition: args.condition, action: args.action,
+    });
+    renderPlan(next, args.item_id);
+    // A correction resets what counts as consent: they have to hear the new
+    // value and say yes again.
+    consentFloor = utterances.length;
+    const d = next.decisions.find((x) => x.itemId === args.item_id);
+    say("sys", `Updated ${d.label}: ${d.action === "SELL" ? `$${d.listUsd}, ${String(d.condition).replace(/_/g, " ")}` : "kept, not listed"}.`);
+    // The whole plan's totals ride on every reply. Two corrections in one breath
+    // produce two replies, and the model read back the first one's stale total.
+    const selling = next.decisions.filter((x) => x.action === "SELL");
+    return {
+      ok: true,
+      item: { id: d.itemId, title: d.label, condition: d.condition, action: d.action, list_usd: d.listUsd },
+      plan_now: {
+        revision: next.revision,
+        note: "Totals for the whole plan as of this revision. They replace any totals from earlier replies.",
+        items_selling: selling.length,
+        listed_total_usd: selling.reduce((sum, x) => sum + (x.listUsd ?? 0), 0),
+        expected_to_sell_for_usd: next.expectedUsd,
+      },
+    };
+  },
+  async request_approval() {
+    // A few seconds to back out by voice. Anything said in this window stops
+    // the publish and goes back to the model as what they said.
+    const heard = consentHeard();
+    const spokenBefore = utterances.length;
+    say("sys", `Heard "${heard || "nothing"}". Publishing in 3 seconds — say anything to stop.`);
+    await sleep(3000);
+    if (utterances.length > spokenBefore) {
+      const interruption = utterances.at(-1).trim();
+      consentFloor = utterances.length;
+      say("sys", "Held off: you spoke during the countdown.");
+      return { approved: false, reason: `they spoke during the countdown: "${interruption}"`, instruction: "Respond to what they said. Do not request approval again until they clearly say yes." };
+    }
+    try {
+      const result = await approve({ viaVoice: true });
+      return { approved: true, listings: result.listings?.length ?? 0 };
+    } catch (err) {
+      say("sys", `Approval not accepted: ${err.message}`);
+      return { approved: false, reason: err.message, instruction: "Tell the person this and ask them to confirm again." };
+    }
+  },
+  async cancel() {
+    say("sys", "Cancelled. Nothing was listed.");
+    setTimeout(() => endConversation("Cancelled"), 2500); // let the goodbye play
+    return { ok: true };
+  },
+};
+
+// ── Audio out: 24 kHz PCM16 chunks, queued back to back. ─────────────────────
+function playChunk(base64) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const pcm = new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
+  const buffer = playContext.createBuffer(1, pcm.length, 24000);
+  const channel = buffer.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) channel[i] = pcm[i] / 32768;
+  const source = playContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(playContext.destination);
+  playCursor = Math.max(playCursor, playContext.currentTime + 0.02);
+  source.start(playCursor);
+  playCursor += buffer.duration;
+  playing.push(source);
+  source.onended = () => { playing = playing.filter((s) => s !== source); };
+}
+
+function stopPlayback() {
+  for (const source of playing) try { source.stop(); } catch {}
+  playing = [];
+  playCursor = 0;
+}
+
+// ── Audio in: mic -> 16 kHz PCM16 -> realtimeInput. ──────────────────────────
+const WORKLET = `
+class Pcm16 extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = []; this.ratio = sampleRate / 16000; this.pos = 0; }
+  process(inputs) {
+    const input = inputs[0]?.[0];
+    if (!input) return true;
+    for (; this.pos < input.length; this.pos += this.ratio) {
+      const s = Math.max(-1, Math.min(1, input[Math.floor(this.pos)]));
+      this.buf.push(s < 0 ? s * 32768 : s * 32767);
+    }
+    this.pos -= input.length;
+    if (this.buf.length >= 1600) { // 100 ms
+      this.port.postMessage(Int16Array.from(this.buf).buffer, []);
+      this.buf = [];
+    }
+    return true;
+  }
+}
+registerProcessor("pcm16", Pcm16);`;
+
+async function startMic() {
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  micContext = new AudioContext();
+  await micContext.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" })));
+  const node = new AudioWorkletNode(micContext, "pcm16");
+  node.port.onmessage = ({ data }) => {
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    let binary = "";
+    const bytes = new Uint8Array(data);
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    ws.send(JSON.stringify({ realtimeInput: { audio: { mimeType: "audio/pcm;rate=16000", data: btoa(binary) } } }));
+  };
+  micContext.createMediaStreamSource(micStream).connect(node);
+}
+
+// ── The session. ─────────────────────────────────────────────────────────────
+async function handleMessage(msg) {
+  if (msg.setupComplete) {
+    setState("speaking", "Reading the plan back…");
+    ws.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [{ text: "Read my plan back to me." }] }], turnComplete: true } }));
+    return;
+  }
+  const content = msg.serverContent;
+  if (content) {
+    if (content.interrupted) stopPlayback(); // they talked over it
+    for (const part of content.modelTurn?.parts ?? []) {
+      if (part.inlineData?.data) { playChunk(part.inlineData.data); setState("speaking", "Speaking…"); }
+    }
+    if (content.outputTranscription?.text) {
+      liveTurn.bot ??= say("bot", "");
+      liveTurn.bot.textContent += content.outputTranscription.text;
+      liveTurn.you = null;
+    }
+    if (content.inputTranscription?.text) {
+      if (!liveTurn.you) { liveTurn.you = say("you", ""); utterances.push(""); }
+      liveTurn.you.textContent += content.inputTranscription.text;
+      utterances[utterances.length - 1] += content.inputTranscription.text;
+      liveTurn.bot = null;
+    }
+    if (content.turnComplete) {
+      liveTurn.bot = null;
+      if (document.body.dataset.state !== "done") setState("listening", "Listening…");
+    }
+  }
+  if (msg.toolCall) {
+    const functionResponses = [];
+    for (const call of msg.toolCall.functionCalls ?? []) {
+      let response;
+      try { response = tools[call.name] ? await tools[call.name](call.args ?? {}) : { error: `unknown tool ${call.name}` }; }
+      catch (err) { response = { ok: false, error: err.message }; say("sys", `${call.name} failed: ${err.message}`); }
+      functionResponses.push({ id: call.id, name: call.name, response });
+    }
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ toolResponse: { functionResponses } }));
+  }
+}
+
+async function startConversation() {
+  $("talk").disabled = true;
+  setState("idle", "Connecting…");
+  try {
+    playContext = new AudioContext(); // created in the click so autoplay is allowed
+    const session = await api(`/api/plans/${plan.id}/voice`, {});
+    renderPlan(session.plan);
+    await startMic();
+    utterances = [];
+    consentFloor = 0;
+    ws = new WebSocket(`${session.ws_url}?access_token=${encodeURIComponent(session.token)}`);
+    ws.onopen = () => ws.send(JSON.stringify({ setup: session.setup }));
+    ws.onmessage = async (ev) => {
+      const text = typeof ev.data === "string" ? ev.data : await ev.data.text();
+      handleMessage(JSON.parse(text)).catch((err) => say("sys", err.message));
+    };
+    ws.onclose = (ev) => {
+      if (document.body.dataset.state === "done") return;
+      endConversation(ev.code === 1000 ? "Conversation ended" : `Disconnected (${ev.code}${ev.reason ? `: ${ev.reason}` : ""})`, ev.code !== 1000);
+    };
+    $("stop").hidden = false;
+  } catch (err) {
+    endConversation(err.message, true);
+  }
+}
+
+function endConversation(text, isError = false) {
+  try { ws?.close(1000); } catch {}
+  ws = null;
+  micStream?.getTracks().forEach((t) => t.stop());
+  micContext?.close().catch(() => {});
+  micStream = micContext = null;
+  $("stop").hidden = true;
+  if (document.body.dataset.state === "done") return;
+  if (isError) say("sys", `${text}. You can still approve with the button.`);
+  setState(isError ? "error" : "idle", text);
+  $("talk").disabled = Boolean(plan?.approved);
+}
+
+$("talk").onclick = startConversation;
+$("stop").onclick = () => endConversation("Conversation ended");
+$("approve").onclick = async () => {
+  if (!confirm(`List ${plan.decisions.filter((d) => d.action === "SELL").length} item(s) for about $${plan.expectedUsd}?`)) return;
+  try { await approve({ viaVoice: false }); endConversation("Published"); }
+  catch (err) { say("sys", `Approve failed: ${err.message}`); }
+};
+
+if (!planId) {
+  $("planLine").textContent = "No plan given. Open this page as /confirm?plan=<plan id>.";
+} else {
+  api(`/api/plans/${planId}`).then(renderPlan).catch((err) => { $("planLine").textContent = err.message; setState("error", "No plan"); });
+}
+</script>
+</body>
+</html>
