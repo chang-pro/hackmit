@@ -311,8 +311,19 @@ final class FrameUplink: @unchecked Sendable {
         }
     }
 
+    // The capture resolution and the upload resolution are different problems.
+    // .medium (504x896) is what keeps the GLASSES link healthy, but uploading
+    // it whole nearly doubled our POST bodies (30-41KB -> 53-76KB) and the
+    // phone->server hop is the slower link. So capture big, upload small.
+    private let maxUploadEdge: CGFloat = 640
+
     private func encodeAndPost(_ imageBuffer: CVImageBuffer) {
-        let ciImage = CIImage(cvImageBuffer: imageBuffer)
+        var ciImage = CIImage(cvImageBuffer: imageBuffer)
+        let longest = max(ciImage.extent.width, ciImage.extent.height)
+        if longest > maxUploadEdge {
+            let scale = maxUploadEdge / longest
+            ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        }
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent),
               let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: jpegQuality) else { return }
 
