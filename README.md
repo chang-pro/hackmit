@@ -37,9 +37,38 @@ market-price dataset or a Voloridge result. No real images are included yet.
 
 ## Live photo identification
 
+### Gemini
+
+Create an API key in [Google AI Studio](https://aistudio.google.com/apikey).
+If a key was shared in chat, revoke it and create a replacement. Enter the new
+key privately in your local terminal; it is not needed in any source file.
+Stop the running server with Ctrl+C, then in zsh:
+
+```sh
+read -s "GEMINI_API_KEY?New Gemini API key: "
+export GEMINI_API_KEY
+echo
+export RELOOP_VISION_PROVIDER=gemini
+export RELOOP_VISION_MODEL=gemini-3.6-flash
+RELOOP_ALLOW_DEMO_PRICES=1 .venv/bin/uvicorn reloop_brain.api:app --port 8001
+```
+
+Choose a model with image input and JSON output. This adapter uses
+Google's `generateContent` REST endpoint in JSON mode with the schema in the prompt,
+then validates the returned JSON with Pydantic. Schema adherence is enforced locally,
+not guaranteed by constrained generation. See [Google's structured output documentation](https://ai.google.dev/gemini-api/docs/generate-content/structured-output).
+Credentials go in an HTTP header, never in a URL. Automated tests mock the provider. A live smoke test with `gemini-3.6-flash`
+successfully identified a generated blank image as containing no items. Real-product
+accuracy still needs testing. `gemini-2.5-flash` rejected this account as a new user.
+
+### Anthropic (original default)
+
 Set `ANTHROPIC_API_KEY` and `RELOOP_VISION_MODEL` in your local shell before
 starting the API. Choose a vision/tool-use model available in your account.
 See `.env.example`; do not commit keys. There is no automatic `.env` loader.
+Set `RELOOP_VISION_PROVIDER=anthropic` if switching back from Gemini.
+
+### Send a photo (either provider)
 
 With the API running, send your own photo:
 

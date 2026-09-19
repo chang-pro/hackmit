@@ -40,6 +40,9 @@ class AnthropicVision:
         self.client = AsyncAnthropic(api_key=api_key, timeout=45, max_retries=1)
         self.model = model
 
+    async def aclose(self):
+        await self.client.close()
+
     async def identify(
         self, image: bytes, media_type: str, capture: Capture, categories: dict[str, str]
     ) -> VisionResult:
