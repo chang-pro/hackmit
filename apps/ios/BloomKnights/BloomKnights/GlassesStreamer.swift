@@ -110,7 +110,7 @@ final class FrameUplink: @unchecked Sendable {
     private var streaming = false
     private var lastUploadAt = Date.distantPast
     private var lastPublishAt = Date.distantPast
-    private let uploadInterval: TimeInterval = 0.4   // ~2.5 fps to the backend
+    private let uploadInterval: TimeInterval = 0.2   // ~4.8 fps to the backend
     private let publishInterval: TimeInterval = 1.0 / 12.0
     // Every frame is base64'd into JSON, which inflates it by a third, and the
     // link is the bottleneck — not the encoder. Halving the payload buys more
@@ -122,7 +122,7 @@ final class FrameUplink: @unchecked Sendable {
     // note by tickDiagnostics): a JPEG encode there stalls delivery and the
     // whole stream throttles to a crawl. One serial queue, and at most one
     // upload in flight — a backlog would only ever deliver stale frames.
-    private let uploadQueue = DispatchQueue(label: "reloop.frame-upload", qos: .utility)
+    private let uploadQueue = DispatchQueue(label: "reloop.frame-upload", qos: .userInitiated)
     private var uploadInFlight = false
 
     // Counters mirror CameraStreamer's sent/accepted/skipped/failed so the

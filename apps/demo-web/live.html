@@ -41,7 +41,10 @@
 // HTTP; this page just shows the newest one. No WebRTC, no signalling, no ICE,
 // no TURN, and no HTTPS requirement — there is no getUserMedia here, so none of
 // the secure-context rules apply. If a frame reaches the server, it shows up.
-const POLL_MS = 400;
+// The poll interval IS the viewer's latency — the follow-up image request is
+// only a few ms on localhost. 100ms also stops the fps readout aliasing
+// against the upload cadence.
+const POLL_MS = 100;
 const $ = (id) => document.getElementById(id);
 let shown = 0, lastId = null, stamps = [];
 
