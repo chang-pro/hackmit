@@ -707,10 +707,13 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   server.listen(port, host, () => {
     console.log(`ReLoop desktop: http://localhost:${port}`);
     for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);
+    // Must test the SAME variable the backend reads. Checking the Claude-channel
+    // key here printed "ready" while every call 401'd, and "unavailable" while
+    // it worked — the banner lied in both directions.
     console.log(
-      process.env.RIGHTCODES_API_KEY
+      process.env.RIGHTCODES_KEY_GEMINI
         ? `Item pricing: ${RIGHTCODES_ITEMS_MODEL}`
-        : "Item pricing unavailable: RIGHTCODES_API_KEY is not set"
+        : "Item pricing unavailable: RIGHTCODES_KEY_GEMINI is not set"
     );
   });
 }
