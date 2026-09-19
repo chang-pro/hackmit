@@ -699,7 +699,7 @@ export function createReLoopServer({
       if (process.env.RELOOP_LOG_REQUESTS) {
         const from = req.socket.remoteAddress ?? "?";
         const size = req.headers["content-length"] ?? "0";
-        console.log(`[req] ${req.method} ${url.pathname} from ${from} (${size}B)`);
+        console.log(`[req] ${req.method} ${url.pathname} from ${from}:${req.socket.remotePort} (${size}B)`);
       }
       if (req.method === "OPTIONS") {
         res.writeHead(204, responseHeaders());
@@ -804,6 +804,15 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
   const server = createReLoopServer();
+  // Node's default keepAliveTimeout is 5s. On a link that stalls for longer
+  // than that, Node closes the idle socket under the phone; the phone's next
+  // POST goes out on a dead connection and URLSession surfaces
+  // NSURLErrorNetworkConnectionLost rather than retrying, so the frame is
+  // dropped and the next one pays a fresh handshake and TCP slow-start through
+  // the relay. Holding the connection open across a stall removes a whole
+  // class of spurious failures.
+  server.keepAliveTimeout = 120_000;
+  server.headersTimeout = 125_000; // must exceed keepAliveTimeout
   server.listen(port, host, () => {
     console.log(`ReLoop desktop: http://localhost:${port}`);
     for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);

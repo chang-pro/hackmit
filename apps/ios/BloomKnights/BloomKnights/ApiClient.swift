@@ -36,7 +36,13 @@ struct ApiClient {
     // client per upload; sessions must not accumulate).
     private static let sharedSession: URLSession = {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 8
+        // Idle timers, not total-time budgets. 5s because the relay's retransmit
+        // schedule after a loss is ~1s/2s/4s — giving up sooner throws away bytes
+        // already committed to the tunnel and re-sends a full frame into a link
+        // that is mid-recovery. The resource timeout matters more: its default is
+        // 7 days, so a request dribbling a packet every few seconds runs forever.
+        config.timeoutIntervalForRequest = 5
+        config.timeoutIntervalForResource = 10
         config.waitsForConnectivity = false
         return URLSession(configuration: config)
     }()

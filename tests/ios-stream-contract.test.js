@@ -11,23 +11,21 @@ test("iOS glasses clients keep the Meta-supported low-latency frame path", async
     const streamer = await readFile(`${root}/GlassesStreamer.swift`, "utf8");
     const rtc = await readFile(`${root}/RTCPublisher.swift`, "utf8");
 
-    if (root.endsWith("ios/capture/BloomKnights")) {
-      const decoder = await readFile(`${root}/FrameDecoder.swift`, "utf8");
-      assert.match(
-        streamer,
-        /StreamConfiguration\(videoCodec: \.hvc1, resolution: \.high, frameRate: 15\)/,
-        `${root} must use its proven compressed glasses profile`,
-      );
-      assert.match(decoder, /import VideoToolbox/);
-      assert.match(decoder, /private let maxQueued = 3/);
-      assert.match(decoder, /waitForKeyframe/);
-    } else {
-      assert.match(
-        streamer,
-        /StreamConfiguration\(videoCodec: \.raw, resolution: \.low, frameRate: 24\)/,
-        `${root} must retain the Meta CameraAccess sample stream profile`,
-      );
-    }
+    // The proven profile, from poker-eye's VariantA: "the proven BloomKnights
+    // config, untouched. The baseline." The .raw/.low/24 this used to assert is
+    // that project's labelled CONTROL GROUP — uncompressed video over a
+    // Bluetooth link that cannot carry it.
+    assert.match(
+      streamer,
+      /StreamConfiguration\(videoCodec: \.hvc1, resolution: \.high, frameRate: 15\)/,
+      `${root} must use the proven compressed glasses profile`,
+    );
+    assert.match(streamer, /import VideoToolbox/);
+    assert.match(streamer, /maxQueuedFrames = 4/);
+    assert.match(streamer, /waitForKeyframe/);
+    // The recording is the network-independent backup: passthrough HEVC
+    // straight to disk, so it must never be re-encoded or gated on the uplink.
+    assert.match(streamer, /AVAssetWriterInput\(mediaType: \.video, outputSettings: nil/);
     assert.doesNotMatch(
       streamer,
       /CFDictionarySetValue/,
