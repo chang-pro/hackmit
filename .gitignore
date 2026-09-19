@@ -22,3 +22,20 @@ secrets.*
 
 # XcodeGen regenerates the project and workspace; only project.yml is the source.
 apps/ios/BloomKnights/BloomKnights.xcodeproj/project.xcworkspace/
+
+# Shopify app dev and CLI state
+.shopify/
+.shopify.lock
+/extensions/*/dist/
+
+# Prisma / local SQLite databases
+*.sqlite
+*.sqlite-journal
+*.sqlite3
+database.sqlite
+
+# Build outputs and cache
+build/
+dist/
+.cache/
+.react-router/
