@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>ReLoop — Live</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1rem; padding: 1rem; background: #0b0d12; color: #e7ecf5;
+    font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  #shot {
+    max-width: 100%; max-height: 78vh; border-radius: 10px;
+    background: #141821; box-shadow: 0 10px 40px rgba(0,0,0,.5);
+  }
+  #shot[hidden] { display: none; }
+  #msg { max-width: 34rem; text-align: center; line-height: 1.6; color: #9aa6bd; }
+  #bar { display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .dot { width: .6rem; height: .6rem; border-radius: 50%; background: #6b7689; display: inline-block; }
+  .dot.live { background: #55e39b; box-shadow: 0 0 10px #55e39b88; }
+  .dot.stale { background: #ffcf6b; }
+  b { color: #e7ecf5; font-weight: 600; }
+</style>
+</head>
+<body>
+  <img id="shot" alt="Newest frame from the glasses" hidden />
+  <div id="msg">Waiting for the first frame…</div>
+  <div id="bar">
+    <span><span class="dot" id="dot"></span> <span id="state">no frames</span></span>
+    <span>age <b id="age">—</b></span>
+    <span>source <b id="src">—</b></span>
+    <span>fps <b id="fps">—</b></span>
+  </div>
+
+<script>
+// The barebones viewer. The iOS app POSTs JPEG frames to /api/frames over plain
+// HTTP; this page just shows the newest one. No WebRTC, no signalling, no ICE,
+// no TURN, and no HTTPS requirement — there is no getUserMedia here, so none of
+// the secure-context rules apply. If a frame reaches the server, it shows up.
+const POLL_MS = 400;
+const $ = (id) => document.getElementById(id);
+let shown = 0, lastId = null, stamps = [];
+
+async function tick() {
+  try {
+    const meta = await (await fetch("/api/live-frame", { cache: "no-store" })).json();
+    if (meta.error) {
+      $("state").textContent = "no frames yet";
+      $("dot").className = "dot";
+      $("msg").hidden = false;
+      $("msg").textContent =
+        "Server is up and listening, but no frame has arrived. " +
+        "Check the server URL in the app's Settings — on the phone, localhost means the phone itself.";
+      return;
+    }
+    const frame = meta.frame || {};
+    const ageMs = meta.age_ms ?? 0;
+    $("age").textContent = ageMs < 1000 ? ageMs + "ms" : Math.round(ageMs / 1000) + "s";
+    $("src").textContent = frame.source || "—";
+    // A frame older than a few seconds means the stream stopped, not that it
+    // never started — worth distinguishing, they have different causes.
+    const live = ageMs < 4000;
+    $("dot").className = "dot " + (live ? "live" : "stale");
+    $("state").textContent = live ? "live" : "stalled";
+
+    if (frame.frame_id && frame.frame_id !== lastId) {
+      lastId = frame.frame_id;
+      const now = performance.now();
+      stamps = stamps.filter((t) => now - t < 5000).concat(now);
+      if (stamps.length > 1) {
+        $("fps").textContent = (((stamps.length - 1) * 1000) / (now - stamps[0])).toFixed(1);
+      }
+      // Cache-bust per frame id; the server sends no-store but Safari still
+      // reuses an identical URL for an <img>.
+      $("shot").src = "/api/live-frame/image?frame_id=" + encodeURIComponent(frame.frame_id);
+      $("shot").hidden = false;
+      $("msg").hidden = true;
+      shown++;
+    }
+  } catch (err) {
+    $("state").textContent = "server unreachable";
+    $("dot").className = "dot";
+    $("msg").hidden = false;
+    $("msg").textContent = "Cannot reach the server from this browser: " + err.message;
+  }
+}
+
+tick();
+setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>
