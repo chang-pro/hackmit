@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import Field
 
 from contracts.schema import Capture, Condition, Contract, Item, Question, Source
+from reloop_brain.catalog import recognition_categories
 from reloop_brain.pricing import PriceBook
 
 
@@ -101,13 +102,19 @@ def items_from_observations(result: VisionResult, capture: Capture, book: PriceB
         return []
     items = []
     for index, observation in enumerate(result.items):
-        category = observation.category if observation.category in book.entries else "other.unknown"
-        confidence = (
-            min(observation.confidence, 0.49)
-            if category == "other.unknown"
-            else observation.confidence
+        category = (
+            observation.category
+            if observation.category in recognition_categories(book)
+            else "other.unknown"
         )
+        # Visual identity confidence is independent of whether we can price it.
+        confidence = observation.confidence
         question = observation.question
+        if category.startswith("accessories.rayban_"):
+            question = Question(
+                text="Which case is it? For a charging case, also confirm it charges correctly.",
+                options=["Meta charging case", "Regular glasses case", "Not sure"],
+            )
         if question is None and (
             confidence < 0.75
             or observation.variantAmbiguous

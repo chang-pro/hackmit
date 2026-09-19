@@ -11,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import Field, model_validator
 
 from contracts.schema import Capture, Condition, Contract, Goal, Item, Plan, Source
+from reloop_brain.catalog import recognition_categories
 from reloop_brain.gemini import GeminiVision
 from reloop_brain.identify import (
     AnthropicVision,
@@ -20,7 +21,14 @@ from reloop_brain.identify import (
 )
 from reloop_brain.planner import build_plan
 from reloop_brain.pricing import PriceBook
-from reloop_brain.service import ListingDraft, PricedItem, listing_draft, price_items
+from reloop_brain.service import (
+    ListingDraft,
+    PricedItem,
+    PriceQuote,
+    listing_draft,
+    price_items,
+    quote_item,
+)
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
@@ -86,7 +94,14 @@ def configured_book() -> PriceBook:
             "RELOOP_PRICE_BOOK", str(Path(__file__).resolve().parents[1] / "data/price_book.csv")
         )
     )
-    return PriceBook.load(path, allow_demo=os.getenv("RELOOP_ALLOW_DEMO_PRICES") == "1")
+    book = PriceBook.load(path, allow_demo=os.getenv("RELOOP_ALLOW_DEMO_PRICES") == "1")
+    evidence_path = Path(
+        os.getenv(
+            "RELOOP_PRICING_EVIDENCE",
+            str(Path(__file__).resolve().parents[1] / "data/pricing_evidence.json"),
+        )
+    )
+    return book.with_evidence(evidence_path)
 
 
 def create_router(book: PriceBook | None = None, vision: VisionProvider | None = None) -> APIRouter:
@@ -129,7 +144,7 @@ def create_router(book: PriceBook | None = None, vision: VisionProvider | None =
                 image,
                 media_type,
                 request.capture,
-                {key: row.label for key, row in price_book.entries.items()},
+                recognition_categories(price_book),
             )
         except Exception as exc:
             # Never send provider errors, request bodies, keys, or image payloads to clients.
@@ -164,7 +179,11 @@ def create_router(book: PriceBook | None = None, vision: VisionProvider | None =
     def confirm(request: ConfirmRequest):
         price_book = get_book()
         try:
-            price_book.get(request.category)
+            if (
+                request.category not in recognition_categories(price_book)
+                or request.category == "accessories.rayban_case_unspecified"
+            ):
+                raise ValueError("Choose a specific recognized category before confirming")
             item = request.item.model_copy(
                 update={
                     "label": request.label,
@@ -177,6 +196,10 @@ def create_router(book: PriceBook | None = None, vision: VisionProvider | None =
             return price_items([item], price_book)[0]
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @router.post("/price", response_model=PriceQuote)
+    def price(item: Item):
+        return quote_item(item, get_book())
 
     @router.post("/plan", response_model=Plan)
     def plan(request: PlanRequest):
