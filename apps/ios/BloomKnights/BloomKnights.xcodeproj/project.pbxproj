@@ -19,16 +19,11 @@
 		97B6FB7D1FF8A9C79A961FA2 /* RTCPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219B1C918C09F7B903564209 /* RTCPublisher.swift */; };
 		A46E8D29C44309CA80B50C7A /* BloomKnightsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A39A36BE3D6847F83ACFEE1 /* BloomKnightsApp.swift */; };
 		B01F181A45B5FEDA0CE75C2B /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52BBDA6EE618C378C7C81F7F /* Models.swift */; };
-		D9EFF928FDC439CA6C1F6B6E /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84050F17D30DDEDBD66AF81A /* HomeView.swift */; };
 		DED4F9CD8AA237357813ABA7 /* DemoCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6ABB69B64163244CCC0D00F /* DemoCatalog.swift */; };
-		E914BC32667E5FCEDD5435D4 /* Speaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D7062B3EDC305D78E5F97A /* Speaker.swift */; };
 		EB4C4AD74F4C55BED7B40D2F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 98EE8AE7E22D6709689120A8 /* Assets.xcassets */; };
-		EDC1AF67ADC4DD72823B959B /* SpeakView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 029DB055DCD5D3AA3C13635E /* SpeakView.swift */; };
-		F540B97D61354AC74066EEEC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E84F7DC29985C1ED28EDD5 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		029DB055DCD5D3AA3C13635E /* SpeakView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakView.swift; sourceTree = "<group>"; };
 		0626C1FA0AD1A552A367CED3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		07F97D2A97209DEB15AF08E2 /* GlassesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesView.swift; sourceTree = "<group>"; };
 		0A39A36BE3D6847F83ACFEE1 /* BloomKnightsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloomKnightsApp.swift; sourceTree = "<group>"; };
@@ -39,10 +34,7 @@
 		52BBDA6EE618C378C7C81F7F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		627FF8D1FB9297CF6F6663E2 /* GlassesStreamer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesStreamer.swift; sourceTree = "<group>"; };
 		785946F25766239E1F69DD91 /* ApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApiClient.swift; sourceTree = "<group>"; };
-		84050F17D30DDEDBD66AF81A /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		98EE8AE7E22D6709689120A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		B1E84F7DC29985C1ED28EDD5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		E5D7062B3EDC305D78E5F97A /* Speaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speaker.swift; sourceTree = "<group>"; };
 		E6ABB69B64163244CCC0D00F /* DemoCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoCatalog.swift; sourceTree = "<group>"; };
 		FE6A7A9342D815D74442355E /* GlassesSDKSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSDKSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -88,13 +80,9 @@
 				FE6A7A9342D815D74442355E /* GlassesSDKSection.swift */,
 				627FF8D1FB9297CF6F6663E2 /* GlassesStreamer.swift */,
 				07F97D2A97209DEB15AF08E2 /* GlassesView.swift */,
-				84050F17D30DDEDBD66AF81A /* HomeView.swift */,
 				0626C1FA0AD1A552A367CED3 /* Info.plist */,
 				52BBDA6EE618C378C7C81F7F /* Models.swift */,
 				219B1C918C09F7B903564209 /* RTCPublisher.swift */,
-				B1E84F7DC29985C1ED28EDD5 /* SettingsView.swift */,
-				E5D7062B3EDC305D78E5F97A /* Speaker.swift */,
-				029DB055DCD5D3AA3C13635E /* SpeakView.swift */,
 				23566C5718AF1CA6B9FAB540 /* Theme.swift */,
 			);
 			path = BloomKnights;
@@ -185,12 +173,8 @@
 				54D3BC75D2AA0B13F6E128AB /* GlassesSDKSection.swift in Sources */,
 				14C82E41AB2CC8251F79EB10 /* GlassesStreamer.swift in Sources */,
 				856469D0BCA86391D7D1D6BC /* GlassesView.swift in Sources */,
-				D9EFF928FDC439CA6C1F6B6E /* HomeView.swift in Sources */,
 				B01F181A45B5FEDA0CE75C2B /* Models.swift in Sources */,
 				97B6FB7D1FF8A9C79A961FA2 /* RTCPublisher.swift in Sources */,
-				F540B97D61354AC74066EEEC /* SettingsView.swift in Sources */,
-				EDC1AF67ADC4DD72823B959B /* SpeakView.swift in Sources */,
-				E914BC32667E5FCEDD5435D4 /* Speaker.swift in Sources */,
 				43724815E65EC3055236CE15 /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

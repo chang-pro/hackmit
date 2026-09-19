@@ -195,3 +195,24 @@ test("health reports the item queue and the frame buffer", async (t) => {
   assert.equal(health.frame_buffer_size, 0);
   assert.equal(health.analysis_queue.has_result, false);
 });
+
+test("a frame is stored even when analysis is off", async (t) => {
+  // The gate exists to stop model calls, not to stop the live view. Returning
+  // before ingest silently threw the feed away: POSTs were logged with their
+  // sizes while the viewer reported no frames at all. Nothing in the iOS app
+  // arms analysis, so every server restart reproduced it.
+  const base = startServer(t);
+
+  const { status, body } = await postFrame(base);
+  assert.equal(status, 202);
+  assert.equal(body.analysis_status, "disabled");
+  assert.ok(body.frame?.frame_id, "the frame is ingested and identified");
+
+  const res = await fetch(`${base}/api/live-frame`);
+  assert.equal(res.status, 200, "the live view can see it");
+  const latest = await res.json();
+  assert.equal(latest.frame.frame_id, body.frame.frame_id);
+
+  // ...and no model call was made.
+  assert.equal((await (await fetch(`${base}/api/items/latest`)).json()).error, "no analyzed items yet");
+});
