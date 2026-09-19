@@ -8,6 +8,7 @@ Supports dry-run mode when SHOPIFY_ADMIN_ACCESS_TOKEN is not configured.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import urllib.error
@@ -162,6 +163,37 @@ mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
 """
 
 
+PRODUCT_VARIANTS_BULK_UPDATE_MUTATION = """
+mutation ProductVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+    productVariants {
+      id
+      price
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"""
+
+PRODUCT_VARIANT_UPDATE_MUTATION = """
+mutation ProductVariantUpdate($input: ProductVariantInput!) {
+  productVariantUpdate(input: $input) {
+    productVariant {
+      id
+      price
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"""
+
+
 def create_shopify_listing(
     title: str,
     price: float | int,
@@ -193,7 +225,6 @@ def create_shopify_listing(
         "descriptionHtml": description_html,
         "tags": product_tags,
         "status": status,
-        "variants": [{"price": f"{float(price):.2f}"}],
     }
 
     media = None
@@ -230,6 +261,31 @@ def create_shopify_listing(
     prod_id = prod.get("id", "")
     num_id = prod_id.split("/")[-1]
     handle = prod.get("handle", "")
+    formatted_price = f"{float(price):.2f}"
+    variants = prod.get("variants", {}).get("nodes", [])
+    variant_id = variants[0].get("id") if variants else None
+
+    if variant_id and price is not None:
+        try:
+            update_data = execute_graphql(
+                PRODUCT_VARIANTS_BULK_UPDATE_MUTATION,
+                {"productId": prod_id, "variants": [
+                    {"id": variant_id, "price": formatted_price}]}
+            )
+            bulk_res = update_data.get("productVariantsBulkUpdate", {})
+            if bulk_res.get("userErrors"):
+                execute_graphql(
+                    PRODUCT_VARIANT_UPDATE_MUTATION,
+                    {"input": {"id": variant_id, "price": formatted_price}}
+                )
+        except Exception:
+            try:
+                execute_graphql(
+                    PRODUCT_VARIANT_UPDATE_MUTATION,
+                    {"input": {"id": variant_id, "price": formatted_price}}
+                )
+            except Exception as err:
+                logging.warning(f"Could not update variant price: {err}")
 
     return {
         "dry_run": False,
@@ -238,7 +294,7 @@ def create_shopify_listing(
             "title": prod.get("title", title),
             "handle": handle,
             "status": prod.get("status", status),
-            "price": f"{float(price):.2f}",
+            "price": formatted_price,
             "url": f"https://{domain}/products/{handle}",
             "adminUrl": f"https://{domain}/admin/products/{num_id}",
         },
