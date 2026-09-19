@@ -8,11 +8,34 @@ Supports dry-run mode when SHOPIFY_ADMIN_ACCESS_TOKEN is not configured.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
+
+
+def _load_env_file() -> None:
+    env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, val = line.partition("=")
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+
+
+_load_env_file()
 
 SHOPIFY_API_VERSION = os.getenv("SHOPIFY_API_VERSION", "2024-01")
 
@@ -24,16 +47,64 @@ class ShopifyError(Exception):
         self.errors = errors
 
 
+_cached_token: str | None = None
+
+
 def get_shopify_config() -> dict[str, Any]:
     domain = os.getenv("SHOPIFY_STORE_DOMAIN", "reloop-dev.myshopify.com")
     token = os.getenv("SHOPIFY_ADMIN_ACCESS_TOKEN")
-    is_dry_run = os.getenv("DRY_RUN") == "1" or not token
+    client_id = os.getenv("SHOPIFY_CLIENT_ID") or os.getenv("SHOPIFY_API_KEY")
+    client_secret = os.getenv("SHOPIFY_CLIENT_SECRET") or (
+        token if token and token.startswith("shpss_") else None)
+    is_dry_run = os.getenv("DRY_RUN") == "1" or (not token and not client_id)
     return {
         "domain": domain.strip().replace("https://", "").replace("http://", "").rstrip("/"),
         "token": token,
+        "client_id": client_id,
+        "client_secret": client_secret,
         "is_dry_run": is_dry_run,
         "api_version": SHOPIFY_API_VERSION,
     }
+
+
+def get_or_exchange_access_token() -> str | None:
+    global _cached_token
+    config = get_shopify_config()
+    if config["is_dry_run"]:
+        return None
+    token = config["token"]
+    if token and not token.startswith("shpss_"):
+        return token
+    if _cached_token:
+        return _cached_token
+
+    if config["client_id"] and config["client_secret"]:
+        url = f"https://{config['domain']}/admin/oauth/access_token"
+        data = urllib.parse.urlencode({
+            "grant_type": "client_credentials",
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={
+                                     "Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                res_data = json.loads(resp.read().decode("utf-8"))
+                if "access_token" in res_data:
+                    _cached_token = res_data["access_token"]
+                    return _cached_token
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8")
+            raise ShopifyError(
+                f"Failed to exchange client credentials with Shopify ({e.code}): {body}", status=e.code) from e
+
+    if token and token.startswith("shpss_") and not config["client_id"]:
+        raise ShopifyError(
+            "SHOPIFY_ADMIN_ACCESS_TOKEN is an app secret (shpss_...), not an access token. "
+            "Add SHOPIFY_CLIENT_ID=<your-app-client-id> to .env so ReLoop can automatically exchange it for an access token, "
+            "or use an Admin API token (shpat_...)."
+        )
+    return token
 
 
 def execute_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -41,12 +112,13 @@ def execute_graphql(query: str, variables: dict[str, Any] | None = None) -> dict
     if config["is_dry_run"]:
         return {"dry_run": True, "query": query, "variables": variables}
 
+    token = get_or_exchange_access_token()
     url = f"https://{config['domain']}/admin/api/{config['api_version']}/graphql.json"
     payload = json.dumps(
         {"query": query, "variables": variables or {}}).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
-        "X-Shopify-Access-Token": config["token"],
+        "X-Shopify-Access-Token": token,
     }
 
     req = urllib.request.Request(
@@ -91,6 +163,37 @@ mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
 """
 
 
+PRODUCT_VARIANTS_BULK_UPDATE_MUTATION = """
+mutation ProductVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+  productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+    productVariants {
+      id
+      price
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"""
+
+PRODUCT_VARIANT_UPDATE_MUTATION = """
+mutation ProductVariantUpdate($input: ProductVariantInput!) {
+  productVariantUpdate(input: $input) {
+    productVariant {
+      id
+      price
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+"""
+
+
 def create_shopify_listing(
     title: str,
     price: float | int,
@@ -122,7 +225,6 @@ def create_shopify_listing(
         "descriptionHtml": description_html,
         "tags": product_tags,
         "status": status,
-        "variants": [{"price": f"{float(price):.2f}"}],
     }
 
     media = None
@@ -159,6 +261,31 @@ def create_shopify_listing(
     prod_id = prod.get("id", "")
     num_id = prod_id.split("/")[-1]
     handle = prod.get("handle", "")
+    formatted_price = f"{float(price):.2f}"
+    variants = prod.get("variants", {}).get("nodes", [])
+    variant_id = variants[0].get("id") if variants else None
+
+    if variant_id and price is not None:
+        try:
+            update_data = execute_graphql(
+                PRODUCT_VARIANTS_BULK_UPDATE_MUTATION,
+                {"productId": prod_id, "variants": [
+                    {"id": variant_id, "price": formatted_price}]}
+            )
+            bulk_res = update_data.get("productVariantsBulkUpdate", {})
+            if bulk_res.get("userErrors"):
+                execute_graphql(
+                    PRODUCT_VARIANT_UPDATE_MUTATION,
+                    {"input": {"id": variant_id, "price": formatted_price}}
+                )
+        except Exception:
+            try:
+                execute_graphql(
+                    PRODUCT_VARIANT_UPDATE_MUTATION,
+                    {"input": {"id": variant_id, "price": formatted_price}}
+                )
+            except Exception as err:
+                logging.warning(f"Could not update variant price: {err}")
 
     return {
         "dry_run": False,
@@ -167,7 +294,7 @@ def create_shopify_listing(
             "title": prod.get("title", title),
             "handle": handle,
             "status": prod.get("status", status),
-            "price": f"{float(price):.2f}",
+            "price": formatted_price,
             "url": f"https://{domain}/products/{handle}",
             "adminUrl": f"https://{domain}/admin/products/{num_id}",
         },
