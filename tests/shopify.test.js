@@ -170,4 +170,3 @@ test("createProduct throws ShopifyError when userErrors present", async () => {
     }
   }
 });
-

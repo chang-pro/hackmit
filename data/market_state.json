@@ -101,6 +101,397 @@
           }
         ]
       }
+    ],
+    [
+      "plan_083803ca",
+      {
+        "goal": {
+          "mode": "CASH",
+          "targetUsd": 300,
+          "deadline": null,
+          "upgradeTo": null,
+          "upgradePriceUsd": null,
+          "budgetUsd": null
+        },
+        "targetUsd": 300,
+        "decisions": [
+          {
+            "itemId": "plan_083803ca_01",
+            "label": "Apple MacBook",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 385,
+              "normalUsd": 450,
+              "maxUsd": 520,
+              "basis": "used space gray MacBooks typically sell around $400-$550"
+            },
+            "listUsd": 536,
+            "reason": "Higher tier: estimated value exceeds the target by 30%; expected $520, listed at $536 for negotiating room. About 173% of the $300 target."
+          },
+          {
+            "itemId": "plan_083803ca_02",
+            "label": "Yellow Folding Utility Table",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 35,
+              "normalUsd": 40,
+              "maxUsd": 45,
+              "basis": "standard folding event tables sell for around $30-$50"
+            },
+            "listUsd": 47,
+            "reason": "Higher tier: estimated value exceeds the target by 30%; expected $45, listed at $47 for negotiating room. About 15% of the $300 target."
+          },
+          {
+            "itemId": "plan_083803ca_03",
+            "label": "Apple AirPods Charging Case",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 30,
+              "normalUsd": 35,
+              "maxUsd": 40,
+              "basis": "standalone used AirPods charging cases sell around $30-$40"
+            },
+            "listUsd": 42,
+            "reason": "Higher tier: estimated value exceeds the target by 30%; expected $40, listed at $42 for negotiating room. About 13% of the $300 target."
+          },
+          {
+            "itemId": "plan_083803ca_04",
+            "label": "Metal Folding Chair",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 15,
+              "normalUsd": 15,
+              "maxUsd": 15,
+              "basis": "commercial folding chairs typically resell for $10-$20 each"
+            },
+            "listUsd": 16,
+            "reason": "Higher tier: estimated value exceeds the target by 30%; expected $15, listed at $16 for negotiating room. About 5% of the $300 target."
+          },
+          {
+            "itemId": "plan_083803ca_05",
+            "label": "Hard Eyeglass Case",
+            "condition": "good",
+            "action": "DONATE",
+            "band": {
+              "quickUsd": 5,
+              "normalUsd": 8,
+              "maxUsd": 10,
+              "basis": "generic hard-shell glasses cases resell for around $5-$10"
+            },
+            "listUsd": null,
+            "reason": "Estimated $8 is below the $15 listing minimum; not worth a negotiation."
+          }
+        ],
+        "expectedUsd": 620,
+        "goalGapUsd": 0,
+        "approved": true,
+        "id": "plan_083803ca",
+        "createdAt": "2026-09-19T22:34:25.753Z",
+        "photoUrl": null,
+        "source": "rayban_sdk",
+        "items": [
+          {
+            "id": "plan_083803ca_01",
+            "label": "Apple MacBook",
+            "condition": "good",
+            "price_usd": 450,
+            "price_basis": "used space gray MacBooks typically sell around $400-$550",
+            "bbox": {
+              "x": 260,
+              "y": 691,
+              "width": 386,
+              "height": 137
+            },
+            "confidence": 0.95,
+            "sourceItemId": "item_001"
+          },
+          {
+            "id": "plan_083803ca_02",
+            "label": "Yellow Folding Utility Table",
+            "condition": "good",
+            "price_usd": 40,
+            "price_basis": "standard folding event tables sell for around $30-$50",
+            "bbox": {
+              "x": 0,
+              "y": 620,
+              "width": 995,
+              "height": 380
+            },
+            "confidence": 0.85,
+            "sourceItemId": "item_002"
+          },
+          {
+            "id": "plan_083803ca_03",
+            "label": "Apple AirPods Charging Case",
+            "condition": "good",
+            "price_usd": 35,
+            "price_basis": "standalone used AirPods charging cases sell around $30-$40",
+            "bbox": {
+              "x": 17,
+              "y": 693,
+              "width": 66,
+              "height": 35
+            },
+            "confidence": 0.88,
+            "sourceItemId": "item_003"
+          },
+          {
+            "id": "plan_083803ca_04",
+            "label": "Metal Folding Chair",
+            "condition": "good",
+            "price_usd": 15,
+            "price_basis": "commercial folding chairs typically resell for $10-$20 each",
+            "bbox": {
+              "x": 171,
+              "y": 513,
+              "width": 343,
+              "height": 124
+            },
+            "confidence": 0.9,
+            "sourceItemId": "item_004"
+          },
+          {
+            "id": "plan_083803ca_05",
+            "label": "Hard Eyeglass Case",
+            "condition": "good",
+            "price_usd": 8,
+            "price_basis": "generic hard-shell glasses cases resell for around $5-$10",
+            "bbox": {
+              "x": 68,
+              "y": 831,
+              "width": 230,
+              "height": 76
+            },
+            "confidence": 0.8,
+            "sourceItemId": "item_005"
+          }
+        ],
+        "approvedAt": "2026-09-19T22:34:44.135Z"
+      }
+    ],
+    [
+      "plan_fbd6583c",
+      {
+        "goal": {
+          "mode": "CASH",
+          "targetUsd": null,
+          "deadline": null,
+          "upgradeTo": null,
+          "upgradePriceUsd": null,
+          "budgetUsd": null
+        },
+        "targetUsd": 0,
+        "decisions": [
+          {
+            "itemId": "plan_fbd6583c_01",
+            "label": "Logitech MX Master 3 Mouse",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 45,
+              "normalUsd": 55,
+              "maxUsd": 65,
+              "basis": "used MX Master 3 sells around $55"
+            },
+            "listUsd": 57,
+            "reason": "Normal tier balances expected value and speed; expected $55, listed at $57 for negotiating room."
+          }
+        ],
+        "expectedUsd": 55,
+        "goalGapUsd": 0,
+        "approved": true,
+        "id": "plan_fbd6583c",
+        "createdAt": "2026-09-19T23:47:29.628Z",
+        "photoUrl": null,
+        "source": null,
+        "items": [
+          {
+            "id": "plan_fbd6583c_01",
+            "label": "Logitech MX Master 3 Mouse",
+            "condition": "good",
+            "price_usd": 55,
+            "price_basis": "used MX Master 3 sells around $55",
+            "bbox": {
+              "x": 100,
+              "y": 100,
+              "width": 200,
+              "height": 200
+            },
+            "confidence": 0.9,
+            "sourceItemId": "it_e2e"
+          }
+        ],
+        "approvedAt": "2026-09-19T23:47:29.789Z"
+      }
+    ],
+    [
+      "plan_7cfa084f",
+      {
+        "goal": {
+          "mode": "CASH",
+          "targetUsd": null,
+          "deadline": null,
+          "upgradeTo": null,
+          "upgradePriceUsd": null,
+          "budgetUsd": null
+        },
+        "targetUsd": 0,
+        "decisions": [
+          {
+            "itemId": "plan_7cfa084f_01",
+            "label": "Anker USB-C Hub",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 30,
+              "normalUsd": 35,
+              "maxUsd": 40,
+              "basis": "used Anker hubs sell around $35"
+            },
+            "listUsd": 37,
+            "reason": "Normal tier balances expected value and speed; expected $35, listed at $37 for negotiating room."
+          }
+        ],
+        "expectedUsd": 35,
+        "goalGapUsd": 0,
+        "approved": true,
+        "id": "plan_7cfa084f",
+        "createdAt": "2026-09-19T23:48:27.271Z",
+        "photoUrl": null,
+        "source": null,
+        "items": [
+          {
+            "id": "plan_7cfa084f_01",
+            "label": "Anker USB-C Hub",
+            "condition": "good",
+            "price_usd": 35,
+            "price_basis": "used Anker hubs sell around $35",
+            "bbox": {
+              "x": 10,
+              "y": 10,
+              "width": 100,
+              "height": 100
+            },
+            "confidence": 0.9,
+            "sourceItemId": "it_e2e2"
+          }
+        ],
+        "approvedAt": "2026-09-19T23:48:27.340Z"
+      }
+    ],
+    [
+      "plan_ceb18d3c",
+      {
+        "goal": {
+          "mode": "CASH",
+          "targetUsd": null,
+          "deadline": null,
+          "upgradeTo": null,
+          "upgradePriceUsd": null,
+          "budgetUsd": null
+        },
+        "targetUsd": 0,
+        "decisions": [
+          {
+            "itemId": "plan_ceb18d3c_01",
+            "label": "Sony WH-1000XM4 Headphones",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 100,
+              "normalUsd": 120,
+              "maxUsd": 140,
+              "basis": "used XM4 sell around $120"
+            },
+            "listUsd": 124,
+            "reason": "Normal tier balances expected value and speed; expected $120, listed at $124 for negotiating room."
+          }
+        ],
+        "expectedUsd": 120,
+        "goalGapUsd": 0,
+        "approved": true,
+        "id": "plan_ceb18d3c",
+        "createdAt": "2026-09-19T23:49:55.027Z",
+        "photoUrl": null,
+        "source": null,
+        "items": [
+          {
+            "id": "plan_ceb18d3c_01",
+            "label": "Sony WH-1000XM4 Headphones",
+            "condition": "good",
+            "price_usd": 120,
+            "price_basis": "used XM4 sell around $120",
+            "bbox": {
+              "x": 10,
+              "y": 10,
+              "width": 100,
+              "height": 100
+            },
+            "confidence": 0.9,
+            "sourceItemId": "it_e2e3"
+          }
+        ],
+        "approvedAt": "2026-09-19T23:49:55.093Z"
+      }
+    ],
+    [
+      "plan_34cf9c8f",
+      {
+        "goal": {
+          "mode": "CASH",
+          "targetUsd": null,
+          "deadline": null,
+          "upgradeTo": null,
+          "upgradePriceUsd": null,
+          "budgetUsd": null
+        },
+        "targetUsd": 0,
+        "decisions": [
+          {
+            "itemId": "plan_34cf9c8f_01",
+            "label": "Keychron K2 Keyboard",
+            "condition": "good",
+            "action": "SELL",
+            "band": {
+              "quickUsd": 55,
+              "normalUsd": 65,
+              "maxUsd": 75,
+              "basis": "used K2 sells around $65"
+            },
+            "listUsd": 67,
+            "reason": "Normal tier balances expected value and speed; expected $65, listed at $67 for negotiating room."
+          }
+        ],
+        "expectedUsd": 65,
+        "goalGapUsd": 0,
+        "approved": true,
+        "id": "plan_34cf9c8f",
+        "createdAt": "2026-09-19T23:51:15.084Z",
+        "photoUrl": null,
+        "source": null,
+        "items": [
+          {
+            "id": "plan_34cf9c8f_01",
+            "label": "Keychron K2 Keyboard",
+            "condition": "good",
+            "price_usd": 65,
+            "price_basis": "used K2 sells around $65",
+            "bbox": {
+              "x": 10,
+              "y": 10,
+              "width": 100,
+              "height": 100
+            },
+            "confidence": 0.9,
+            "sourceItemId": "it_final"
+          }
+        ],
+        "approvedAt": "2026-09-19T23:51:15.143Z"
+      }
     ]
   ],
   "listings": [
@@ -183,6 +574,224 @@
           "draftId": "draft_004"
         }
       }
+    ],
+    [
+      "lst_90004274",
+      {
+        "id": "lst_90004274",
+        "itemId": "plan_083803ca_01",
+        "title": "Apple MacBook",
+        "condition": "good",
+        "description": "Apple MacBook, good condition. Priced from: used space gray MacBooks typically sell around $400-$550.",
+        "photoUrl": null,
+        "listUsd": 536,
+        "basis": "used space gray MacBooks typically sell around $400-$550",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "live",
+          "url": "https://reloop-dev.myshopify.com/products/apple-macbook",
+          "productId": "gid://shopify/Product/9749275081",
+          "dryRun": true,
+          "error": null
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_b0705afb",
+      {
+        "id": "lst_b0705afb",
+        "itemId": "plan_083803ca_02",
+        "title": "Yellow Folding Utility Table",
+        "condition": "good",
+        "description": "Yellow Folding Utility Table, good condition. Priced from: standard folding event tables sell for around $30-$50.",
+        "photoUrl": null,
+        "listUsd": 47,
+        "basis": "standard folding event tables sell for around $30-$50",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "live",
+          "url": "https://reloop-dev.myshopify.com/products/yellow-folding-utility-table",
+          "productId": "gid://shopify/Product/2221717556",
+          "dryRun": true,
+          "error": null
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_f98df843",
+      {
+        "id": "lst_f98df843",
+        "itemId": "plan_083803ca_03",
+        "title": "Apple AirPods Charging Case",
+        "condition": "good",
+        "description": "Apple AirPods Charging Case, good condition. Priced from: standalone used AirPods charging cases sell around $30-$40.",
+        "photoUrl": null,
+        "listUsd": 42,
+        "basis": "standalone used AirPods charging cases sell around $30-$40",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "live",
+          "url": "https://reloop-dev.myshopify.com/products/apple-airpods-charging-case",
+          "productId": "gid://shopify/Product/1867010932",
+          "dryRun": true,
+          "error": null
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_9bf5e866",
+      {
+        "id": "lst_9bf5e866",
+        "itemId": "plan_083803ca_04",
+        "title": "Metal Folding Chair",
+        "condition": "good",
+        "description": "Metal Folding Chair, good condition. Priced from: commercial folding chairs typically resell for $10-$20 each.",
+        "photoUrl": null,
+        "listUsd": 16,
+        "basis": "commercial folding chairs typically resell for $10-$20 each",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "live",
+          "url": "https://reloop-dev.myshopify.com/products/metal-folding-chair",
+          "productId": "gid://shopify/Product/2824310938",
+          "dryRun": true,
+          "error": null
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_a281e02f",
+      {
+        "id": "lst_a281e02f",
+        "itemId": "plan_fbd6583c_01",
+        "title": "Logitech MX Master 3 Mouse",
+        "condition": "good",
+        "description": "Logitech MX Master 3 Mouse, good condition. Priced from: used MX Master 3 sells around $55.",
+        "photoUrl": null,
+        "listUsd": 57,
+        "basis": "used MX Master 3 sells around $55",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "failed",
+          "url": null,
+          "productId": null,
+          "dryRun": null,
+          "error": "fetch failed"
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_67f7253a",
+      {
+        "id": "lst_67f7253a",
+        "itemId": "plan_7cfa084f_01",
+        "title": "Anker USB-C Hub",
+        "condition": "good",
+        "description": "Anker USB-C Hub, good condition. Priced from: used Anker hubs sell around $35.",
+        "photoUrl": null,
+        "listUsd": 37,
+        "basis": "used Anker hubs sell around $35",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "failed",
+          "url": null,
+          "productId": null,
+          "dryRun": null,
+          "error": "fetch failed"
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_61d880c8",
+      {
+        "id": "lst_61d880c8",
+        "itemId": "plan_ceb18d3c_01",
+        "title": "Sony WH-1000XM4 Headphones",
+        "condition": "good",
+        "description": "Sony WH-1000XM4 Headphones, good condition. Priced from: used XM4 sell around $120.",
+        "photoUrl": null,
+        "listUsd": 124,
+        "basis": "used XM4 sell around $120",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "unlisted",
+          "url": "https://reloop-dev.myshopify.com/products/sony-wh-1000xm4-headphones",
+          "adminUrl": "https://reloop-dev.myshopify.com/admin/products/8869122769090",
+          "productId": "gid://shopify/Product/8869122769090",
+          "dryRun": false,
+          "error": "created but not on the storefront: unknown reason"
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
+    ],
+    [
+      "lst_c146f9b0",
+      {
+        "id": "lst_c146f9b0",
+        "itemId": "plan_34cf9c8f_01",
+        "title": "Keychron K2 Keyboard",
+        "condition": "good",
+        "description": "Keychron K2 Keyboard, good condition. Priced from: used K2 sells around $65.",
+        "photoUrl": null,
+        "listUsd": 67,
+        "basis": "used K2 sells around $65",
+        "status": "ACTIVE",
+        "soldUsd": null,
+        "shopify": {
+          "status": "live",
+          "url": "https://reloop-dev.myshopify.com/products/keychron-k2-keyboard",
+          "adminUrl": "https://reloop-dev.myshopify.com/admin/products/8869122932930",
+          "productId": "gid://shopify/Product/8869122932930",
+          "dryRun": false,
+          "error": null
+        },
+        "marketplace": {
+          "status": "off",
+          "url": null,
+          "draftId": null
+        }
+      }
     ]
   ],
   "rules": [
@@ -215,6 +824,70 @@
       {
         "floorUsd": 80,
         "autoAcceptUsd": 95,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_90004274",
+      {
+        "floorUsd": 385,
+        "autoAcceptUsd": 520,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_b0705afb",
+      {
+        "floorUsd": 35,
+        "autoAcceptUsd": 45,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_f98df843",
+      {
+        "floorUsd": 30,
+        "autoAcceptUsd": 40,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_9bf5e866",
+      {
+        "floorUsd": 15,
+        "autoAcceptUsd": 15,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_a281e02f",
+      {
+        "floorUsd": 45,
+        "autoAcceptUsd": 55,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_67f7253a",
+      {
+        "floorUsd": 30,
+        "autoAcceptUsd": 35,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_61d880c8",
+      {
+        "floorUsd": 100,
+        "autoAcceptUsd": 120,
+        "maxRounds": 4
+      }
+    ],
+    [
+      "lst_c146f9b0",
+      {
+        "floorUsd": 55,
+        "autoAcceptUsd": 65,
         "maxRounds": 4
       }
     ]
