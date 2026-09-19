@@ -1,8 +1,19 @@
+<<<<<<< HEAD
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+=======
 node_modules/
+>>>>>>> a88508c6ecdc560901ddfd6d33d8b06b484e73a4
 .env
 .env.*
 !.env.example
 .DS_Store
+<<<<<<< HEAD
+tmp/
+=======
 *.log
 # Raw match footage and extracted frames — never commit (README §16)
 footage/
@@ -22,3 +33,4 @@ secrets.*
 
 # XcodeGen regenerates the project and workspace; only project.yml is the source.
 apps/ios/BloomKnights/BloomKnights.xcodeproj/project.xcworkspace/
+>>>>>>> a88508c6ecdc560901ddfd6d33d8b06b484e73a4

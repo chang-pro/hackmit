@@ -1,0 +1,111 @@
+{
+  "id": "plan_f1d79394c52f9be2",
+  "goal": {
+    "mode": "CASH",
+    "targetUsd": 300,
+    "deadline": null,
+    "upgradeTo": null,
+    "budgetUsd": null
+  },
+  "decisions": [
+    {
+      "itemId": "it_ps4",
+      "action": "SELL",
+      "band": {
+        "quickUsd": 160,
+        "normalUsd": 185,
+        "maxUsd": 210,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; console.ps4_slim; GOOD x1.00; v2 plan fixture - replace with sold comparables; researched not researched"
+      },
+      "listUsd": 217,
+      "reason": "Higher tier: estimated normal value exceeds the target by 30%; expected $210, with 3% negotiation headroom. About 70% of the $300 target."
+    },
+    {
+      "itemId": "it_headset",
+      "action": "SELL",
+      "band": {
+        "quickUsd": 50,
+        "normalUsd": 60,
+        "maxUsd": 70,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; audio.headset_wireless; GOOD x1.00; v1 plan fixture - replace with sold comparables; researched not researched"
+      },
+      "listUsd": 73,
+      "reason": "Higher tier: estimated normal value exceeds the target by 30%; expected $70, with 3% negotiation headroom. About 23% of the $300 target."
+    },
+    {
+      "itemId": "it_monitor",
+      "action": "SELL",
+      "band": {
+        "quickUsd": 80,
+        "normalUsd": 95,
+        "maxUsd": 110,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; display.monitor_24; GOOD x1.00; v1 plan fixture - replace with sold comparables; researched not researched"
+      },
+      "listUsd": 114,
+      "reason": "Higher tier: estimated normal value exceeds the target by 30%; expected $110, with 3% negotiation headroom. About 37% of the $300 target."
+    },
+    {
+      "itemId": "it_phone",
+      "action": "SELL",
+      "band": {
+        "quickUsd": 65,
+        "normalUsd": 80,
+        "maxUsd": 95,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; phone.generic; GOOD x1.00; unresearched development fixture; researched not researched"
+      },
+      "listUsd": 98,
+      "reason": "Higher tier: estimated normal value exceeds the target by 30%; expected $95, with 3% negotiation headroom. About 32% of the $300 target."
+    },
+    {
+      "itemId": "it_keyboard",
+      "action": "SELL",
+      "band": {
+        "quickUsd": 30,
+        "normalUsd": 35,
+        "maxUsd": 40,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; input.keyboard; GOOD x1.00; unresearched development fixture; researched not researched"
+      },
+      "listUsd": 42,
+      "reason": "Higher tier: estimated normal value exceeds the target by 30%; expected $40, with 3% negotiation headroom. About 13% of the $300 target."
+    },
+    {
+      "itemId": "it_lamp",
+      "action": "SELL",
+      "band": {
+        "quickUsd": 20,
+        "normalUsd": 25,
+        "maxUsd": 30,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; lighting.desk_lamp; GOOD x1.00; unresearched development fixture; researched not researched"
+      },
+      "listUsd": 31,
+      "reason": "Higher tier: estimated normal value exceeds the target by 30%; expected $30, with 3% negotiation headroom. About 10% of the $300 target."
+    },
+    {
+      "itemId": "it_cables",
+      "action": "DONATE",
+      "band": {
+        "quickUsd": 5,
+        "normalUsd": 5,
+        "maxUsd": 5,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; accessories.cables; GOOD x1.00; unresearched development fixture; researched not researched"
+      },
+      "listUsd": null,
+      "reason": "Estimated $5 is below the $15 listing minimum; propose donation if accepted and usable."
+    },
+    {
+      "itemId": "it_dead_phone",
+      "action": "RECYCLE",
+      "band": {
+        "quickUsd": 10,
+        "normalUsd": 10,
+        "maxUsd": 10,
+        "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; phone.generic; BROKEN x0.15; unresearched development fixture; researched not researched"
+      },
+      "listUsd": null,
+      "reason": "Broken electronic: route to an e-waste collection site."
+    }
+  ],
+  "expectedUsd": 555,
+  "goalGapUsd": 0,
+  "approved": false
+}
