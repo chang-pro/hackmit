@@ -13,6 +13,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
+import { publishShopifyListing } from "../shopify/shopify-agent.js";
 import { buildPlan } from "./planner.js";
 import { respond } from "./seller.js";
 
@@ -37,10 +38,25 @@ export class Market {
   listings = new Map();
   threads = new Map();
 
-  constructor({ eventLog, draftQueue, file = process.env.RELOOP_MARKET_FILE || null } = {}) {
+  #publish;
+  #marketplaceDrafts;
+
+  constructor({
+    eventLog,
+    draftQueue,
+    file = process.env.RELOOP_MARKET_FILE || null,
+    // Shopify is the channel that actually goes live: one API call, a real
+    // purchasable product, no human tap. Injectable for tests.
+    publish = publishShopifyListing,
+    // The muse.ai Marketplace draft needs a logged-in Chrome, a public photo
+    // URL and a human tap to publish, so it is opt-in rather than the default.
+    marketplaceDrafts = process.env.RELOOP_MARKETPLACE_DRAFTS === "1",
+  } = {}) {
     this.#eventLog = eventLog;
     this.#draftQueue = draftQueue;
     this.#file = file;
+    this.#publish = publish;
+    this.#marketplaceDrafts = marketplaceDrafts;
     this.#load();
   }
 
@@ -165,12 +181,18 @@ export class Market {
         basis: decision.band.basis,
         status: "ACTIVE",
         soldUsd: null,
-        marketplace: { status: "queued", url: null, draftId: null },
+        shopify: { status: "publishing", url: null, productId: null, dryRun: null, error: null },
+        marketplace: { status: this.#marketplaceDrafts ? "queued" : "off", url: null, draftId: null },
       };
       this.listings.set(listing.id, listing);
       this.#rules.set(listing.id, rules.get(item.id));
       created.push(listing);
 
+      // Go live on Shopify. Each publish resolves on its own; one failure
+      // never blocks the rest of the approved plan.
+      this.#publishToShopify(listing, { item, decision, category: categories[item.id] ?? null });
+
+      if (!this.#marketplaceDrafts) continue;
       const photos = photoUrls[item.id] ?? (plan.photoUrl ? [plan.photoUrl] : []);
       const { job } = this.#draftQueue.enqueue({
         item: { id: item.id, label: item.label, condition: item.condition, price_usd: decision.listUsd },
@@ -189,10 +211,57 @@ export class Market {
     return { plan: this.publicPlan(plan), listings: created.map((l) => this.publicListing(l)) };
   }
 
+  // Publishes one approved listing to Shopify and records the outcome. Awaited
+  // only by tests; approval returns as soon as the listings exist, and the page
+  // learns the product URL from the LISTED event.
+  async #publishToShopify(listing, { item, decision, category = null }) {
+    try {
+      const result = await this.#publish({
+        id: listing.itemId,
+        label: listing.title,
+        listUsd: listing.listUsd,
+        condition: listing.condition,
+        category,
+        price_basis: item?.price_basis ?? decision?.band?.basis ?? null,
+        foundBy: item?.source ?? null,
+        photoUrl: listing.photoUrl,
+      });
+      listing.shopify = {
+        status: "live",
+        url: result?.product?.url ?? null,
+        productId: result?.product?.id ?? null,
+        dryRun: Boolean(result?.dry_run),
+        error: null,
+      };
+      this.#emit({
+        kind: "LISTED",
+        itemId: listing.itemId,
+        label: listing.title,
+        amountUsd: listing.listUsd,
+        url: listing.shopify.url,
+        text: `${listing.title} is live at $${listing.listUsd}${result?.dry_run ? " (dry run)" : ""}`,
+      });
+    } catch (err) {
+      listing.shopify = { status: "failed", url: null, productId: null, dryRun: null, error: err.message };
+      this.#emit({
+        kind: "PUBLISH_FAILED",
+        itemId: listing.itemId,
+        label: listing.title,
+        text: `Could not publish ${listing.title}: ${err.message}`,
+      });
+    }
+    this.#save();
+    return listing.shopify;
+  }
+
   publicListing(listing) {
     // Explicit allowlist: nothing from #rules can ride along by accident.
-    const { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, marketplace } = listing;
-    return { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, marketplace: { ...marketplace } };
+    const { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, shopify, marketplace } = listing;
+    return {
+      id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd,
+      shopify: { ...(shopify ?? { status: "off", url: null }) },
+      marketplace: { ...marketplace },
+    };
   }
 
   #listing(listingId) {

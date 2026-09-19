@@ -224,9 +224,21 @@ export function createReLoopServer({
   draftQueue = new DraftQueue({ eventLog }),
   marketFile = process.env.RELOOP_MARKET_FILE ?? (process.env.NODE_ENV === "test" ? null : join(ROOT, "data", "market_state.json")),
   market: customMarket = null,
+  // Shopify publisher (injectable so tests never call the live store) and the
+  // opt-in Facebook Marketplace draft queue.
+  publish = undefined,
+  marketplaceDrafts = undefined,
   enableRepricing = process.env.ENABLE_REPRICING === "1",
 } = {}) {
-  const market = customMarket ?? new Market({ eventLog, draftQueue, file: marketFile });
+  const market =
+    customMarket ??
+    new Market({
+      eventLog,
+      draftQueue,
+      file: marketFile,
+      ...(publish ? { publish } : {}),
+      ...(marketplaceDrafts === undefined ? {} : { marketplaceDrafts }),
+    });
   const repricingJob = new RepricingJob({
     market,
     intervalMs: Number(process.env.REPRICING_INTERVAL_MS ?? 60_000),

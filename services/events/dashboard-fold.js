@@ -8,6 +8,7 @@ export const EVENT_KINDS = [
   "PLAN_APPROVED",
   "DRAFTED",
   "DRAFT_FAILED",
+  "PUBLISH_FAILED",
   "LISTED",
   "OFFER",
   "COUNTER",
@@ -89,6 +90,7 @@ export function foldDashboard(events) {
         }
         break;
       case "DRAFT_FAILED":
+      case "PUBLISH_FAILED":
         break; // card stays where it was; the feed says why
       case "LISTED":
         if (card) {
