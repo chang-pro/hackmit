@@ -195,6 +195,82 @@ mutation ProductVariantUpdate($input: ProductVariantInput!) {
 }
 `;
 
+const PUBLISHABLE_PUBLISH_MUTATION = `
+mutation PublishablePublish($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) {
+    userErrors { field message }
+  }
+}
+`;
+
+const PRODUCT_URL_QUERY = `
+query ProductUrl($id: ID!) {
+  product(id: $id) {
+    onlineStoreUrl
+    onlineStorePreviewUrl
+  }
+}
+`;
+
+/**
+ * Publishes a product to the store's sales channels. A product created through
+ * the Admin API is NOT on the Online Store until this runs, which is why its
+ * storefront URL 404s and `onlineStoreUrl` comes back null.
+ *
+ * Returns { published, channels, error } and never throws: a product that
+ * exists but is not visible is still worth reporting, and the caller decides
+ * what to say about it. The failure is always surfaced -- swallowing it is how
+ * you get a "live" listing whose link is dead with nothing explaining why.
+ *
+ * GraphQL needs `write_publications`; the REST fallback needs only
+ * `write_products`, so it covers a token issued before that scope was added.
+ */
+export async function publishToSalesChannels(productGid, customFetch = fetch) {
+  const { domain, apiVersion } = getShopifyConfig();
+  const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const numId = String(productGid).split("/").pop();
+  const problems = [];
+
+  try {
+    const data = await shopifyGraphql(`query { publications(first: 25) { nodes { id name } } }`, {}, customFetch);
+    const nodes = data?.publications?.nodes ?? [];
+    if (nodes.length === 0) problems.push("no sales channels returned by publications query");
+    else {
+      const result = await shopifyGraphql(
+        PUBLISHABLE_PUBLISH_MUTATION,
+        { id: productGid, input: nodes.map((p) => ({ publicationId: p.id })) },
+        customFetch
+      );
+      const userErrors = result?.publishablePublish?.userErrors ?? [];
+      if (userErrors.length === 0) {
+        return { published: true, channels: nodes.map((p) => p.name), error: null };
+      }
+      problems.push(userErrors.map((e) => e.message).join("; "));
+    }
+  } catch (err) {
+    problems.push(`publications: ${err.message}`);
+  }
+
+  // Fallback: the REST product update marks it published to the Online Store
+  // without the publications scope.
+  try {
+    const token = await getOrExchangeAccessToken(customFetch);
+    const res = await customFetch(`https://${cleanDomain}/admin/api/${apiVersion}/products/${numId}.json`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": token },
+      body: JSON.stringify({ product: { id: Number(numId), published: true } }),
+    });
+    if (res.ok) return { published: true, channels: ["Online Store (REST)"], error: null };
+    problems.push(`REST publish ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  } catch (err) {
+    problems.push(`REST publish: ${err.message}`);
+  }
+
+  const error = problems.join(" | ");
+  console.warn(`Shopify: product ${numId} created but NOT published to a sales channel — ${error}`);
+  return { published: false, channels: [], error };
+}
+
 /**
  * Creates a new product listing in the Shopify store.
  *
@@ -305,7 +381,25 @@ export async function createProduct({
   // handle: onlineStoreUrl is null until the product is published to the
   // Online Store channel, and a guessed URL 404s in exactly that case. The
   // preview URL works before publication, so it is the honest fallback.
-  const productUrl = prod.onlineStoreUrl || prod.onlineStorePreviewUrl || `https://${cleanDomain}/products/${prod.handle}`;
+  // A product created through the Admin API is not on any sales channel yet.
+  const publication = await publishToSalesChannels(prod.id, customFetch);
+
+  // Ask Shopify where the product ended up rather than guessing from the
+  // handle: onlineStoreUrl is only non-null once it really is on the Online
+  // Store, so it doubles as proof that publishing worked. The create response
+  // predates publishing, hence the re-query.
+  let onlineStoreUrl = prod.onlineStoreUrl ?? null;
+  let previewUrl = prod.onlineStorePreviewUrl ?? null;
+  if (publication.published) {
+    try {
+      const fresh = await shopifyGraphql(PRODUCT_URL_QUERY, { id: prod.id }, customFetch);
+      onlineStoreUrl = fresh?.product?.onlineStoreUrl ?? onlineStoreUrl;
+      previewUrl = fresh?.product?.onlineStorePreviewUrl ?? previewUrl;
+    } catch (err) {
+      console.warn(`Shopify: could not read back the product URL: ${err.message}`);
+    }
+  }
+  const productUrl = onlineStoreUrl || previewUrl || `https://${cleanDomain}/products/${prod.handle}`;
 
   return {
     dry_run: false,
@@ -316,8 +410,12 @@ export async function createProduct({
       status: prod.status,
       price: formattedPrice,
       url: productUrl,
-      previewUrl: prod.onlineStorePreviewUrl || null,
-      publishedToOnlineStore: Boolean(prod.onlineStoreUrl),
+      previewUrl,
+      // False means the product exists in the admin but its storefront link
+      // will 404. publishError says why.
+      publishedToOnlineStore: Boolean(onlineStoreUrl),
+      publishedChannels: publication.channels,
+      publishError: publication.error,
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
     },
   };

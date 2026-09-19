@@ -32,11 +32,20 @@ POST /api/plans/:id/approve  { location: {lat, lon}, categories: {itemId: name},
 
 Two channels per SELL item, plus an optional third:
 
-1. **Shopify** — the channel that actually goes live. One Admin API call creates
-   a real, purchasable product; no browser and no human tap. Approval publishes
-   to it and appends `LISTED` with the product URL, or `PUBLISH_FAILED` with the
-   reason. Without `SHOPIFY_ADMIN_ACCESS_TOKEN` (or with `DRY_RUN=1`) it runs in
-   dry-run mode and returns a simulated URL, labelled as such in the UI.
+1. **Shopify** — the channel that actually goes live. Creating the product is
+   only half of it: a product created through the Admin API is on no sales
+   channel, so `publishToSalesChannels()` then publishes it (GraphQL
+   `publishablePublish`, falling back to a REST publish that needs only
+   `write_products`) and the real `onlineStoreUrl` is read back as proof.
+   **This needs `write_publications` on the token — see
+   [the Shopify README](../../services/shopify/README.md).**
+
+   Outcomes: `LISTED` with the product URL; `PUBLISH_FAILED` if creating it
+   failed; and, when the product was created but could not be published,
+   status `unlisted` with the reason plus an admin link, because a storefront
+   link would 404. Nothing is ever reported as live with a dead link. Without
+   `SHOPIFY_ADMIN_ACCESS_TOKEN` (or with `DRY_RUN=1`) it runs in dry-run mode
+   and returns a simulated URL, labelled as such in the UI.
 2. **ReLoop store** — live on approval at `/catalog.json`. Our seller agent
    negotiates here with a floor enforced in code, which is what makes the
    negotiation and "sold after you walked away" demo possible.

@@ -28,7 +28,18 @@ logging the request and returning simulated product URLs without calling the liv
 4. Click **Configure Admin API scopes**, and enable:
    - `write_products`
    - `read_products`
+   - `write_publications` and `read_publications` — **required for the product
+     to appear in the storefront.** A product created through the Admin API is
+     not on any sales channel until it is published to one, and until then its
+     storefront URL 404s. Without these scopes ReLoop falls back to a REST
+     publish that needs only `write_products`; if that fails too, the listing is
+     reported as "created but not on the storefront" with the reason, rather
+     than as live with a dead link.
 5. Click **Install app** $\to$ reveal and copy the **Admin API access token** (`shpat_...`).
+
+> **Changing scopes on an existing app means reinstalling it and copying a new
+> token.** An old token keeps the scopes it was issued with, so adding
+> `write_publications` in the UI changes nothing until the token is reissued.
 
 ## Usage
 
