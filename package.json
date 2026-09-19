@@ -7,8 +7,14 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env services/api/server.js",
     "buyer": "node scripts/buyer.js",
+    "mcp": "node --env-file-if-exists=.env services/market/mcp-catalog.js",
     "phone:tunnel": "bash scripts/start-phone-tunnel.sh",
     "test": "node --test \"tests/*.test.js\"",
     "streams:validate": "node scripts/validate-demo-streams.js"
+  },
+  "//dependencies": "Only the MCP catalog needs these. The server still starts without them installed; /mcp is simply not mounted.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.23.8"
   }
 }

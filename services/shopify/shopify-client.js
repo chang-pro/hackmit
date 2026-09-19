@@ -148,6 +148,8 @@ mutation ProductCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
       title
       handle
       status
+      onlineStoreUrl
+      onlineStorePreviewUrl
       variants(first: 1) {
         nodes {
           id
@@ -299,6 +301,12 @@ export async function createProduct({
     }
   }
 
+  // Ask Shopify where the product actually is rather than guessing from the
+  // handle: onlineStoreUrl is null until the product is published to the
+  // Online Store channel, and a guessed URL 404s in exactly that case. The
+  // preview URL works before publication, so it is the honest fallback.
+  const productUrl = prod.onlineStoreUrl || prod.onlineStorePreviewUrl || `https://${cleanDomain}/products/${prod.handle}`;
+
   return {
     dry_run: false,
     product: {
@@ -307,7 +315,9 @@ export async function createProduct({
       handle: prod.handle,
       status: prod.status,
       price: formattedPrice,
-      url: `https://${cleanDomain}/products/${prod.handle}`,
+      url: productUrl,
+      previewUrl: prod.onlineStorePreviewUrl || null,
+      publishedToOnlineStore: Boolean(prod.onlineStoreUrl),
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
     },
   };

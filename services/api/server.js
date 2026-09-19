@@ -777,7 +777,7 @@ export function createReLoopServer({
   }
 
 
-  return createServer(async (req, res) => {
+  const httpServer = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       // RELOOP_LOG_REQUESTS=1 prints every inbound request with its source
@@ -881,6 +881,11 @@ export function createReLoopServer({
       sendJson(res, 500, { error: err.message });
     }
   });
+
+  // The MCP catalog serves the same listings to an outside agent, so it needs
+  // this server's market rather than one of its own.
+  httpServer.market = market;
+  return httpServer;
 }
 
 function lanAddresses(port) {
@@ -908,8 +913,22 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   // class of spurious failures.
   server.keepAliveTimeout = 120_000;
   server.headersTimeout = 125_000; // must exceed keepAliveTimeout
+
+  // The MCP catalog is the one part of the server with npm dependencies, so it
+  // is loaded dynamically: without `npm install` the server still starts and
+  // everything else works, and /mcp is simply not mounted.
+  let mcpMounted = false;
+  try {
+    const { attachMcpToServer } = await import("../market/mcp-catalog.js");
+    attachMcpToServer(server, server.market, "/mcp");
+    mcpMounted = true;
+  } catch (err) {
+    console.log(`ReLoop MCP:     not mounted (${err.code === "ERR_MODULE_NOT_FOUND" ? "run npm install" : err.message})`);
+  }
+
   server.listen(port, host, () => {
     console.log(`ReLoop desktop: http://localhost:${port}`);
+    if (mcpMounted) console.log(`ReLoop MCP:     http://localhost:${port}/mcp/sse`);
     for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);
     console.log(`Item pricing provider: ${selectedItemsBackend().name}`);
   });
