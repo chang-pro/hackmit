@@ -31,7 +31,7 @@ curl http://127.0.0.1:8001/plan \
   --data-binary @contracts/fixtures/plan_request.json
 ```
 
-**Current prices are unresearched development fixtures.** They are labeled in
+**Most prices are unresearched development fixtures.** Ray-Ban regular and Meta charging cases now have sourced estimates; see [Lane B pricing](docs/lane-b-pricing.md). Fixture prices are labeled in
 every price basis and disabled unless `RELOOP_ALLOW_DEMO_PRICES=1`. This is not a
 market-price dataset or a Voloridge result. No real images are included yet.
 
@@ -102,7 +102,7 @@ Missing credentials return 503; provider failures return 502; invalid inputs 422
 Live failures never silently return fixtures.
 
 The provider uses the Anthropic Messages API with a forced structured tool and
-Pydantic validation. Category enum is built from the book; invalid categories map
+Pydantic validation. Category enum includes recognizable categories even without price coverage; invalid categories map
 to `other.unknown`, have no price, and require correction. The model never prices
 or routes. References: [vision](https://platform.claude.com/docs/en/build-with-claude/vision),
 [tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview).
@@ -133,6 +133,7 @@ development caller and is intended for local integration, not public deployment.
 | --- | --- | --- |
 | `POST /identify` | Capture, imageBase64, existingItems | Observations + provisional bands |
 | `POST /items/confirm` | item, corrected label/category/condition, confirmed=true | Confirmed item + band |
+| `POST /price` | Item | Sourced price band, evidence, status, suggested ask |
 | `POST /plan` | items, goal, optional keepItemIds | Unapproved Plan with reasons |
 | `POST /listing-draft` | Confirmed Item | title, description, priceBasis, itemId |
 

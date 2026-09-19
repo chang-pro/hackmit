@@ -172,7 +172,7 @@ def test_unknown_category_and_ambiguity_produce_questions(book, capture):
     )
     items = items_from_observations(result, capture, book)
     assert items[0].category == "other.unknown"
-    assert items[0].confidence < 0.75
+    assert items[0].confidence == 0.95  # price coverage does not reduce identity confidence
     assert all(item.question is not None for item in items)
 
 

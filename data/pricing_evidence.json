@@ -1,0 +1,82 @@
+[
+  {
+    "category": "accessories.rayban_meta_charging_case",
+    "label": "Ray-Ban Meta brown charging case ONLY (not glasses; not Stories/Display case)",
+    "minListableUsd": 15,
+    "eWaste": true,
+    "spreadPct": 20,
+    "comparables": [
+      {
+        "url": "https://www.ebay.com/itm/267727665528",
+        "title": "Brown Ray-Ban Meta charging case only",
+        "itemPriceUsd": "29.99",
+        "shippingUsd": "0",
+        "condition": "GOOD",
+        "kind": "SOLD_PAGE_DISPLAY",
+        "observedAt": "2026-09-19",
+        "soldAt": "2026-07-15",
+        "notes": "Public page marked sold; displayed item price, not independently verified checkout proceeds. Case only. Cached page inspected September 19."
+      },
+      {
+        "url": "https://www.mercari.com/us/item/m20240861429/",
+        "title": "Ray-Ban Meta charging case for Wayfarer and Headliner",
+        "itemPriceUsd": "52.00",
+        "shippingUsd": "0",
+        "condition": "GOOD",
+        "kind": "SOLD_PAGE_DISPLAY",
+        "observedAt": "2026-09-19",
+        "notes": "Page marked Item sold; sale date unknown. Displayed price, not verified final payment. Cached page inspected September 19."
+      },
+      {
+        "url": "https://www.ebay.com/itm/318643529862",
+        "title": "Brown Ray-Ban Meta charging case only, multi-quantity listing",
+        "itemPriceUsd": "39.99",
+        "condition": "GOOD",
+        "kind": "ASKING",
+        "observedAt": "2026-09-19",
+        "notes": "Current per-unit asking price. A sold-count badge does not prove historical transaction prices. Excluded from sold-page median."
+      }
+    ]
+  },
+  {
+    "category": "accessories.rayban_regular_case",
+    "label": "Regular brown Ray-Ban snap glasses case ONLY, not a charging case",
+    "minListableUsd": 15,
+    "eWaste": false,
+    "spreadPct": 20,
+    "roundingUsd": 1,
+    "comparables": [
+      {
+        "url": "https://www.ebay.com/itm/157056382625",
+        "title": "Brown Ray-Ban Luxottica snap case only",
+        "itemPriceUsd": "3.49",
+        "shippingUsd": "5.99",
+        "condition": "USED_UNGRADED",
+        "kind": "SOLD_PAGE_DISPLAY",
+        "observedAt": "2026-09-19",
+        "soldAt": "2026-06-24",
+        "notes": "Marked sold; used condition ungraded. Displayed item price excludes $5.99 shipping. Cached page; not independently verified checkout amount."
+      },
+      {
+        "url": "https://www.ebay.com/itm/198263866503",
+        "title": "Brown Ray-Ban glasses case only",
+        "itemPriceUsd": "9.99",
+        "condition": "USED_UNGRADED",
+        "kind": "SOLD_PAGE_DISPLAY",
+        "observedAt": "2026-09-19",
+        "soldAt": "2026-06-25",
+        "notes": "Search-index excerpt shows sold and $9.99; full page unavailable. Shipping and exact condition grade unverified. Low-quality comparable."
+      },
+      {
+        "url": "https://www.ebay.com/itm/206361560528",
+        "title": "Brown Ray-Ban snap pouch case only",
+        "itemPriceUsd": "9.99",
+        "condition": "USED_UNGRADED",
+        "kind": "SOLD_PAGE_DISPLAY",
+        "observedAt": "2026-09-19",
+        "soldAt": "2026-06-27",
+        "notes": "Search-index excerpt shows sold and $9.99; full page unavailable. Shipping and exact condition grade unverified. Low-quality comparable."
+      }
+    ]
+  }
+]
