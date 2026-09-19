@@ -241,20 +241,28 @@ export class Market {
         foundBy: item?.source ?? null,
         photoUrl: listing.photoUrl,
       });
+      // A product can be created and still be invisible in the storefront if
+      // publishing to a sales channel failed. That is not the same as "live",
+      // and saying so here is the difference between a working link and a 404
+      // nobody can explain.
+      const visible = result?.dry_run || result?.product?.publishedToOnlineStore !== false;
       listing.shopify = {
-        status: "live",
+        status: visible ? "live" : "unlisted",
         url: result?.product?.url ?? null,
+        adminUrl: result?.product?.adminUrl ?? null,
         productId: result?.product?.id ?? null,
         dryRun: Boolean(result?.dry_run),
-        error: null,
+        error: visible ? null : `created but not on the storefront: ${result?.product?.publishError ?? "unknown reason"}`,
       };
       this.#emit({
-        kind: "LISTED",
+        kind: visible ? "LISTED" : "PUBLISH_FAILED",
         itemId: listing.itemId,
         label: listing.title,
         amountUsd: listing.listUsd,
         url: listing.shopify.url,
-        text: `${listing.title} is live at $${listing.listUsd}${result?.dry_run ? " (dry run)" : ""}`,
+        text: visible
+          ? `${listing.title} is live at $${listing.listUsd}${result?.dry_run ? " (dry run)" : ""}`
+          : `${listing.title} was created in Shopify but is not on the storefront: ${result?.product?.publishError ?? "unknown reason"}`,
       });
     } catch (err) {
       listing.shopify = { status: "failed", url: null, productId: null, dryRun: null, error: err.message };

@@ -435,6 +435,10 @@ setInterval(pollItems, ITEM_POLL_MS);
         card.innerHTML = shop.url
           ? `live · <a href="${esc(shop.url)}" target="_blank" rel="noopener">open listing</a>${shop.dryRun ? " (dry run)" : ""}`
           : `live${shop.dryRun ? " (dry run)" : ""}`;
+      } else if (shop.status === "unlisted") {
+        // Created, but the storefront link would 404. Offer the admin page,
+        // which does work, rather than a link that looks broken on stage.
+        card.innerHTML = `created but not on the storefront${shop.adminUrl ? ` · <a href="${esc(shop.adminUrl)}" target="_blank" rel="noopener">open in admin</a>` : ""}<br><span style="color:#ffcf6b">${esc(shop.error ?? "")}</span>`;
       } else if (shop.status === "failed") {
         card.textContent = `not listed: ${shop.error ?? "unknown error"}`;
       } else {
@@ -446,7 +450,7 @@ setInterval(pollItems, ITEM_POLL_MS);
           : " · Marketplace draft ready";
       }
     }
-    const settled = ["live", "failed"].includes(shop.status) &&
+    const settled = ["live", "unlisted", "failed"].includes(shop.status) &&
       ["off", "drafted", "failed"].includes(listing.marketplace?.status);
     if (!settled && attempt < 60) setTimeout(() => pollListing(id, attempt + 1), 2000);
   }
