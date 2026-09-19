@@ -8,7 +8,7 @@
 // one frame is a complete observation, so this analyzes the newest frame and
 // drops the rest.
 
-import { rightcodesItemsBackend } from "../vision/backends/rightcodes-items.js";
+import { selectedItemsBackend } from "../vision/backends/items-provider.js";
 
 const DEFAULT_INTERVAL_MS = 4_000;
 
@@ -25,7 +25,7 @@ export class ItemAnalyzer {
   // was reset must not write its result back afterwards.
   #generation = 0;
 
-  constructor({ backend = rightcodesItemsBackend, intervalMs = DEFAULT_INTERVAL_MS } = {}) {
+  constructor({ backend = selectedItemsBackend(), intervalMs = DEFAULT_INTERVAL_MS } = {}) {
     this.#backend = backend;
     this.#intervalMs = intervalMs;
   }
