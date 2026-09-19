@@ -3,72 +3,93 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>ReLoop — Live</title>
+<title>ReLoop</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 1rem; padding: 1rem; background: #0b0d12; color: #e7ecf5;
+    display: flex; align-items: center; justify-content: center; gap: 1.5rem;
+    padding: 1.25rem; background: #0b0d12; color: #e7ecf5; flex-wrap: wrap;
     font: 14px ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  #shot {
-    max-width: 100%; max-height: 78vh; border-radius: 10px;
-    background: #141821; box-shadow: 0 10px 40px rgba(0,0,0,.5);
-  }
+  #stage { position: relative; line-height: 0; }
+  #shot { max-width: min(92vw, 720px); max-height: 82vh; border-radius: 12px; background: #141821; }
   #shot[hidden] { display: none; }
-  #msg { max-width: 34rem; text-align: center; line-height: 1.6; color: #9aa6bd; }
-  #bar { display: flex; gap: 1.2rem; align-items: center; flex-wrap: wrap; justify-content: center; }
-  .dot { width: .6rem; height: .6rem; border-radius: 50%; background: #6b7689; display: inline-block; }
-  .dot.live { background: #55e39b; box-shadow: 0 0 10px #55e39b88; }
+  #boxes { position: absolute; inset: 0; pointer-events: none; }
+  .box { position: absolute; border: 2px solid var(--c); border-radius: 6px; background: color-mix(in srgb, var(--c) 12%, transparent); }
+  .tag {
+    position: absolute; left: -2px; top: -1.45rem; padding: .1rem .4rem;
+    border-radius: 5px; background: var(--c); color: #06080c;
+    font: 700 11px ui-monospace, monospace; white-space: nowrap;
+  }
+  aside { min-width: 15rem; max-width: 20rem; }
+  #total { font: 700 3rem/1 ui-monospace, monospace; letter-spacing: -.04em; }
+  #cap { margin-top: .2rem; color: #7d8aa3; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; }
+  #list { margin-top: 1rem; display: flex; flex-direction: column; gap: .35rem; }
+  .row { display: flex; justify-content: space-between; gap: .8rem; border-top: 1px solid #222838; padding-top: .35rem; }
+  .row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .p { color: #55e39b; font-weight: 700; }
+  #msg { margin-top: .8rem; line-height: 1.6; color: #9aa6bd; font-size: .78rem; }
+  #bar { margin-top: 1.1rem; display: flex; gap: 1rem; flex-wrap: wrap; color: #7d8aa3; font-size: .72rem; }
+  .dot { width: .55rem; height: .55rem; border-radius: 50%; background: #6b7689; display: inline-block; }
+  .dot.live { background: #55e39b; box-shadow: 0 0 9px #55e39b88; }
   .dot.stale { background: #ffcf6b; }
-  b { color: #e7ecf5; font-weight: 600; }
+  b { color: #e7ecf5; }
 </style>
 </head>
 <body>
-  <img id="shot" alt="Newest frame from the glasses" hidden />
-  <div id="msg">Waiting for the first frame…</div>
-  <div id="bar">
-    <span><span class="dot" id="dot"></span> <span id="state">no frames</span></span>
-    <span>age <b id="age">—</b></span>
-    <span>source <b id="src">—</b></span>
-    <span>fps <b id="fps">—</b></span>
+  <div id="stage">
+    <img id="shot" alt="Newest frame from the glasses" hidden />
+    <div id="boxes"></div>
   </div>
 
-<script>
-// The barebones viewer. The iOS app POSTs JPEG frames to /api/frames over plain
-// HTTP; this page just shows the newest one. No WebRTC, no signalling, no ICE,
-// no TURN, and no HTTPS requirement — there is no getUserMedia here, so none of
-// the secure-context rules apply. If a frame reaches the server, it shows up.
-// The poll interval IS the viewer's latency — the follow-up image request is
-// only a few ms on localhost. 100ms also stops the fps readout aliasing
-// against the upload cadence.
-const POLL_MS = 100;
-const $ = (id) => document.getElementById(id);
-let shown = 0, lastId = null, stamps = [];
+  <aside>
+    <div id="total">$0</div>
+    <div id="cap">estimated resale value</div>
+    <div id="list"></div>
+    <div id="bar">
+      <span><span class="dot" id="dot"></span> <span id="state">no frames</span></span>
+      <span>age <b id="age">—</b></span>
+      <span>fps <b id="fps">—</b></span>
+      <span>priced <b id="pAge">—</b></span>
+    </div>
+    <div id="msg"></div>
+  </aside>
 
-async function tick() {
+<script>
+// The whole product on one page: the glasses feed, and a price on everything
+// in it. The app POSTs JPEG frames to /api/frames over plain HTTP and this
+// polls the newest one — no WebRTC, no signalling, no ICE, no TURN, and no
+// HTTPS requirement, because nothing here touches getUserMedia.
+const POLL_MS = 100;
+const ITEM_POLL_MS = 1000;
+const $ = (id) => document.getElementById(id);
+let lastId = null, stamps = [];
+
+function colorFor(usd) {
+  return usd >= 100 ? "#55e39b" : usd >= 25 ? "#ffcf6b" : "#9fb0d5";
+}
+
+async function pollFrame() {
   try {
     const meta = await (await fetch("/api/live-frame", { cache: "no-store" })).json();
     if (meta.error) {
       $("state").textContent = "no frames yet";
       $("dot").className = "dot";
-      $("msg").hidden = false;
       $("msg").textContent =
-        "Server is up and listening, but no frame has arrived. " +
-        "Check the server URL in the app's Settings — on the phone, localhost means the phone itself.";
+        "Server is up and listening, but no frame has arrived. Start the stream in the app.";
       return;
     }
     const frame = meta.frame || {};
     const ageMs = meta.age_ms ?? 0;
     $("age").textContent = ageMs < 1000 ? ageMs + "ms" : Math.round(ageMs / 1000) + "s";
-    $("src").textContent = frame.source || "—";
-    // A frame older than a few seconds means the stream stopped, not that it
-    // never started — worth distinguishing, they have different causes.
+    // A frame older than a few seconds means the stream stopped, which has a
+    // different cause than one that never started.
     const live = ageMs < 4000;
     $("dot").className = "dot " + (live ? "live" : "stale");
     $("state").textContent = live ? "live" : "stalled";
+    $("msg").textContent = "";
 
     if (frame.frame_id && frame.frame_id !== lastId) {
       lastId = frame.frame_id;
@@ -77,23 +98,114 @@ async function tick() {
       if (stamps.length > 1) {
         $("fps").textContent = (((stamps.length - 1) * 1000) / (now - stamps[0])).toFixed(1);
       }
-      // Cache-bust per frame id; the server sends no-store but Safari still
-      // reuses an identical URL for an <img>.
+      // Safari reuses an identical <img> URL even with no-store, so the frame
+      // id doubles as the cache key.
       $("shot").src = "/api/live-frame/image?frame_id=" + encodeURIComponent(frame.frame_id);
       $("shot").hidden = false;
-      $("msg").hidden = true;
-      shown++;
     }
   } catch (err) {
     $("state").textContent = "server unreachable";
     $("dot").className = "dot";
-    $("msg").hidden = false;
-    $("msg").textContent = "Cannot reach the server from this browser: " + err.message;
+    $("msg").textContent = "Cannot reach the server: " + err.message;
   }
 }
 
-tick();
-setInterval(tick, POLL_MS);
+async function pollItems() {
+  let data;
+  try {
+    data = await (await fetch("/api/items/latest", { cache: "no-store" })).json();
+  } catch { return; }
+
+  if (data.error || !Array.isArray(data.items)) {
+    // A failing model is worth saying out loud rather than showing an empty
+    // list that looks like "nothing here is worth anything".
+    $("pAge").textContent = data?.queue?.last_error ? "error" : "—";
+    if (data?.queue?.last_error) $("msg").textContent = "Pricing error: " + data.queue.last_error;
+    return;
+  }
+  const items = data.items;
+  $("total").textContent = "$" + (data.total_value_usd ?? 0);
+  const generatedMs = Date.now() - (Date.parse(data.generated_at) || Date.now());
+  $("pAge").textContent = Math.round(generatedMs / 1000) + "s ago";
+
+  $("list").replaceChildren(...items.map((it) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    const n = document.createElement("span");
+    n.className = "n";
+    n.textContent = it.label;
+    const p = document.createElement("span");
+    p.className = "p";
+    p.textContent = "$" + it.price_usd;
+    row.append(n, p);
+    return row;
+  }));
+
+  // Boxes are in the model's 0..1000 space, measured on a frame from this same
+  // feed, so they map straight onto the image as percentages — no letterboxing
+  // maths, and no chance of drawing them over a different video source.
+  $("boxes").replaceChildren(...items.map((it) => {
+    const b = document.createElement("div");
+    b.className = "box";
+    b.style.setProperty("--c", colorFor(it.price_usd));
+    b.style.left = (it.bbox.x / 10) + "%";
+    b.style.top = (it.bbox.y / 10) + "%";
+    b.style.width = (it.bbox.width / 10) + "%";
+    b.style.height = (it.bbox.height / 10) + "%";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = it.label.toUpperCase() + "  $" + it.price_usd;
+    b.append(tag);
+    return b;
+  }));
+}
+
+pollFrame(); pollItems();
+setInterval(pollFrame, POLL_MS);
+setInterval(pollItems, ITEM_POLL_MS);
+</script>
+
+<!-- Live agent updates from the event log: the "keeps working" moment is
+     visible here even after the phone is put away. Standalone, so it cannot
+     break the feed above. Full view at /dashboard. -->
+<style>
+  .agent-live { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom));
+    display: none; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 16px;
+    background: rgba(32,38,58,.92); color: #fff; font: 500 14px/1.35 system-ui, sans-serif;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 50; }
+  .agent-live.show { display: flex; }
+  .agent-live b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .agent-live span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .agent-live a { color: #a7dcff; font-size: 13px; white-space: nowrap; }
+</style>
+<div class="agent-live" id="agent-live" role="status" aria-live="polite"><span id="agent-text"></span><b id="agent-total"></b><a href="/dashboard">Dashboard</a></div>
+<script type="module">
+  import { foldDashboard } from "/dashboard-fold.js";
+  let events = [];
+  const box = document.getElementById("agent-live");
+  function show(latest) {
+    const d = foldDashboard(events);
+    if (!latest?.text) return;
+    document.getElementById("agent-text").textContent = latest.text;
+    document.getElementById("agent-total").textContent =
+      d.goal.targetUsd ? `$${d.recoveredUsd} · $${d.goalGapUsd} to go` : d.recoveredUsd ? `$${d.recoveredUsd}` : "";
+    box.classList.add("show");
+    if (latest.kind === "SOLD" && "speechSynthesis" in window) {
+      speechSynthesis.speak(new SpeechSynthesisUtterance(
+        `${latest.text}.${d.goal.targetUsd ? ` ${d.goalGapUsd} dollars to go.` : ""}`));
+    }
+  }
+  const source = new EventSource("/api/events/stream");
+  source.addEventListener("snapshot", (msg) => {
+    events = JSON.parse(msg.data);
+    show([...events].reverse().find((e) => e.text));
+  });
+  source.onmessage = (msg) => {
+    const event = JSON.parse(msg.data);
+    events = event.kind === "RESET" ? [] : [...events, event];
+    if (event.kind === "RESET") box.classList.remove("show");
+    show(event);
+  };
 </script>
 </body>
 </html>

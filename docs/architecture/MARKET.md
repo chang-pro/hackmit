@@ -89,7 +89,7 @@ API. Point it at another machine with `RELOOP_URL`.
 ## Live updates
 
 - Dashboard: `/dashboard` (see [EVENTS.md](EVENTS.md)).
-- Phone: `/phone` shows a live banner with the latest event and the running
+- Live feed page (`/`, `/live`): shows a live banner with the latest event and the running
   total, and speaks sales aloud (through the glasses when they are the audio route).
 - iOS app (Lane A): subscribe to `GET /api/events/stream` (server-sent events)
   the same way.
