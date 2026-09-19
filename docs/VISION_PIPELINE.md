@@ -1,6 +1,6 @@
 # Vision pipeline operating guide
 
-This is the execution guide for the BloomKnights camera-to-insight backend. The phone is the canonical capture device until the native app is ready.
+This is the execution guide for the ReLoop camera-to-insight backend. The phone is the canonical capture device until the native app is ready.
 
 ## Ownership
 
@@ -188,7 +188,7 @@ The WebRTC peer connection carries continuous camera video directly from phone t
 
 The default configuration uses public STUN discovery. Some campus NATs require a TURN relay for WebRTC media fallback. The preferred demo configuration is Metered Open Relay: set `METERED_TURN_APP_NAME` and `METERED_TURN_API_KEY` on the server. For each ten-minute active session, the server retrieves the provider-issued browser ICE configuration and returns it only to callers holding that session id. Do not put the API key in frontend source code.
 
-An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. When a TURN URL is configured, BloomKnights uses relay-only WebRTC so client-isolated Wi-Fi does not waste time attempting a direct media candidate. TURN is independent from the public HTTP tunnel, which carries only active-session signaling and gated analysis snapshots.
+An external TURN provider can instead be supplied through `WEBRTC_ICE_SERVERS_JSON`, for example `[{"urls":"turn:turn.example.edu:3478","username":"...","credential":"..."}]`. When a TURN URL is configured, ReLoop uses relay-only WebRTC so client-isolated Wi-Fi does not waste time attempting a direct media candidate. TURN is independent from the public HTTP tunnel, which carries only active-session signaling and gated analysis snapshots.
 
 ## Browser-only UI demo
 

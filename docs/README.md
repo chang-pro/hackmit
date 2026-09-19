@@ -1,4 +1,4 @@
-# BloomKnights documentation index
+# ReLoop documentation index
 
 ## What was built (2026-07-11)
 

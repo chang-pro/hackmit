@@ -1,16 +1,16 @@
-# BloomKnights judge-facing demo script
+# ReLoop judge-facing demo script
 
 The canonical operator procedure is [`demo-day/runbook.md`](demo-day/runbook.md). This page is the compact spoken version.
 
 ## Hook
 
-> “Prediction markets know their contracts, but they do not know what I am looking at. BloomKnights starts with the physical world. I look at a broadcast and it identifies the event, retrieves the relevant intelligence, and shows the model probability beside the market probability.”
+> “Prediction markets know their contracts, but they do not know what I am looking at. ReLoop starts with the physical world. I look at a broadcast and it identifies the event, retrieves the relevant intelligence, and shows the model probability beside the market probability.”
 
 ## World Cup
 
 Start the camera feed on the Argentina–France World Cup Final and press **Analyze**.
 
-> “There is no sport picker. Cerebras recognized soccer, the World Cup Final, the participants, score, phase, and clock. BloomKnights then attached the matching precollected evidence pack: official timeline context, the sport-specific state model, and a clearly labeled replay-market reconstruction.”
+> “There is no sport picker. Cerebras recognized soccer, the World Cup Final, the participants, score, phase, and clock. ReLoop then attached the matching precollected evidence pack: official timeline context, the sport-specific state model, and a clearly labeled replay-market reconstruction.”
 
 Point to the evidence checks, then Model / Market / Gap.
 
@@ -18,7 +18,7 @@ Point to the evidence checks, then Model / Market / Gap.
 
 ## NBA Finals switch
 
-Switch the source screen to the April 9, 2026 Celtics–Knicks game without touching BloomKnights.
+Switch the source screen to the April 9, 2026 Celtics–Knicks game without touching ReLoop.
 
 > “I only changed what I am watching. The prior soccer context is discarded, basketball is detected, and the NBA Finals timeline loads automatically.”
 
@@ -34,7 +34,7 @@ Show Super Bowl LI at 28–3 and then 28–28.
 
 Switch to UFC 229.
 
-> “Now the state representation changes. There is no team score, so BloomKnights uses fighter identity, round, clock, and only visibly supported control context. It does not invent judge scores or damage.”
+> “Now the state representation changes. There is no team score, so ReLoop uses fighter identity, round, clock, and only visibly supported control context. It does not invent judge scores or damage.”
 
 ## Close
 

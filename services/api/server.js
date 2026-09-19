@@ -1,4 +1,4 @@
-// BloomKnights API server. The mobile client and the capture viewer post
+// ReLoop API server. The mobile client and the capture viewer post
 // base64 frames; each frame is identified by the item vision backend, which
 // returns every resellable object it can see with a price and a normalized
 // bounding box. Zero dependencies (node:http).
@@ -85,7 +85,7 @@ function responseHeaders(contentType = "application/json") {
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Cache-Control": "no-store",
-    "X-BloomKnights-API-Version": "1",
+    "X-ReLoop-API-Version": "1",
   };
 }
 
@@ -658,8 +658,8 @@ if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const host = process.env.HOST ?? "0.0.0.0";
   const server = createBloomServer();
   server.listen(port, host, () => {
-    console.log(`BloomKnights desktop: http://localhost:${port}`);
-    for (const address of lanAddresses(port)) console.log(`BloomKnights phone:   ${address}`);
+    console.log(`ReLoop desktop: http://localhost:${port}`);
+    for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);
     console.log(
       process.env.RIGHTCODES_API_KEY
         ? `Item pricing: ${RIGHTCODES_ITEMS_MODEL}`

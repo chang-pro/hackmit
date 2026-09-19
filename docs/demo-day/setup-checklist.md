@@ -75,7 +75,7 @@ Use only these identities unless their JSON packs have been deliberately recalib
 - [ ] World Cup clip is framed at the first rehearsed checkpoint.
 - [ ] Tunnel terminal is healthy; `/api/health` still returns 200.
 - [ ] Rehearsal URL is bookmarked as the final fallback.
-- [ ] Opening line is memorized: “Prediction markets know their contracts. BloomKnights knows what I am looking at.”
+- [ ] Opening line is memorized: “Prediction markets know their contracts. ReLoop knows what I am looking at.”
 
 ## Recovery ladder
 

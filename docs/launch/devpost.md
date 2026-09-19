@@ -1,4 +1,4 @@
-# BloomKnights — Devpost Submission
+# ReLoop — Devpost Submission
 
 > Look at the game. See the probability.
 
@@ -6,9 +6,9 @@
 
 Prediction markets are powerful, but using one during a live game is a terrible experience. You're watching the fourth quarter, something big just happened, and now you have to pull out your phone, find the right contract, and mentally convert what you just saw into a probability — all while missing the next play.
 
-We flipped it. The screen you're already watching **is** the input. Point Meta Ray-Ban glasses at the broadcast, and BloomKnights reads the scoreboard, estimates the outcome with a deterministic probability model, pulls the market-implied probability from Polymarket, and whispers the comparison back — without you ever leaving the game.
+We flipped it. The screen you're already watching **is** the input. Point Meta Ray-Ban glasses at the broadcast, and ReLoop reads the scoreboard, estimates the outcome with a deterministic probability model, pulls the market-implied probability from Polymarket, and whispers the comparison back — without you ever leaving the game.
 
-The moment that sold us: Super Bowl LI. Atlanta up 28–3 in the third quarter. The market had all but called it. Anyone watching that game through BloomKnights would have seen the model estimate and the market price diverge in real time as New England came back. That's the product in one sentence: **connecting what you can see to what the market believes.**
+The moment that sold us: Super Bowl LI. Atlanta up 28–3 in the third quarter. The market had all but called it. Anyone watching that game through ReLoop would have seen the model estimate and the market price diverge in real time as New England came back. That's the product in one sentence: **connecting what you can see to what the market believes.**
 
 ## What it does
 
@@ -94,7 +94,7 @@ Every model consumes canonical state only — never pixels — and is bounded, m
 - More broadcast scoreboard layouts per sport, then a second market provider behind the same adapter interface.
 - Threshold notifications: only speak up when the model-market gap crosses a configured line.
 
-**What BloomKnights is not:** it does not execute trades, and it never claims a guaranteed edge. A displayed difference between the model estimate and the market-implied probability is a signal to inspect, not proof of profit. All famous-match demos are clearly labeled replays with mock market snapshots.
+**What ReLoop is not:** it does not execute trades, and it never claims a guaranteed edge. A displayed difference between the model estimate and the market-implied probability is a signal to inspect, not proof of profit. All famous-match demos are clearly labeled replays with mock market snapshots.
 
 ---
 

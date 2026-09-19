@@ -1,8 +1,8 @@
-# BloomKnights
+# ReLoop
 
 > Look at your stuff. See what it's worth.
 
-BloomKnights is a wearable visual-intelligence system for physical resale. A user wearing camera-enabled smart glasses looks around a room. The system identifies every object in view that could realistically be resold, estimates what each one would sell for secondhand, and draws that price on the live feed as you look at it.
+ReLoop is a wearable visual-intelligence system for physical resale. A user wearing camera-enabled smart glasses looks around a room. The system identifies every object in view that could realistically be resold, estimates what each one would sell for secondhand, and draws that price on the live feed as you look at it.
 
 The hackathon version is focused on one experience:
 
@@ -36,7 +36,7 @@ npm start   # zero-dependency Node server on http://localhost:3000
 npm test    # full node:test suite, no install needed
 ```
 
-Set `RIGHTCODES_API_KEY` in a `.env` at the repo root, or item identification will fail on every frame and the overlay will stay empty.
+Set `RIGHTCODES_KEY_GEMINI` in a `.env` at the repo root, or item identification will fail on every frame and the overlay will stay empty. right.codes issues **a separate key per model channel** — the Gemini channel does not accept `RIGHTCODES_API_KEY` (that is the Claude channel), and using the wrong one fails as a 401 that looks like a dead key.
 
 Pages served by `npm start` (see `services/api/server.js`):
 
@@ -57,7 +57,7 @@ Three stages, joined by plain JSON.
 
 **1. Frames in.** The glasses stream to the iOS app over the Meta Wearables Device Access Toolkit (DAT 0.9.0); the app relays to the browser over WebRTC. The capture page samples a JPEG every 3 seconds and posts it to `POST /api/frames`. The phone camera path (`/phone`) posts to the same route, so nothing downstream knows or cares which camera it came from.
 
-**2. Identification and pricing.** `services/vision/backends/rightcodes-items.js` sends the frame to Gemini with a constrained response schema and gets back, for each item: a label a buyer would search for, a condition grade, an estimated secondhand price in USD, a one-line basis for that number, a confidence, and a bounding box.
+**2. Identification and pricing.** `services/vision/backends/rightcodes-items.js` sends the frame to `gemini-3.8-flash` with a strict `json_schema` response format. It goes through right.codes' OpenAI-compatible route (`/v1/chat/completions`) rather than the native `/gemini/v1beta` one, because 3.8 is only reachable there — the native path 404s on it and still serves 3.6 and gets back, for each item: a label a buyer would search for, a condition grade, an estimated secondhand price in USD, a one-line basis for that number, a confidence, and a bounding box.
 
 Boxes are **0..1000 normalized** — the same convention the capture page's overlay already used for its on-device detections, which is why the model's output can be drawn directly with no coordinate translation. Boxes that are off-image, inverted, or zero-area are dropped in `sanitizedItem()` before they can reach the page or inflate the total.
 
@@ -102,8 +102,8 @@ Unlike a scoreboard, a room is a complete observation in a single frame, so the 
 - **Prices are single-shot LLM estimates.** They are not drawn from a researched price book or live sold-listing data, and they will vary between runs on the same object. Say this plainly rather than implying market data.
 - **The overlay lags a moving camera.** Boxes refresh on a ~3–4s cadence, so they track a room you are scanning deliberately, not a head turning quickly.
 - **Identification is only as good as the view.** A partially occluded or badly lit object gets a low confidence and a vaguer label; the model is told not to invent a model number it cannot see.
-- **`RIGHTCODES_API_KEY` is required.** Without it every pass fails and `queue.last_error` on `/api/analysis/status` will say so.
+- **`RIGHTCODES_KEY_GEMINI` is required.** Without it every pass fails and `queue.last_error` on `/api/analysis/status` will say so.
 
 ## The pitch
 
-People don't throw usable things away because they have no value. They throw them away because finding out what they're worth is work — photographing, searching comparable listings, guessing at condition. BloomKnights removes the work. You look at the room, and the room is priced.
+People don't throw usable things away because they have no value. They throw them away because finding out what they're worth is work — photographing, searching comparable listings, guessing at condition. ReLoop removes the work. You look at the room, and the room is priced.
