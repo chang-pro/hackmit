@@ -49,8 +49,14 @@
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Needed to connect to Meta Ray-Ban glasses</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_meta-datax._tcp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Streams video from Meta Ray-Ban glasses or the phone camera to read live scoreboards</string>
+	<string>Streams video from Meta Ray-Ban glasses to identify and price what you are looking at</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Streams video from the glasses over the local network instead of Bluetooth, which is much faster.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
