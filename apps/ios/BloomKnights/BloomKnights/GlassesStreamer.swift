@@ -286,7 +286,7 @@ final class FrameUplink: @unchecked Sendable {
                 self.lock.unlock()
                 tap?(imageBuffer)
             }
-            if wantUpload { self.encodeAndPost(imageBuffer) }
+            if wantUpload { self.scheduleUpload(imageBuffer) }
         }
     }
 
@@ -550,7 +550,23 @@ final class GlassesStreamer: ObservableObject {
                 }
 
                 // Match Meta's supported CameraAccess sample exactly.
-                let config = StreamConfiguration(videoCodec: .raw, resolution: .low, frameRate: 24)
+                // .hvc1 + .medium (504x896) @ 24fps. Device-tested by this project
+                // in July: .medium is the only resolution that streams smooth and
+                // continuous over Bluetooth on this SDK (.high stalls at any fps
+                // once the BT channel congests; .medium ran clean ~8 minutes).
+                //
+                // The codec matters more than the resolution. .raw is
+                // UNCOMPRESSED — 360x640 YUV is ~345KB a frame, ~8MB/s at 24fps,
+                // against a Bluetooth channel that tops out near 300KB/s — so the
+                // glasses throttle hard and the feed crawls. .hvc1 is H.265 and
+                // fits, which is why a bigger picture over .hvc1 beats a smaller
+                // one over .raw.
+                //
+                // 15fps rather than the 24 that test used: a later pass called
+                // 15 "the lightest, fastest pipe", and we only need ~5fps for the
+                // uploads and 12 for the preview. Asking a congested Bluetooth
+                // link for 24 buys nothing and costs freshness.
+                let config = StreamConfiguration(videoCodec: .hvc1, resolution: .medium, frameRate: 15)
                 guard let camera = try session.addCamera(config: config) else {
                     self.status = "Could not open camera"
                     session.stop(); self.session = nil   // don't orphan the started session
@@ -563,7 +579,10 @@ final class GlassesStreamer: ObservableObject {
                 let uplink = self.uplink
                 let preview = self.preview
                 let frameTok = stream.videoFramePublisher.listen { [weak self] frame in
-                    uplink.routeRaw(frame.sampleBuffer)
+                    // .hvc1 arrives encoded, so it goes through the decode path.
+                    // ingest() hands off to VTDecompressionSession and never
+                    // blocks the SDK's delivery thread.
+                    uplink.ingest(frame.sampleBuffer)
                     preview.enqueue(frame)
                     guard uplink.tickDiagnostics() else { return }
                     uplink.note(frame)
