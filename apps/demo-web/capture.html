@@ -402,7 +402,7 @@
 
     <div class="idle glass-card" id="idle">
       <div class="idle-glyph" aria-hidden="true"></div>
-      <div class="idle-title" id="idleTitle">Every game, quantified</div>
+      <div class="idle-title" id="idleTitle">Look at your stuff</div>
       <div class="idle-sub" id="idleHint">Waiting for the latest phone or glasses live feed.</div>
     </div>
 
@@ -434,7 +434,7 @@
           <div>
             <div class="tile-eyebrow">Live vision</div>
             <div class="tile-title" id="trackerState">YOLO11s standby</div>
-            <p class="tile-note" id="trackerNote">Player tracking runs on this device; Analyze is only for event and market context.</p>
+            <p class="tile-note" id="trackerNote">Object tracking runs on this device; Analyze is what sends a frame for pricing.</p>
           </div>
           <button class="analyze" id="analyze" hidden>Analyze</button>
         </div>
@@ -442,18 +442,18 @@
 
       <section class="readout analysis-tile" id="readout" aria-live="polite">
         <div class="prediction-head">
-          <div class="tile-eyebrow">Live prediction</div>
+          <div class="tile-eyebrow">Live pricing</div>
           <span class="prediction-status waiting" id="predictionStatus">Waiting for model</span>
         </div>
         <div class="ro-game" id="roGame">—</div>
         <div class="ro-prob" id="roModel">—</div>
-        <div class="ro-cap" id="roOutcome">Model win probability</div>
+        <div class="ro-cap" id="roOutcome">Estimated resale value</div>
         <div class="ro-cmp"><span class="mk" id="roMarket">MKT —</span><span class="gp" id="roGap">—</span></div>
         <div class="dual-meter" id="dualMeter" hidden>
           <div class="dual-row"><span>Model</span><div class="dual-bar"><i id="modelBar"></i></div><b id="modelPct">—</b></div>
           <div class="dual-row"><span>Market</span><div class="dual-bar market"><i id="marketBar"></i></div><b id="marketPct">—</b></div>
         </div>
-        <div class="ro-say" id="roSay">Looking for items…</div>
+        <div class="ro-say" id="roSay">Connect a camera, then press Analyze.</div>
         <div class="item-list" id="itemList" hidden></div>
         <div class="factor-row" id="factorRow" hidden></div>
         <div class="alt-row" id="altRow" hidden></div>
@@ -665,7 +665,7 @@ function clearRenderedInsight({ queue = null, resetResearch = true } = {}) {
   $("roGame").textContent = "—";
   $("roModel").textContent = "—";
   $("roModel").dataset.v = "";
-  $("roOutcome").textContent = "Model win probability";
+  $("roOutcome").textContent = "Estimated resale value";
   $("roMarket").textContent = "MKT —";
   $("roGap").textContent = "—";
   $("roGap").className = "gp";
@@ -880,7 +880,7 @@ function setRemoteFeedUI(active) {
   clearVisualDetections();
   analyzeButton.hidden = true;
   lastInboundVideoStats = null;
-  setTrackerState("YOLO11s standby", "Player tracking starts automatically with a live camera stream.");
+  setTrackerState("YOLO11s standby", "Object tracking starts automatically with a live camera stream.");
   clearRenderedInsight();
   setProgramStatus("Camera preview · waiting for phone or glasses");
   $("idleHint").textContent = "Waiting for the latest phone or glasses live feed.";
@@ -1754,7 +1754,7 @@ function renderInsight(insight) {
   document.body.classList.remove("gated");
   document.body.classList.add("ready");
   tweenNum($("roModel"), analysis.primary_probability * 100, (value) => value.toFixed(0) + "%");
-  $("roOutcome").textContent = analysis.primary_outcome || "Model win probability";
+  $("roOutcome").textContent = analysis.primary_outcome || "Estimated resale value";
   const marketProbability = insight.market?.probability ?? analysis.market_probability;
   const gap = comparison?.gap_percentage_points ?? analysis.gap_percentage_points;
   $("roMarket").textContent = Number.isFinite(marketProbability)
@@ -1952,8 +1952,9 @@ if (!demoMode) {
 }
 // Rotate the idle headline through the calm/confident lines with a 2.5s fade-out.
 const IDLE_TITLES = [
-  "Every game, quantified",
-  "Live odds, in your lens",
+  "Look at your stuff",
+  "See what it's worth",
+  "Every item, priced",
 ];
 let idleTitleIdx = 0;
 const idleTitleEl = $("idleTitle");
