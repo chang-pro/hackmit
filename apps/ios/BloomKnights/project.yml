@@ -42,7 +42,16 @@ targets:
           - bluetooth-central
           - bluetooth-peripheral
         NSBluetoothAlwaysUsageDescription: "Needed to connect to Meta Ray-Ban glasses"
-        NSCameraUsageDescription: "Streams video from Meta Ray-Ban glasses or the phone camera to read live scoreboards"
+        # WiFi Aware is the SDK's high-bandwidth transport to the glasses. It
+        # refuses to use it unless BOTH of these are present and non-empty
+        # ("NSLocalNetworkUsageDescription must be present and non-empty" is a
+        # literal string in MWDATCore), and silently falls back to Bluetooth
+        # L2CAP, which is what capped the stream. The service name is the one
+        # the SDK advertises: _meta-datax._tcp.
+        NSLocalNetworkUsageDescription: "Streams video from the glasses over the local network instead of Bluetooth, which is much faster."
+        NSBonjourServices:
+          - _meta-datax._tcp
+        NSCameraUsageDescription: "Streams video from Meta Ray-Ban glasses to identify and price what you are looking at"
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         MWDAT:
