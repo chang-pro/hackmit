@@ -80,6 +80,13 @@
   /* Active feed: a quiet theater workspace, not a full-screen HUD. */
   .theater-shell { position: absolute; z-index: 1; inset: 0; pointer-events: none; }
   .theater-screen { position: absolute; inset: 0; overflow: hidden; }
+  .item-list { display: flex; flex-direction: column; gap: .3rem; margin-top: .85rem; padding-top: .7rem; border-top: 1px solid var(--line); }
+  .item-list[hidden] { display: none; }
+  .item-row { display: flex; align-items: baseline; justify-content: space-between; gap: .7rem; font: .74rem var(--mono); }
+  .item-row .nm { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+  .item-row .cond { color: var(--ink-faint); font-size: .58rem; letter-spacing: .1em; text-transform: uppercase; }
+  .item-row .amt { color: var(--mint); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .item-row .amt.zero { color: var(--ink-faint); }
   .vision-overlay { position: absolute; z-index: 3; inset: 0; overflow: visible; pointer-events: none; }
   .vision-overlay[hidden], .vision-overlay-status[hidden] { display: none; }
   .vision-box { position: absolute; border: 2px solid var(--box-stroke); border-radius: .5rem; background: var(--box-fill); box-shadow: 0 0 0 1px rgba(5,20,48,.18), 0 0 22px var(--box-glow); transition: left .18s linear, top .18s linear, width .18s linear, height .18s linear; }
@@ -446,7 +453,8 @@
           <div class="dual-row"><span>Model</span><div class="dual-bar"><i id="modelBar"></i></div><b id="modelPct">—</b></div>
           <div class="dual-row"><span>Market</span><div class="dual-bar market"><i id="marketBar"></i></div><b id="marketPct">—</b></div>
         </div>
-        <div class="ro-say" id="roSay">Reading the scoreboard…</div>
+        <div class="ro-say" id="roSay">Looking for items…</div>
+        <div class="item-list" id="itemList" hidden></div>
         <div class="factor-row" id="factorRow" hidden></div>
         <div class="alt-row" id="altRow" hidden></div>
         <div class="ro-context" id="roContext" hidden>
@@ -537,7 +545,24 @@ const DETECTION_STYLES = {
   referee: { stroke: "#e6c7ff", fill: "rgba(190, 143, 255, .14)", glow: "rgba(190, 143, 255, .32)" },
   ball: { stroke: "#ffe28c", fill: "rgba(255, 204, 96, .16)", glow: "rgba(255, 204, 96, .32)" },
   other: { stroke: "#ced9ff", fill: "rgba(161, 177, 255, .12)", glow: "rgba(161, 177, 255, .28)" },
+  // Priced items are keyed by worth, so a valuable object reads at a glance.
+  item_high: { stroke: "#9cf4c7", fill: "rgba(78, 234, 164, .16)", glow: "rgba(78, 234, 164, .34)" },
+  item_mid: { stroke: "#ffe28c", fill: "rgba(255, 204, 96, .14)", glow: "rgba(255, 204, 96, .30)" },
+  item_low: { stroke: "#ced9ff", fill: "rgba(161, 177, 255, .12)", glow: "rgba(161, 177, 255, .26)" },
 };
+
+const HIGH_VALUE_USD = 100;
+const MID_VALUE_USD = 25;
+
+function itemKind(priceUsd) {
+  if (priceUsd >= HIGH_VALUE_USD) return "item_high";
+  if (priceUsd >= MID_VALUE_USD) return "item_mid";
+  return "item_low";
+}
+
+function conditionLabel(condition) {
+  return String(condition || "").replace(/_/g, " ");
+}
 
 const SPORT_LABEL = { nba: "NBA", basketball: "NBA", soccer: "Soccer", mma: "UFC", ufc: "UFC", american_football: "Football", football: "Football", golf: "Golf" };
 const RESEARCH_ITEM_LIMIT = 4;
@@ -887,6 +912,9 @@ function boundedDetection(detection) {
   return {
     label: String(detection?.label || "PLAYER").trim().slice(0, 28) || "PLAYER",
     kind: DETECTION_STYLES[detection?.kind] ? detection.kind : "other",
+    // A caller that already knows how the box should read — an item box shows
+    // its price, not a confidence percentage — supplies the tag outright.
+    tag: detection?.tag ? String(detection.tag).trim().slice(0, 40) : null,
     bbox: { x, y, width, height },
     confidence: Math.max(0, Math.min(1, Number(detection?.confidence) || 0)),
   };
@@ -933,7 +961,8 @@ function renderVisualDetections() {
     box.style.setProperty("--box-stroke", style.stroke);
     box.style.setProperty("--box-fill", style.fill);
     box.style.setProperty("--box-glow", style.glow);
-    const tag = `${detection.label.toUpperCase()}  ${Math.round(detection.confidence * 100)}%`;
+    const tag = detection.tag
+      ?? `${detection.label.toUpperCase()}  ${Math.round(detection.confidence * 100)}%`;
     const label = document.createElement("span");
     label.className = "vision-label";
     label.textContent = tag;
@@ -941,16 +970,29 @@ function renderVisualDetections() {
     overlay.append(box);
   }
   overlay.hidden = false;
-  status.textContent = visualDetectionSource === "yolo"
-    ? "YOLO11s · live on this device"
-    : visualDetectionSource === "model"
-      ? "Vision overlay · latest model pass"
-      : "Vision overlay · local tracker";
+  status.textContent = visualDetectionSource === "items"
+    ? "Item pricing · latest model pass"
+    : visualDetectionSource === "yolo"
+      ? "YOLO11s · live on this device"
+      : visualDetectionSource === "model"
+        ? "Vision overlay · latest model pass"
+        : "Vision overlay · local tracker";
   status.hidden = false;
   renderHudTelemetry();
 }
 
+// Priced item boxes own the overlay while they are fresh. The on-device YOLO
+// tracker keeps running for its frame rate telemetry, but it must not paint
+// over the prices between model passes.
+const ITEM_BOX_TTL_MS = 12_000;
+let lastItemBoxesAt = 0;
+
 function setVisualDetections(detections, source = "model") {
+  if (source === "items") lastItemBoxesAt = Date.now();
+  else if (Date.now() - lastItemBoxesAt < ITEM_BOX_TTL_MS) {
+    renderHudTelemetry();
+    return;
+  }
   visualDetections = (Array.isArray(detections) ? detections : []).map(boundedDetection).filter(Boolean);
   visualDetectionSource = visualDetections.length > 0 ? source : null;
   renderVisualDetections();
@@ -959,6 +1001,7 @@ function setVisualDetections(detections, source = "model") {
 }
 
 function clearVisualDetections() {
+  lastItemBoxesAt = 0;
   visualDetections = [];
   visualDetectionSource = null;
   renderVisualDetections();
@@ -1434,63 +1477,6 @@ function startDemoFeed() {
   return "BloomKnights local stream started.";
 }
 
-async function showDemoRehearsal(pack, moment = null, { generation } = {}) {
-  if (!demoStream) startDemoFeed();
-  const requestGeneration = generation ?? demoRehearsalGeneration;
-  const query = new URLSearchParams({ pack });
-  if (moment) query.set("moment", moment);
-  const insight = await api(`/api/demo/replay?${query}`);
-  if (!demoStream || requestGeneration !== demoRehearsalGeneration) return null;
-  demoRehearsalInsight = insight;
-  renderInsight(insight);
-  setStatusPill("capturing", "event pack");
-  analyzeButton.hidden = true;
-  return `${insight.demo_intelligence.pack_label} · ${insight.demo_intelligence.moment_label}`;
-}
-
-function normalizedRehearsalInterval(intervalMs) {
-  const requested = Number(intervalMs);
-  if (!Number.isFinite(requested) || requested <= 0) return DEFAULT_REHEARSAL_INTERVAL_MS;
-  return Math.max(MIN_REHEARSAL_INTERVAL_MS, Math.min(MAX_REHEARSAL_INTERVAL_MS, requested));
-}
-
-function reportDemoRehearsalError(error, retryMs) {
-  const message = clippedText(error?.message || "Checkpoint could not be loaded", 150);
-  $("detectedSport").textContent = "CHECKPOINT RETRY";
-  $("researchStatus").textContent = "Checkpoint temporarily unavailable";
-  $("researchNote").textContent = `${message}. Retrying in ${Math.round(retryMs / 1000)} seconds.`;
-  $("intelBadge").hidden = false;
-  $("intelBadge").textContent = "Retrying checkpoint";
-  const status = $("predictionStatus");
-  status.className = "prediction-status rehearsal";
-  status.textContent = "Retrying";
-  $("pipelineTitle").textContent = "Checkpoint retrying";
-  $("pipelineNote").textContent = message;
-}
-
-async function cycleDemoRehearsal(intervalMs = DEFAULT_REHEARSAL_INTERVAL_MS) {
-  clearTimeout(demoRehearsalTimer);
-  if (!demoStream) startDemoFeed();
-  const delay = normalizedRehearsalInterval(intervalMs);
-  const cycleGeneration = ++demoRehearsalGeneration;
-  let index = 0;
-  const advance = async () => {
-    if (!demoStream || cycleGeneration !== demoRehearsalGeneration) return;
-    const checkpoint = DEMO_REHEARSAL_SEQUENCE[index % DEMO_REHEARSAL_SEQUENCE.length];
-    try {
-      const rendered = await showDemoRehearsal(checkpoint.pack, checkpoint.moment, { generation: cycleGeneration });
-      if (rendered) index += 1;
-    } catch (error) {
-      if (demoStream && cycleGeneration === demoRehearsalGeneration) reportDemoRehearsalError(error, delay);
-    } finally {
-      if (demoStream && cycleGeneration === demoRehearsalGeneration) {
-        demoRehearsalTimer = setTimeout(advance, delay);
-      }
-    }
-  };
-  await advance();
-  return `BloomKnights four-event rehearsal cycle started at ${Math.round(delay / 1000)} second intervals.`;
-}
 
 function showWebRtcBlocked(message) {
   remoteFeedActive = false;
@@ -1546,7 +1532,7 @@ async function api(path, options = {}) {
   return data;
 }
 
-const ANALYSIS_SNAPSHOT_INTERVAL_MS = 12_000;
+const ANALYSIS_SNAPSHOT_INTERVAL_MS = 3_000;
 const ANALYSIS_SNAPSHOT_MAX_EDGE = 960;
 
 function canvasJpegBase64(canvas) {
@@ -1796,6 +1782,73 @@ function renderInsight(insight) {
   $("roDisclosure").textContent = "";
 }
 
+// The live view's job: draw every priced item over the feed and total it up.
+let lastItemSignature = "";
+
+function renderItems(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (items.length === 0) {
+    clearVisualDetections();
+    $("itemList").hidden = true;
+    $("itemList").replaceChildren();
+    $("roModel").textContent = "$0";
+    $("roSay").textContent = "Nothing resellable in view yet.";
+    $("roMarket").textContent = "0 ITEMS";
+    $("roGap").textContent = "SCANNING";
+    return;
+  }
+
+  setVisualDetections(
+    items.map((item) => ({
+      label: item.label,
+      kind: itemKind(item.price_usd),
+      tag: `${item.label.toUpperCase()}  $${item.price_usd}`,
+      bbox: item.bbox,
+      confidence: item.confidence,
+    })),
+    "items"
+  );
+
+  const total = Number(payload.total_value_usd) || 0;
+  document.body.classList.add("has-read");
+  document.body.classList.remove("gated");
+  document.body.classList.add("ready");
+  $("roGame").textContent = `${items.length} item${items.length === 1 ? "" : "s"} in view`;
+  $("roOutcome").textContent = "Estimated resale value";
+  $("roMarket").textContent = `${items.length} ITEM${items.length === 1 ? "" : "S"}`;
+  const top = items[0];
+  $("roGap").textContent = `TOP $${top.price_usd}`;
+  $("roGap").className = "gp";
+  $("roSay").textContent = top.price_basis || `${top.label} — ${conditionLabel(top.condition)} condition.`;
+  lastSpoken = `${items.length} items, about ${total} dollars. Most valuable is the ${top.label} at ${top.price_usd} dollars.`;
+
+  const signature = items.map((item) => `${item.label}:${item.price_usd}`).join("|");
+  if (signature !== lastItemSignature) {
+    tweenNum($("roModel"), total, (value) => `$${Math.round(value)}`);
+    lastItemSignature = signature;
+  }
+
+  const list = $("itemList");
+  list.replaceChildren(
+    ...items.map((item) => {
+      const row = document.createElement("div");
+      row.className = "item-row";
+      const name = document.createElement("span");
+      name.className = "nm";
+      name.textContent = item.label;
+      const cond = document.createElement("span");
+      cond.className = "cond";
+      cond.textContent = conditionLabel(item.condition);
+      const amount = document.createElement("span");
+      amount.className = `amt${item.price_usd > 0 ? "" : " zero"}`;
+      amount.textContent = `$${item.price_usd}`;
+      row.append(name, cond, amount);
+      return row;
+    })
+  );
+  list.hidden = false;
+}
+
 async function refreshAnalysis() {
   if (demoStream || analysisRefreshInFlight) return;
   analysisRefreshInFlight = true;
@@ -1815,11 +1868,11 @@ async function refreshAnalysis() {
     }
     if (!document.body.classList.contains("has-read")) renderResearchPlan(null, status.queue);
     try {
-      renderInsight(await api("/api/latest"));
+      renderItems(await api("/api/items/latest"));
     } catch (error) {
-      // The first result does not exist until Cerebras has a complete frame window.
-      if (/no analyzed live camera insight/i.test(error.message) && document.body.classList.contains("has-read")) {
-        clearRenderedInsight({ queue: status.queue });
+      // No result exists until the first frame has been through the model.
+      if (/no analyzed items/i.test(error.message)) {
+        $("roSay").textContent = "Point the camera at your stuff…";
       }
     }
   } catch {
@@ -1882,14 +1935,6 @@ window.bloomPlayback = Object.freeze({
 });
 window.bloomDemo = Object.freeze({
   start: startDemoFeed,
-  show: showDemoRehearsal,
-  cycle: cycleDemoRehearsal,
-  stopCycle: () => {
-    clearTimeout(demoRehearsalTimer);
-    demoRehearsalTimer = null;
-    demoRehearsalGeneration += 1;
-    return "BloomKnights rehearsal cycle stopped.";
-  },
   stop: () => { stopDemoFeed(); return "BloomKnights local stream stopped."; },
   sequence: DEMO_REHEARSAL_SEQUENCE,
 });
@@ -1898,19 +1943,7 @@ $("helpNote").textContent = NOTE;
 renderResearchPlan();
 const demoParams = new URLSearchParams(location.search);
 const demoMode = demoParams.get("demo") === "1";
-if (demoMode) {
-  setTimeout(() => {
-    if (demoParams.get("cycle") === "1") {
-      const interval = normalizedRehearsalInterval(demoParams.get("interval"));
-      cycleDemoRehearsal(interval).catch((error) => reportDemoRehearsalError(error, interval));
-    } else if (demoParams.get("pack")) {
-      showDemoRehearsal(demoParams.get("pack"), demoParams.get("moment"))
-        .catch((error) => reportDemoRehearsalError(error, DEFAULT_REHEARSAL_INTERVAL_MS));
-    } else {
-      startDemoFeed();
-    }
-  }, 0);
-}
+if (demoMode) setTimeout(startDemoFeed, 0);
 setInterval(refreshAnalysis, INSIGHT_POLL_MS);
 setInterval(refreshVideoStats, INSIGHT_POLL_MS);
 if (!demoMode) {

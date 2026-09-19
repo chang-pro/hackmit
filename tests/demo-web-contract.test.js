@@ -5,66 +5,27 @@ import { readFileSync } from "node:fs";
 const capture = readFileSync(new URL("../apps/demo-web/capture.html", import.meta.url), "utf8");
 const phone = readFileSync(new URL("../apps/demo-web/phone.html", import.meta.url), "utf8");
 
-test("capture viewer presents detected evidence and an honest model-market comparison", () => {
-  assert.match(capture, /id="detectedSport"/);
-  assert.match(capture, /demo_intelligence/);
-  assert.match(capture, /MARKET \$\{Math\.round\(marketProbability \* 100\)\}%/);
-  assert.match(capture, /gap_percentage_points/);
-  assert.match(capture, /Historical replay/);
-  assert.match(capture, /object-fit: contain/);
+test("the capture viewer draws a price on every identified item", () => {
+  assert.match(capture, /\/api\/items\/latest/);
+  assert.match(capture, /function renderItems/);
+  // The box label is the price, not a confidence percentage.
+  assert.match(capture, /tag: `\$\{item\.label\.toUpperCase\(\)\}  \$\$\{item\.price_usd\}`/);
+  assert.match(capture, /total_value_usd/);
+  assert.match(capture, /id="itemList"/);
 });
 
-test("capture viewer exposes quota-free rehearsal controls and explicit data provenance", () => {
-  assert.match(capture, /\/api\/demo\/replay/);
-  assert.match(capture, /show:\s*showDemoRehearsal/);
-  assert.match(capture, /cycle:\s*cycleDemoRehearsal/);
-  assert.match(capture, /stopCycle:/);
-  assert.match(capture, /DEMO_REHEARSAL_SEQUENCE/);
-  assert.match(capture, /Cached event pack loaded/);
-  assert.match(capture, /intelligence\.research/);
-  assert.match(capture, /live prediction/i);
-  assert.match(capture, /cached research result/i);
-  assert.match(capture, /get\("ops"\)/);
-  assert.match(capture, /body\.running\.ops-mode \.ops-bar/);
+test("item boxes are colour-keyed by what the item is worth", () => {
+  assert.match(capture, /item_high:/);
+  assert.match(capture, /item_mid:/);
+  assert.match(capture, /item_low:/);
+  assert.match(capture, /function itemKind/);
+  assert.match(capture, /HIGH_VALUE_USD = 100/);
+  assert.match(capture, /MID_VALUE_USD = 25/);
 });
 
-test("capture viewer clears stale results and keeps rehearsal visually consistent", () => {
-  assert.match(capture, /function clearRenderedInsight/);
-  assert.match(capture, /clearRenderedInsight\(\{ queue: data\.queue \}\)/);
-  assert.match(capture, /demoRehearsalInsight = insight/);
-  assert.match(capture, /function demoVisualState/);
-  assert.match(capture, /LIVE PREVIEW/);
-  assert.match(capture, /DEFAULT_REHEARSAL_INTERVAL_MS = 10_000/);
-  assert.match(capture, /MIN_REHEARSAL_INTERVAL_MS = 5_000/);
-  assert.match(capture, /MAX_REHEARSAL_INTERVAL_MS = 30_000/);
-  assert.match(capture, /demoParams\.get\("interval"\)/);
-  assert.match(capture, /body\.running \.readout[^}]*overflow-y: auto/);
-});
-
-test("capture viewer swaps to a double-buffered local broadcast only on a newer playback command", () => {
-  assert.match(capture, /id="video" class="program-video"/);
-  assert.match(capture, /id="videoStandby" class="program-video"/);
-  assert.match(capture, /id="remotePreview"/);
-  assert.match(capture, /body\.playback-active #remotePreview/);
-  assert.match(capture, /playbackDirectiveTarget/);
-  assert.match(capture, /activePlaybackRevision/);
-  assert.match(capture, /activePlaybackEpoch/);
-  assert.match(capture, /pendingPlaybackRevision/);
-  assert.match(capture, /pendingPlaybackEpoch/);
-  assert.match(capture, /function applyPlaybackDirective/);
-  assert.match(capture, /function clearProgramPlayback/);
-  assert.match(capture, /api\("\/api\/playback"\)/);
-  assert.match(capture, /get video\(\) \{ return theaterVideo\(\); \}/);
-  assert.match(capture, /keeping current view/);
-  assert.match(capture, /synced once/);
-  assert.match(capture, /analysisRefreshInFlight/);
-  assert.match(capture, /sourceGeneration: \(\) => theaterSourceGeneration/);
-  assert.match(capture, /sourceVideo !== bridge\.video/);
-  assert.match(capture, /event\.detail\?\.restart/);
-  assert.match(capture, /track\.addEventListener\("ended"/);
-  assert.match(capture, /if \(!remoteFeedActive\)/);
-  assert.match(capture, /clearProgramPlayback\(\)/);
-  assert.doesNotMatch(capture, /local replay continues while the (?:detector|camera)/i);
+test("the on-device tracker never paints over a fresh price overlay", () => {
+  assert.match(capture, /ITEM_BOX_TTL_MS/);
+  assert.match(capture, /if \(source === "items"\) lastItemBoxesAt = Date\.now\(\)/);
 });
 
 test("live analysis uses one frame per request and the viewer samples WebRTC for glasses", () => {
@@ -74,7 +35,20 @@ test("live analysis uses one frame per request and the viewer samples WebRTC for
   assert.match(phone, /ANALYSIS_INTERVAL_MS = 2400/);
   assert.match(capture, /function submitWebRtcAnalysisSnapshot/);
   assert.match(capture, /source: "webrtc_viewer"/);
-  assert.match(capture, /ANALYSIS_SNAPSHOT_INTERVAL_MS = 12_000/);
+  // Fast enough that the overlay tracks what the wearer is looking at.
+  assert.match(capture, /ANALYSIS_SNAPSHOT_INTERVAL_MS = 3_000/);
   assert.doesNotMatch(capture, /id="analystChat"/);
   assert.doesNotMatch(capture, /api\("\/api\/chat"/);
+});
+
+test("the viewer no longer depends on any sports or prediction-market route", () => {
+  for (const route of [
+    "/api/comparison",
+    "/api/sports",
+    "/api/stats",
+    "/api/demo/replay",
+    "/api/demo/intelligence",
+  ]) {
+    assert.doesNotMatch(capture, new RegExp(route.replace(/\//g, "\\/")), `${route} is gone`);
+  }
 });
