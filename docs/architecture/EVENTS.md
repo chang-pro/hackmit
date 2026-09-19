@@ -33,7 +33,7 @@ The server adds `id` and `ts`. Optional fields: `itemId`, `listingId`, `label`,
 Cards are keyed by `itemId` (falling back to `listingId`), so use the same id
 across every event for one item.
 
-Kinds: `GOAL_SET`, `IDENTIFIED`, `PLAN_APPROVED`, `DRAFTED`, `LISTED`, `OFFER`,
+Kinds: `GOAL_SET`, `IDENTIFIED`, `PLAN_APPROVED`, `DRAFTED`, `DRAFT_FAILED`, `LISTED`, `OFFER`,
 `COUNTER`, `SOLD`, `DONATED`, `RECYCLED`, `REPRICED`, `DOG_STARTED`, `DOG_FOUND`, `DOG_DONE`.
 
 A card's status only moves forward (approved → drafted → live → sold), so an
@@ -41,14 +41,23 @@ out-of-order event never demotes an item.
 
 ## What each lane needs to do
 
-Already wired: `POST /api/listings/draft` appends a `DRAFTED` event on success.
+Already wired (see [MARKET.md](MARKET.md)):
 
-- **C (Market):** when a Marketplace listing actually goes live or sells, append
-  a `LISTED` or `SOLD` event through `POST /api/events`. Nothing does that yet,
-  so after real drafts are created the cards stop at "Drafted".
-- **A (App) / B (Brain):** append a `GOAL_SET` event when the user picks a goal
-  (`mode`, and the target as `amountUsd`), and a `PLAN_APPROVED` event per item on
-  Approve (`itemId`). An optional `PLAN_APPROVED` with no `itemId` and the plan's
-  expected total as `amountUsd` records the expected value.
+- `POST /api/plans/:id/approve` appends `GOAL_SET`, `PLAN_APPROVED` (plan and per
+  item), `IDENTIFIED`, `DONATED` and `RECYCLED`.
+- The draft queue appends `DRAFTED` or `DRAFT_FAILED` for every Marketplace draft.
+- `POST /api/listings/:id/marketplace` appends `LISTED` when a human reports the
+  draft published.
+- The store's seller agent appends `OFFER` and `COUNTER`, and checkout appends `SOLD`.
+
+What each lane still owes:
+
+- **A (App):** approve through `POST /api/plans/:id/approve` rather than appending
+  goal/approval events by hand, and send the phone's `location` with it. Give the
+  user a way to report a Marketplace draft published (it calls the `/marketplace`
+  route). Subscribe to `/api/events/stream` for live status.
+- **B (Brain):** the runtime pricer is the Node one; keep `services/market/planner.js`
+  in step with any routing-rule changes in `reloop_brain/planner.py`.
+- **Anyone else emitting events** (the dog lane: `DOG_*`) appends through `POST /api/events`.
 - **Contracts:** the Python contracts don't define an Event model yet. If the
   Brain API should share this format, it needs adding to `contracts/schema.py`.

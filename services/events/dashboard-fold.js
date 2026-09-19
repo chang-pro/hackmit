@@ -7,6 +7,7 @@ export const EVENT_KINDS = [
   "IDENTIFIED",
   "PLAN_APPROVED",
   "DRAFTED",
+  "DRAFT_FAILED",
   "LISTED",
   "OFFER",
   "COUNTER",
@@ -87,6 +88,8 @@ export function foldDashboard(events) {
           if (event.url) card.url = event.url;
         }
         break;
+      case "DRAFT_FAILED":
+        break; // card stays where it was; the feed says why
       case "LISTED":
         if (card) {
           advance(card, "live");
