@@ -9,6 +9,11 @@
 //   GET  /api/health            — frame buffer + analysis queue status
 //   GET  /api/items/latest      — newest priced items for the live overlay
 //   POST /api/listings/draft    — hand one item to muse.ai for a Marketplace draft
+//   GET  /api/events            — the append-only event log
+//   POST /api/events            — append one event (any lane: IDENTIFIED, SOLD, ...)
+//   GET  /api/events/stream     — the event log as server-sent events
+//   POST /api/events/seed       — replace the log with contracts/fixtures/events.json
+//   GET  /api/dashboard         — the dashboard fold over the event log
 //   GET  /api/live-frame        — metadata for the newest inbound camera frame
 //   GET  /api/live-frame/image  — newest inbound camera JPEG/PNG bytes
 //   GET  /api/webrtc/active      — single viewer's active camera session
@@ -19,7 +24,7 @@
 //   POST /api/analysis/start     — explicitly enable model analysis
 //   POST /api/analysis/stop      — disable model analysis
 //   GET  /api/analysis/status    — whether analysis is armed, plus the queue
-//   GET  /, /capture, /phone, /data, /landing, /pitch — pages
+//   GET  /, /capture, /phone, /data, /dashboard, /landing, /pitch — pages
 
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
@@ -31,6 +36,8 @@ import { randomUUID } from "node:crypto";
 import { ItemAnalyzer } from "./item-analyzer.js";
 import { RIGHTCODES_ITEMS_MODEL } from "../vision/backends/rightcodes-items.js";
 import { draftListing } from "../../facebook-marketplace/muse-agent.js";
+import { EventLog } from "../events/event-log.js";
+import { foldDashboard } from "../events/dashboard-fold.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
@@ -160,6 +167,12 @@ async function sendDemoAsset(res, filename, contentType) {
   res.end(asset);
 }
 
+async function sendDashboardFold(res) {
+  const asset = await readFile(join(ROOT, "services", "events", "dashboard-fold.js"));
+  res.writeHead(200, responseHeaders("text/javascript; charset=utf-8"));
+  res.end(asset);
+}
+
 async function sendPlaybackPolicy(res) {
   const asset = await readFile(join(ROOT, "services", "demo", "playback-director.js"));
   res.writeHead(200, responseHeaders("text/javascript; charset=utf-8"));
@@ -254,6 +267,7 @@ export function createBloomServer({
   itemAnalyzer = new ItemAnalyzer(),
   demoStreamsDir = DEFAULT_DEMO_STREAMS_DIR,
   demoStreamStatus = demoStreamVerifiedStatus,
+  eventLog = new EventLog(),
 } = {}) {
   // Item identification is what the live camera path runs: every frame is
   // scored for resellable objects and a price, which the capture page draws
@@ -404,12 +418,55 @@ export function createBloomServer({
         floorUsd: body.floor_usd ?? null,
         timeoutMs: 150_000,
       });
+      eventLog.append({
+        kind: "DRAFTED",
+        itemId: item.id ?? item.label,
+        label: item.label,
+        amountUsd: result.price_usd || null,
+        // muse.ai returns prose, not fields; the draft link is whatever
+        // facebook.com URL it mentions, if any.
+        url: String(result.reply ?? "").match(/https?:\/\/(?:www\.)?facebook\.com\/\S+/)?.[0] ?? null,
+        text: `Marketplace draft ready: ${item.label}`,
+      });
       sendJson(res, 201, result);
     } catch (err) {
       // A CDP failure is a setup problem (Chrome not running, wrong chat, moved
       // selector), so it returns 503 with the message that names the fix.
       sendJson(res, 503, { error: err.message, item_id: item.id ?? null });
     }
+  }
+
+  async function handleAppendEvent(req, res) {
+    try {
+      const body = await readJsonBody(req);
+      sendJson(res, 201, eventLog.append(body));
+    } catch (err) {
+      sendJson(res, err.statusCode ?? 400, { error: err.message });
+    }
+  }
+
+  async function handleSeedEvents(res) {
+    const fixture = JSON.parse(await readFile(join(ROOT, "contracts", "fixtures", "events.json"), "utf8"));
+    eventLog.clear();
+    for (const event of fixture) eventLog.append(event);
+    sendJson(res, 200, { seeded: fixture.length });
+  }
+
+  function handleEventStream(req, res) {
+    res.writeHead(200, {
+      ...responseHeaders("text/event-stream; charset=utf-8"),
+      Connection: "keep-alive",
+    });
+    // Replay the whole log first, so a fresh dashboard needs no second request.
+    res.write(`event: snapshot\ndata: ${JSON.stringify(eventLog.list())}\n\n`);
+    const unsubscribe = eventLog.subscribe((event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    });
+    const heartbeat = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
   }
 
   function handleLatestItems(res) {
@@ -641,6 +698,23 @@ export function createBloomServer({
         handleAnalysisStatus(res);
       } else if (req.method === "POST" && url.pathname === "/api/listings/draft") {
         await handleDraftListing(req, res);
+      } else if (req.method === "GET" && url.pathname === "/api/events") {
+        sendJson(res, 200, { events: eventLog.list() });
+      } else if (req.method === "POST" && url.pathname === "/api/events") {
+        await handleAppendEvent(req, res);
+      } else if (req.method === "GET" && url.pathname === "/api/events/stream") {
+        handleEventStream(req, res);
+      } else if (req.method === "POST" && url.pathname === "/api/events/seed") {
+        await handleSeedEvents(res);
+      } else if (req.method === "GET" && url.pathname === "/api/dashboard") {
+        sendJson(res, 200, foldDashboard(eventLog.list()));
+      } else if (
+        req.method === "GET" &&
+        (url.pathname === "/dashboard" || url.pathname === "/dashboard.html")
+      ) {
+        await sendHtml(res, "dashboard.html");
+      } else if (req.method === "GET" && url.pathname === "/dashboard-fold.js") {
+        await sendDashboardFold(res);
       } else if (req.method === "GET" && url.pathname === "/api/items/latest") {
         handleLatestItems(res);
       } else if (req.method === "GET" && url.pathname === "/api/playback") {
