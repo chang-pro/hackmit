@@ -132,7 +132,7 @@ extension CameraStreamer: AVCaptureVideoDataOutputSampleBufferDelegate {
     private func upload(_ submission: FrameSubmission) async {
         await MainActor.run { self.sent += 1 }
         do {
-            let api = try ApiClient.fromSettings()
+            let api = try await ApiClient.fromSettings()
             let result = try await api.submitFrame(submission)
             await MainActor.run {
                 if result.selection?.accepted == true {
