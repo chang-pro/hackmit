@@ -11,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import Field, model_validator
 
 from contracts.schema import Capture, Condition, Contract, Goal, Item, Plan, Source
+from reloop_brain.gemini import GeminiVision
 from reloop_brain.identify import (
     AnthropicVision,
     VisionProvider,
@@ -100,12 +101,20 @@ def create_router(book: PriceBook | None = None, vision: VisionProvider | None =
     def get_vision() -> VisionProvider:
         if vision is not None:
             return vision
-        key, model = os.getenv("ANTHROPIC_API_KEY"), os.getenv("RELOOP_VISION_MODEL")
+        provider_name = os.getenv("RELOOP_VISION_PROVIDER", "anthropic").lower()
+        if provider_name not in ("anthropic", "gemini"):
+            raise HTTPException(503, "RELOOP_VISION_PROVIDER must be anthropic or gemini")
+        key_name = "GEMINI_API_KEY" if provider_name == "gemini" else "ANTHROPIC_API_KEY"
+        key, model = os.getenv(key_name), os.getenv("RELOOP_VISION_MODEL")
         if not key or not model:
             raise HTTPException(
-                503, "Set ANTHROPIC_API_KEY and RELOOP_VISION_MODEL for live identification"
+                503, f"Set {key_name} and RELOOP_VISION_MODEL for live identification"
             )
-        return AnthropicVision(model=model, api_key=key)
+        try:
+            provider_type = GeminiVision if provider_name == "gemini" else AnthropicVision
+            return provider_type(model=model, api_key=key)
+        except ValueError as exc:
+            raise HTTPException(503, "Invalid vision model configuration") from exc
 
     @router.post("/identify", response_model=IdentifyResponse)
     async def identify(request: IdentifyRequest):
@@ -129,7 +138,7 @@ def create_router(book: PriceBook | None = None, vision: VisionProvider | None =
             ) from exc
         finally:
             if vision is None:
-                await provider.client.close()
+                await provider.aclose()
         if request.capture.source == Source.DOG and result.containsPeople:
             return IdentifyResponse(
                 items=request.existingItems,
