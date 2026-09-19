@@ -494,6 +494,8 @@ export function createReLoopServer({
       categories: body.categories ?? {},
       photoUrls: body.photo_urls ?? {},
       keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
+      // ["shopify"], ["marketplace"] or both. Omitted keeps the server default.
+      channels: Array.isArray(body.channels) ? body.channels : null,
     });
     sendJson(res, 200, { ...result, drafts: draftQueue.status() });
   }
