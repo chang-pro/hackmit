@@ -34,13 +34,6 @@ import { draftListing } from "../../facebook-marketplace/muse-agent.js";
 import { CaptureGateway } from "../capture/gateway.js";
 import { FrameSelector } from "../capture/selector.js";
 import { DatasetWriter } from "../capture/dataset.js";
-import { PlaybackDirector } from "../demo/playback-director.js";
-import {
-  DEFAULT_DEMO_STREAMS_DIR,
-  demoStreamVerifiedStatus,
-  getDemoStreamDefinition,
-  listDemoStreams,
-} from "../demo/streams.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -160,12 +153,6 @@ async function sendDemoAsset(res, filename, contentType) {
   res.end(asset);
 }
 
-async function sendPlaybackPolicy(res) {
-  const asset = await readFile(join(ROOT, "services", "demo", "playback-director.js"));
-  res.writeHead(200, responseHeaders("text/javascript; charset=utf-8"));
-  res.end(asset);
-}
-
 function parseByteRange(header, size) {
   if (!header) return null;
   const match = String(header).match(/^bytes=(\d*)-(\d*)$/);
@@ -186,61 +173,6 @@ function parseByteRange(header, size) {
   return { start, end };
 }
 
-async function sendDemoStream(req, res, streamId, mediaDir, verifyStream = demoStreamVerifiedStatus) {
-  const definition = getDemoStreamDefinition(streamId);
-  if (!definition) {
-    sendJson(res, 404, { error: "unknown stream" });
-    return;
-  }
-  const file = await verifyStream(streamId, mediaDir);
-  if (!file.available) {
-    sendJson(res, 404, {
-      error: "stream media is not installed",
-      stream_id: streamId,
-      expected_filename: definition.filename,
-    });
-    return;
-  }
-  if (file.verified !== true) {
-    sendJson(res, 409, {
-      error: "stream media does not match the pinned manifest",
-      stream_id: streamId,
-      expected_filename: definition.filename,
-      reason: file.bytes !== definition.expected_size_bytes
-        ? "media_file_size_mismatch"
-        : "media_file_hash_mismatch",
-    });
-    return;
-  }
-  const range = parseByteRange(req.headers.range, file.bytes);
-  if (range === false) {
-    res.writeHead(416, {
-      ...responseHeaders("application/json"),
-      "Accept-Ranges": "bytes",
-      "Content-Range": `bytes */${file.bytes}`,
-    });
-    res.end(JSON.stringify({ error: "invalid byte range" }));
-    return;
-  }
-  const start = range?.start ?? 0;
-  const end = range?.end ?? file.bytes - 1;
-  const statusCode = range ? 206 : 200;
-  res.writeHead(statusCode, {
-    ...responseHeaders(definition.mime_type),
-    "Accept-Ranges": "bytes",
-    "Content-Length": String(end - start + 1),
-    ...(range ? { "Content-Range": `bytes ${start}-${end}/${file.bytes}` } : {}),
-    "Content-Disposition": `inline; filename="${definition.filename}"`,
-    "X-Content-Type-Options": "nosniff",
-  });
-  if (req.method === "HEAD") {
-    res.end();
-    return;
-  }
-  const stream = createReadStream(file.path, { start, end });
-  stream.on("error", () => res.destroy());
-  stream.pipe(res);
-}
 
 // ── Saved ESPN stats snapshots (scripts/pull-stats.js) ──────────────────────
 // Served from disk only — no network calls at request time.
@@ -248,17 +180,14 @@ async function sendDemoStream(req, res, streamId, mediaDir, verifyStream = demoS
 
 // ── Server factory ───────────────────────────────────────────────────────────
 
-export function createBloomServer({
+export function createReLoopServer({
   gateway = new CaptureGateway(),
   selector = new FrameSelector({ minIntervalMs: 750 }),
   itemAnalyzer = new ItemAnalyzer(),
-  demoStreamsDir = DEFAULT_DEMO_STREAMS_DIR,
-  demoStreamStatus = demoStreamVerifiedStatus,
 } = {}) {
   // Item identification is what the live camera path runs: every frame is
   // scored for resellable objects and a price, which the capture page draws
   // over the feed.
-  const playbackDirector = new PlaybackDirector();
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
   let analysisEnabled = false;
   const webrtcSessions = new Map();
@@ -610,24 +539,14 @@ export function createBloomServer({
         resetAnalysisState();
         webrtcSessions.clear();
         activeWebRtcSessionId = null;
-        const playback = playbackDirector.reset();
-        sendJson(res, 200, { status: "reset", playback });
+        sendJson(res, 200, { status: "reset" });
       } else if (req.method === "GET" && url.pathname === "/api/health") {
-        const demoStreams = await listDemoStreams({ mediaDir: demoStreamsDir });
         sendJson(res, 200, {
           status: "ok",
           frame_buffer_size: gateway.size,
           analysis_enabled: analysisEnabled,
           webrtc_sessions: webrtcSessions.size,
           analysis_queue: itemAnalyzer.status(),
-          demo_streams: {
-            total: demoStreams.length,
-            files_available: demoStreams.filter((stream) => stream.file_available).length,
-            ready: demoStreams.filter((stream) => stream.ready).length,
-            complete_coverage: demoStreams.filter((stream) => stream.coverage_status === "complete").length,
-            partial_coverage: demoStreams.filter((stream) => stream.coverage_status === "partial").length,
-          },
-          playback: playbackDirector.snapshot(),
         });
       } else if (req.method === "GET" && url.pathname === "/api/live-frame") {
         handleLatestFrame(res);
@@ -643,10 +562,6 @@ export function createBloomServer({
         await handleDraftListing(req, res);
       } else if (req.method === "GET" && url.pathname === "/api/items/latest") {
         handleLatestItems(res);
-      } else if (req.method === "GET" && url.pathname === "/api/playback") {
-        sendJson(res, 200, playbackDirector.snapshot());
-      } else if (req.method === "GET" && url.pathname === "/api/demo/streams") {
-        sendJson(res, 200, { streams: await listDemoStreams({ mediaDir: demoStreamsDir }) });
       } else if (
         req.method === "GET" &&
         (url.pathname === "/" || url.pathname === "/index.html")
@@ -663,11 +578,6 @@ export function createBloomServer({
         await sendDemoAsset(res, "models/yolo11n.onnx", "application/octet-stream");
       } else if (req.method === "GET" && url.pathname === "/models/yolo11s.onnx") {
         await sendDemoAsset(res, "models/yolo11s.onnx", "application/octet-stream");
-      } else if (req.method === "GET" && url.pathname === "/playback-policy.js") {
-        await sendPlaybackPolicy(res);
-      } else if (["GET", "HEAD"].includes(req.method) && url.pathname.startsWith("/demo-streams/")) {
-        const streamId = decodeURIComponent(url.pathname.slice("/demo-streams/".length));
-        await sendDemoStream(req, res, streamId, demoStreamsDir, demoStreamStatus);
       } else if (
         req.method === "GET" &&
         (url.pathname === "/phone" || url.pathname === "/phone.html")
@@ -703,7 +613,7 @@ function lanAddresses(port) {
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
-  const server = createBloomServer();
+  const server = createReLoopServer();
   server.listen(port, host, () => {
     console.log(`ReLoop desktop: http://localhost:${port}`);
     for (const address of lanAddresses(port)) console.log(`ReLoop phone:   ${address}`);

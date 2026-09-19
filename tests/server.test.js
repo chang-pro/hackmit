@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createBloomServer } from "../services/api/server.js";
+import { createReLoopServer } from "../services/api/server.js";
 import { ItemAnalyzer } from "../services/api/item-analyzer.js";
 
 const PHOTO = "cGhvbmUtZnJhbWU=";
@@ -43,7 +43,7 @@ const testItems = {
 };
 
 function startServer(t, { intervalMs = 0 } = {}) {
-  const server = createBloomServer({
+  const server = createReLoopServer({
     itemAnalyzer: new ItemAnalyzer({ backend: testItems, intervalMs }),
   });
   server.listen(0);
@@ -163,7 +163,7 @@ test("stopping analysis clears the held result", async (t) => {
 });
 
 test("a model failure is reported without dropping the frame", async (t) => {
-  const server = createBloomServer({
+  const server = createReLoopServer({
     itemAnalyzer: new ItemAnalyzer({
       backend: {
         name: "failing",

@@ -491,7 +491,6 @@
 </div>
 
 <script type="module">
-import { playbackDirectiveTarget } from "/playback-policy.js";
 
 const SIGNAL_POLL_MS = 350;
 const INSIGHT_POLL_MS = 1_000;
@@ -745,115 +744,6 @@ function clearProgramPlayback({ epoch = activePlaybackEpoch, revision = activePl
   renderOpsBar();
   renderPipeline();
   renderHudTelemetry();
-}
-
-function playbackCandidateStatus(directive) {
-  const candidate = directive?.candidate;
-  if (!candidate) return;
-  const action = candidate.reason === "awaiting_stream_confirmation"
-    ? `confirming detection ${candidate.confirmations}/${candidate.confirmations_required}`
-    : candidate.reason === "checkpoint_offset_not_calibrated"
-    ? `calibrate ${candidate.moment_id} in the stream manifest`
-    : candidate.reason === "checkpoint_not_in_media"
-      ? `${candidate.moment_id} is not present in this local edit`
-    : `install ${candidate.filename || "the local MP4"}`;
-  setProgramStatus(`Detected ${candidate.label || candidate.stream_id} · ${action}`, "error");
-}
-
-async function applyPlaybackDirective(directive) {
-  playbackCandidateStatus(directive);
-  if (!remoteFeedActive) {
-    if (directive?.status === "locked" || directive?.reason === "explicit_reset") {
-      // Camera is offline: never keep or revive a local stream on screen.
-      if (activeProgramVideo || activePlaybackStreamId) clearProgramPlayback();
-    }
-    return false;
-  }
-  const directiveEpoch = Number(directive?.epoch);
-  const directiveRevision = Number(directive?.revision);
-  const newestEpoch = Math.max(latestPlaybackEpoch, activePlaybackEpoch, pendingPlaybackEpoch);
-  if (!Number.isInteger(directiveEpoch) || directiveEpoch <= 0 ||
-      !Number.isInteger(directiveRevision) || directiveRevision < 0 ||
-      directiveEpoch < newestEpoch) return false;
-  latestPlaybackEpoch = Math.max(latestPlaybackEpoch, directiveEpoch);
-  if (directive?.status !== "locked") {
-    if (directive.reason === "explicit_reset" &&
-        (directiveEpoch > activePlaybackEpoch || directiveRevision > activePlaybackRevision)) {
-      clearProgramPlayback({ epoch: directiveEpoch, revision: directiveRevision });
-    }
-    return false;
-  }
-  const target = playbackDirectiveTarget(directive, {
-    activeRevision: activePlaybackRevision,
-    pendingRevision: pendingPlaybackRevision,
-    activeEpoch: activePlaybackEpoch,
-    pendingEpoch: pendingPlaybackEpoch,
-  });
-  if (!target) return false;
-
-  pendingPlaybackEpoch = target.epoch;
-  pendingPlaybackRevision = target.revision;
-  const generation = ++playbackLoadGeneration;
-  const staging = inactiveProgramVideo();
-  const previous = activeProgramVideo;
-  staging.pause();
-  staging.classList.remove("program-active");
-  staging.muted = target.muted;
-  staging.src = target.mediaUrl;
-  staging.load();
-  setProgramStatus(`Matching ${target.label} · loading local broadcast`);
-  try {
-    await mediaReady(
-      staging,
-      "loadedmetadata",
-      () => staging.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(staging.duration)
-    );
-    if (generation !== playbackLoadGeneration) return false;
-    const end = Number.isFinite(staging.duration) ? Math.max(0, staging.duration - .1) : target.seekSeconds;
-    staging.currentTime = Math.min(target.seekSeconds, end);
-    await mediaReady(
-      staging,
-      "canplay",
-      () => staging.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
-    );
-    if (generation !== playbackLoadGeneration) return false;
-    await staging.play();
-    if (generation !== playbackLoadGeneration) {
-      staging.pause();
-      return false;
-    }
-
-    staging.classList.add("program-active");
-    previous?.classList.remove("program-active");
-    previous?.pause();
-    activeProgramVideo = staging;
-    latestPlaybackEpoch = target.epoch;
-    activePlaybackEpoch = target.epoch;
-    activePlaybackRevision = target.revision;
-    activePlaybackStreamId = target.streamId;
-    activePlaybackLabel = target.label;
-    pendingPlaybackEpoch = 0;
-    pendingPlaybackRevision = 0;
-    if ($("analystChat")) $("analystChat").hidden = false;
-    updateTheaterState();
-    setProgramStatus(`Local replay · ${target.label} · synced once at ${target.seekSeconds.toFixed(1)}s`, "locked");
-    clearVisualDetections();
-    renderOpsBar();
-    renderPipeline();
-    renderHudTelemetry();
-    renderVisualDetections();
-    dispatchTheaterSource();
-    return true;
-  } catch (error) {
-    if (generation !== playbackLoadGeneration) return false;
-    pendingPlaybackEpoch = 0;
-    pendingPlaybackRevision = 0;
-    staging.pause();
-    staging.removeAttribute("src");
-    staging.load();
-    setProgramStatus(`Detected ${target.label} · ${error.message}; keeping current view`, "error");
-    return false;
-  }
 }
 
 function setRemoteFeedUI(active) {
@@ -1730,7 +1620,6 @@ function setPredictionStatus(insight, hasAnalysis) {
 }
 
 function renderInsight(insight) {
-  if (insight?.playback) applyPlaybackDirective(insight.playback).catch(() => {});
   if (!insight?.observation) {
     clearRenderedInsight({ queue: insight?.rate_limit });
     return;
@@ -1877,11 +1766,7 @@ async function refreshAnalysis() {
   if (demoStream || analysisRefreshInFlight) return;
   analysisRefreshInFlight = true;
   try {
-    const [status, playback] = await Promise.all([
-      api("/api/analysis/status"),
-      api("/api/playback"),
-    ]);
-    applyPlaybackDirective(playback).catch(() => {});
+    const status = await api("/api/analysis/status");
     remoteAnalysisEnabled = status.analysis_enabled === true;
     if (remoteFeedActive) updateAnalyzeButton();
     renderOpsBar();
@@ -1934,7 +1819,7 @@ $("helpClose").addEventListener("click", () => $("help").removeAttribute("open-p
 $("help").addEventListener("click", (event) => { if (event.target === $("help")) $("help").removeAttribute("open-panel"); });
 window.addEventListener("beforeunload", () => sendSignal("hangup", null).catch(() => {}));
 new ResizeObserver(renderVisualDetections).observe(document.querySelector(".theater-screen"));
-window.bloomYoloInput = Object.freeze({
+window.reloopYoloInput = Object.freeze({
   get video() { return theaterVideo(); },
   sourceGeneration: () => theaterSourceGeneration,
   setDetections: setVisualDetections,
@@ -1942,22 +1827,7 @@ window.bloomYoloInput = Object.freeze({
   isFeedActive: theaterMediaActive,
   isDemo: () => Boolean(demoStream) && !activeProgramVideo,
 });
-window.bloomPlayback = Object.freeze({
-  apply: applyPlaybackDirective,
-  refresh: async () => applyPlaybackDirective(await api("/api/playback")),
-  status: () => ({
-    active: Boolean(activeProgramVideo),
-    latest_epoch: latestPlaybackEpoch,
-    epoch: activePlaybackEpoch,
-    revision: activePlaybackRevision,
-    stream_id: activePlaybackStreamId,
-    label: activePlaybackLabel,
-    pending_epoch: pendingPlaybackEpoch,
-    pending_revision: pendingPlaybackRevision,
-    current_time: activeProgramVideo?.currentTime ?? null,
-  }),
-});
-window.bloomDemo = Object.freeze({
+window.reloopDemo = Object.freeze({
   start: startDemoFeed,
   stop: () => { stopDemoFeed(); return "ReLoop local stream stopped."; },
   sequence: DEMO_REHEARSAL_SEQUENCE,
@@ -1998,7 +1868,7 @@ if (idleTitleEl) setInterval(() => {
 
   // YOLO11s runs in the viewer, directly against the already-connected WebRTC
   // stream. No video frame is sent to the server for this overlay.
-  const bridge = window.bloomYoloInput;
+  const bridge = window.reloopYoloInput;
   const MODEL_URL = "/models/yolo11s.onnx";
   // A full broadcast frame makes distant athletes too small for COCO person
   // detection. Three overlapped field tiles at 640px preserve far more detail.
@@ -2226,7 +2096,7 @@ if (idleTitleEl) setInterval(() => {
     }
     else stop();
   });
-  window.bloomYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11s", backend: executionBackend, input_size: INPUT_SIZE }) });
+  window.reloopYolo = Object.freeze({ start: () => start(), stop, status: () => ({ running, model: "YOLO11s", backend: executionBackend, input_size: INPUT_SIZE }) });
   if (bridge.isFeedActive()) start({ demo: bridge.isDemo() });
 </script>
 </body>
