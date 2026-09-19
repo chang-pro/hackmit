@@ -1,0 +1,170 @@
+[
+  {
+    "item": {
+      "id": "it_ps4",
+      "captureIds": [
+        "cap_ps4"
+      ],
+      "label": "Sony PS4 Slim",
+      "category": "console.ps4_slim",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 160,
+      "normalUsd": 185,
+      "maxUsd": 210,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; console.ps4_slim; GOOD x1.00; v2 plan fixture - replace with sold comparables; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_headset",
+      "captureIds": [
+        "cap_headset"
+      ],
+      "label": "Wireless gaming headset",
+      "category": "audio.headset_wireless",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 50,
+      "normalUsd": 60,
+      "maxUsd": 70,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; audio.headset_wireless; GOOD x1.00; v1 plan fixture - replace with sold comparables; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_monitor",
+      "captureIds": [
+        "cap_monitor"
+      ],
+      "label": "24 inch 1080p monitor",
+      "category": "display.monitor_24",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 80,
+      "normalUsd": 95,
+      "maxUsd": 110,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; display.monitor_24; GOOD x1.00; v1 plan fixture - replace with sold comparables; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_phone",
+      "captureIds": [
+        "cap_phone"
+      ],
+      "label": "Old phone (fixture)",
+      "category": "phone.generic",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 65,
+      "normalUsd": 80,
+      "maxUsd": 95,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; phone.generic; GOOD x1.00; unresearched development fixture; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_keyboard",
+      "captureIds": [
+        "cap_keyboard"
+      ],
+      "label": "Keyboard",
+      "category": "input.keyboard",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 30,
+      "normalUsd": 35,
+      "maxUsd": 40,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; input.keyboard; GOOD x1.00; unresearched development fixture; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_lamp",
+      "captureIds": [
+        "cap_lamp"
+      ],
+      "label": "Desk lamp",
+      "category": "lighting.desk_lamp",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 20,
+      "normalUsd": 25,
+      "maxUsd": 30,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; lighting.desk_lamp; GOOD x1.00; unresearched development fixture; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_cables",
+      "captureIds": [
+        "cap_cables"
+      ],
+      "label": "Cable bundle",
+      "category": "accessories.cables",
+      "condition": "GOOD",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 5,
+      "normalUsd": 5,
+      "maxUsd": 5,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; accessories.cables; GOOD x1.00; unresearched development fixture; researched not researched"
+    }
+  },
+  {
+    "item": {
+      "id": "it_dead_phone",
+      "captureIds": [
+        "cap_dead_phone"
+      ],
+      "label": "Dead phone (fixture)",
+      "category": "phone.generic",
+      "condition": "BROKEN",
+      "confidence": 0.95,
+      "foundBy": "FIXTURE",
+      "question": null,
+      "confirmedByUser": true
+    },
+    "band": {
+      "quickUsd": 10,
+      "normalUsd": 10,
+      "maxUsd": 10,
+      "basis": "DEMO ESTIMATE - NOT MARKET RESEARCH; phone.generic; BROKEN x0.15; unresearched development fixture; researched not researched"
+    }
+  }
+]
