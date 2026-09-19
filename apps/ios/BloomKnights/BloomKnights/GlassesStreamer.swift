@@ -110,10 +110,20 @@ final class FrameUplink: @unchecked Sendable {
     private var streaming = false
     private var lastUploadAt = Date.distantPast
     private var lastPublishAt = Date.distantPast
-    private let uploadInterval: TimeInterval = 1.0   // ~1 fps to the backend
+    private let uploadInterval: TimeInterval = 0.4   // ~2.5 fps to the backend
     private let publishInterval: TimeInterval = 1.0 / 12.0
-    private let jpegQuality: CGFloat = 0.7
+    // Every frame is base64'd into JSON, which inflates it by a third, and the
+    // link is the bottleneck — not the encoder. Halving the payload buys more
+    // frames per second than any encoder tuning does, and at 360x640 the
+    // identification model cannot tell the difference.
+    private let jpegQuality: CGFloat = 0.45
     private let ciContext = CIContext()
+    // Encoding must not happen on the SDK's frame-delivery thread (see the
+    // note by tickDiagnostics): a JPEG encode there stalls delivery and the
+    // whole stream throttles to a crawl. One serial queue, and at most one
+    // upload in flight — a backlog would only ever deliver stale frames.
+    private let uploadQueue = DispatchQueue(label: "reloop.frame-upload", qos: .utility)
+    private var uploadInFlight = false
 
     // Counters mirror CameraStreamer's sent/accepted/skipped/failed so the
     // Glasses tab shows the same numbers for both sources.
@@ -149,7 +159,7 @@ final class FrameUplink: @unchecked Sendable {
         let tap = onDecodedFrame
         lock.unlock()
         if wantPublish { tap?(imageBuffer) }
-        if wantUpload { encodeAndPost(imageBuffer) }
+        if wantUpload { scheduleUpload(imageBuffer) }
     }
     // The ~1 fps JPEG POST to /api/frames. This is how the web viewer sees the
     // glasses feed: the browser polls /api/live-frame rather than negotiating
@@ -285,6 +295,21 @@ final class FrameUplink: @unchecked Sendable {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+
+    // Hands the frame to the upload queue and returns immediately, so the
+    // SDK's delivery thread is never blocked on an encode or a network call.
+    private func scheduleUpload(_ imageBuffer: CVImageBuffer) {
+        lock.lock()
+        if uploadInFlight { lock.unlock(); return }
+        uploadInFlight = true
+        lock.unlock()
+        uploadQueue.async { [weak self] in
+            self?.encodeAndPost(imageBuffer)
+            self?.lock.lock()
+            self?.uploadInFlight = false
+            self?.lock.unlock()
+        }
+    }
 
     private func encodeAndPost(_ imageBuffer: CVImageBuffer) {
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
