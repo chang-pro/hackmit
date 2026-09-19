@@ -11,6 +11,8 @@
 //   POST /api/listings/draft    — queue one item for a muse.ai Marketplace draft
 //   POST /api/plans             — plan the latest priced items (or body.items) for a goal
 //   GET  /api/plans/:id         — a plan (never includes seller floors)
+//   POST /api/plans/:id/revise  — correct one item before approval (price, title, condition, keep)
+//   POST /api/plans/:id/voice   — a one-use Gemini Live token + session setup to confirm the plan aloud
 //   POST /api/plans/:id/approve — list every SELL item in the store + queue Marketplace drafts
 //   GET  /api/drafts            — the sequential Marketplace draft queue
 //   GET  /catalog.json          — the public store catalog (what a buyer agent reads)
@@ -48,6 +50,7 @@ import { ItemAnalyzer } from "./item-analyzer.js";
 import { selectedItemsBackend } from "../vision/backends/items-provider.js";
 import { DraftQueue } from "../market/draft-queue.js";
 import { Market } from "../market/market.js";
+import { LIVE_WS_URL, buildSetup, isAffirmative, mintLiveToken } from "../voice/confirm-session.js";
 import { RepricingJob } from "../market/repricing.js";
 import { EventLog } from "../events/event-log.js";
 import { foldDashboard } from "../events/dashboard-fold.js";
@@ -227,6 +230,8 @@ export function createReLoopServer({
   // Shopify publisher (injectable so tests never call the live store) and the
   // opt-in Facebook Marketplace draft queue.
   publish = undefined,
+  // Voice token minting (injectable so tests never call Google).
+  mintVoiceToken = mintLiveToken,
   marketplaceDrafts = undefined,
   enableRepricing = process.env.ENABLE_REPRICING === "1",
 } = {}) {
@@ -487,9 +492,44 @@ export function createReLoopServer({
     sendJson(res, 201, plan);
   }
 
+  async function handleRevisePlan(req, res, planId) {
+    const body = await readOptionalJsonBody(req);
+    sendJson(res, 200, market.revisePlan(planId, {
+      itemId: body.item_id,
+      listUsd: body.list_usd,
+      title: body.title,
+      condition: body.condition,
+      action: body.action,
+    }));
+  }
+
+  async function handleVoiceSession(req, res, planId) {
+    const plan = market.getPlan(planId);
+    if (plan.approved) {
+      sendJson(res, 409, { error: "plan is already approved" });
+      return;
+    }
+    const { token, expiresAt } = await mintVoiceToken();
+    sendJson(res, 201, { token, expires_at: expiresAt, ws_url: LIVE_WS_URL, setup: buildSetup(plan), plan });
+  }
+
   async function handleApprovePlan(req, res, planId) {
     const body = await readOptionalJsonBody(req);
+    // A spoken approval is only as good as what was actually heard. The page
+    // sends the person's transcribed words and the revision they were read;
+    // the model asking for approval is not evidence of either.
+    if (body.via === "voice") {
+      if (!Number.isInteger(body.expected_revision)) {
+        sendJson(res, 400, { error: "a voice approval must name the plan revision that was read back" });
+        return;
+      }
+      if (!isAffirmative(body.heard)) {
+        sendJson(res, 409, { error: "did not hear a clear yes", heard: body.heard ?? null });
+        return;
+      }
+    }
     const result = market.approvePlan(planId, {
+      expectedRevision: Number.isInteger(body.expected_revision) ? body.expected_revision : null,
       location: body.location ?? null,
       categories: body.categories ?? {},
       photoUrls: body.photo_urls ?? {},
@@ -526,6 +566,8 @@ export function createReLoopServer({
       if (parts[1] === "plans" && parts[2]) {
         if (req.method === "GET" && parts.length === 3) return sendJson(res, 200, market.getPlan(parts[2]));
         if (req.method === "POST" && parts[3] === "approve") return await handleApprovePlan(req, res, parts[2]);
+        if (req.method === "POST" && parts[3] === "revise") return await handleRevisePlan(req, res, parts[2]);
+        if (req.method === "POST" && parts[3] === "voice") return await handleVoiceSession(req, res, parts[2]);
       }
       if (parts[1] === "listings" && parts[2] && parts[2] !== "draft") {
         if (req.method === "GET" && parts.length === 3) return sendJson(res, 200, market.getListing(parts[2]));
@@ -863,6 +905,8 @@ export function createReLoopServer({
         (url.pathname === "/dashboard" || url.pathname === "/dashboard.html")
       ) {
         await sendHtml(res, "dashboard.html");
+      } else if (req.method === "GET" && (url.pathname === "/confirm" || url.pathname === "/confirm.html")) {
+        await sendHtml(res, "confirm.html");
       } else if (req.method === "GET" && url.pathname === "/dashboard-fold.js") {
         await sendDashboardFold(res);
       } else if (req.method === "GET" && url.pathname === "/api/items/latest") {
