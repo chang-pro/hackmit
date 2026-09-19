@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>BloomKnights — Live Probability</title>
+<title>ReLoop — Live Probability</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  /* ── BloomKnights design language (shared with capture.html) ─────────── */
+  /* ── ReLoop design language (shared with capture.html) ─────────── */
   :root {
     color-scheme: dark;
     --bg: #0b0c0e;
@@ -343,7 +343,7 @@
       <rect x="1" y="1" width="24" height="24" rx="7" stroke="#3ecf8e" stroke-width="1.4"/>
       <path d="M13 5.5 C15.4 8.3 15.4 10.7 13 13 C10.6 10.7 10.6 8.3 13 5.5 Z M20.5 13 C17.7 15.4 15.3 15.4 13 13 C15.3 10.6 17.7 10.6 20.5 13 Z M13 20.5 C10.6 17.7 10.6 15.3 13 13 C15.4 15.3 15.4 17.7 13 20.5 Z M5.5 13 C8.3 10.6 10.7 10.6 13 13 C10.7 15.4 8.3 15.4 5.5 13 Z" stroke="#e8eaee" stroke-width="1.3" stroke-linejoin="round"/>
     </svg>
-    <div class="brand">BloomKnights <span>/ live probability</span></div>
+    <div class="brand">ReLoop <span>/ live probability</span></div>
     <nav>
       <span class="live-dot" id="liveDot"><i></i><span id="liveDotText">PIPELINE</span></span>
       <a class="cta" href="/capture">Connect your glasses</a>
@@ -354,7 +354,7 @@
     <div class="rise">
       <div class="eyebrow">Wearable visual intelligence</div>
       <h1>Look at the game.<br /><em>See the probability.</em></h1>
-      <p>Your glasses read the visible scoreboard, our model estimates the outcome, and BloomKnights compares it with the prediction market — live, in your lens, without ever leaving the broadcast.</p>
+      <p>Your glasses read the visible scoreboard, our model estimates the outcome, and ReLoop compares it with the prediction market — live, in your lens, without ever leaving the broadcast.</p>
       <div class="stats">
         <div><div class="n">~1 fps</div><div class="l">Frame sampling</div></div>
         <div><div class="n">&lt; 5 s</div><div class="l">State to signal</div></div>
@@ -449,7 +449,7 @@
     <aside class="hud-wrap" aria-label="Glasses HUD preview">
       <div class="lens">
         <div class="lens-top">
-          <span class="rec"><i></i>BloomKnights</span>
+          <span class="rec"><i></i>ReLoop</span>
           <span id="lensClock">—</span>
         </div>
         <div class="lens-mid">
@@ -693,7 +693,7 @@ function showUnavailable(message, status) {
   $("barTick").style.left = "0%";
   $("confFill").style.width = "0%";
   for (const id of ["score", "clock", "conf", "freshness"]) $(id).textContent = "—";
-  $("lensGame").textContent = "BloomKnights";
+  $("lensGame").textContent = "ReLoop";
   $("lensText").textContent = message;
   $("lensGap").textContent = "";
 }

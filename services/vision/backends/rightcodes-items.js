@@ -11,9 +11,17 @@
 import { loadFrameImage } from "./frame-image.js";
 
 export const RIGHTCODES_ITEMS_MODEL =
-  process.env.RIGHTCODES_ITEMS_MODEL ?? process.env.RIGHTCODES_VISION_MODEL ?? "gemini-3.5-flash";
-const API_BASE =
-  process.env.RIGHTCODES_GEMINI_BASE ?? "https://right.codes/gemini/v1beta";
+  process.env.RIGHTCODES_ITEMS_MODEL ?? "gemini-3.8-flash";
+// The OpenAI-compatible route, not the native /gemini/v1beta one: 3.8 is only
+// reachable here (the native path 404s on it and still serves 3.6).
+const API_BASE = process.env.RIGHTCODES_BASE ?? "https://right.codes/v1";
+
+// right.codes issues a separate key per model channel, and the Gemini channel
+// deliberately does not accept RIGHTCODES_API_KEY (that one is the Claude
+// channel). Using the wrong one fails as a 401 that looks like a dead key.
+function apiKey() {
+  return process.env.RIGHTCODES_KEY_GEMINI ?? process.env.RIGHTCODES_API_KEY;
+}
 
 const MAX_ITEMS = 8;
 
@@ -114,44 +122,50 @@ export const rightcodesItemsBackend = {
   name: "rightcodes-items",
 
   async identifyItems(frame) {
-    const apiKey = process.env.RIGHTCODES_API_KEY;
-    if (!apiKey) throw new Error("rightcodes-items unavailable: RIGHTCODES_API_KEY is not set");
+    const key = apiKey();
+    if (!key) throw new Error("rightcodes-items unavailable: RIGHTCODES_KEY_GEMINI is not set");
 
     const image = await loadFrameImage(frame);
     if (!new Set(["image/jpeg", "image/png"]).has(image.mimeType)) {
       throw new Error(`rightcodes-items requires JPEG or PNG, received ${image.mimeType}`);
     }
 
-    const res = await fetch(
-      `${API_BASE}/models/${RIGHTCODES_ITEMS_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(30_000),
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: ITEM_PROMPT },
-                { inline_data: { mime_type: image.mimeType, data: image.base64 } },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0,
-            responseMimeType: "application/json",
-            responseSchema: RESPONSE_SCHEMA,
-            thinkingConfig: { thinkingBudget: 0 },
-          },
-        }),
+    const res = await fetch(`${API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
       },
-    );
+      signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({
+        model: RIGHTCODES_ITEMS_MODEL,
+        temperature: 0,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: ITEM_PROMPT },
+              {
+                type: "image_url",
+                image_url: { url: `data:${image.mimeType};base64,${image.base64}` },
+              },
+            ],
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "items", strict: true, schema: RESPONSE_SCHEMA },
+        },
+      }),
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`rightcodes-items request failed (${res.status}): ${body.slice(0, 200)}`);
     }
     const payload = await res.json();
-    const text = payload?.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+    const text = payload?.choices?.[0]?.message?.content ?? "";
+    // strict json_schema returns bare JSON, but a fenced ```json block is a
+    // known fallback shape from this gateway.
     const match = text.match(/\{[\s\S]*\}/);
     const data = JSON.parse(match ? match[0] : text);
     const items = itemsFromResponse(data);

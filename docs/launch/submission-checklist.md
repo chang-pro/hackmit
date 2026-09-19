@@ -1,4 +1,4 @@
-# BloomKnights — Hackathon Submission Checklist
+# ReLoop — Hackathon Submission Checklist
 
 Fill every `[ ]` and `TODO:` before the deadline. Honesty rail (README §6) applies to everything judge-facing: "model estimate" vs. "market-implied probability," historical demos labeled as replays, never "guaranteed profit."
 
@@ -26,7 +26,7 @@ Fill every `[ ]` and `TODO:` before the deadline. Honesty rail (README §6) appl
 
 ## Team info
 
-- [ ] Team name: **BloomKnights** (confirm not taken on the platform)
+- [ ] Team name: **ReLoop** (confirm not taken on the platform)
 - [ ] Members + emails: `TODO:`
 - [ ] Devpost profiles linked for every member: `TODO:`
 - [ ] Roles blurb (suggested split per README §12): vision/state, probability, markets/backend, glasses/client/demo — `TODO: who did what`

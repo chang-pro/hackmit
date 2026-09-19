@@ -1,4 +1,4 @@
-# BloomKnights HTTP API
+# ReLoop HTTP API
 
 Everything is served by one zero-dependency Node process: `services/api/server.js` (`npm start`, default `http://localhost:3000`, override with `PORT`). API responses are pretty-printed JSON; page, model, image, JavaScript, and allowlisted MP4 routes return their corresponding media types.
 

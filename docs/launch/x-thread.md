@@ -1,4 +1,4 @@
-# BloomKnights launch thread (X/Twitter)
+# ReLoop launch thread (X/Twitter)
 
 Voice: Dechante (voice-dna). No em-dashes. 7 tweets.
 
@@ -67,4 +67,4 @@ I'm a CS student who builds AI bots that do real work. This one turns the game y
 
 Look at the game. See the probability.
 
-BloomKnights. 🌸⚔️
+ReLoop. 🌸⚔️

@@ -1,4 +1,4 @@
-# BloomKnights Architecture
+# ReLoop Architecture
 
 Snapshot of the system **as implemented** on 2026-07-11. The README describes intent; this document describes the code. Where the two differ, or where a parallel slice is clearly mid-landing, it says so. File paths are relative to the repo root.
 
@@ -33,7 +33,7 @@ Everything runs as **one zero-dependency Node process** (`node services/api/serv
 | Server | `services/api/server.js` | `node:http` server: WebRTC signaling, analysis control, `POST /api/frames`, live-only `GET /api/latest`, playback revision/readiness APIs, byte-range demo media, rehearsal endpoints, legacy `GET /api/comparison`, and demo pages. |
 | Web apps | `apps/demo-web/index.html`, `capture.html`, `phone.html`, `data.html` | `/phone` is the browser camera provider; `/capture` uses it as the detector, double-buffers the matching local broadcast, runs local YOLO on the visible theater video, and renders predictions/research. `/data` explores deterministic fixtures and saved stats. |
 | Playback catalog | `services/demo/streams.js`, `playback-director.js`, `packages/fixtures/demo-streams/manifest.json` | Allowlists four external MP4s, binds exact checkpoint offsets to exact edits, and guarantees that only a changed stream creates a new playback revision. |
-| iOS app | `apps/ios/BloomKnights/BloomKnights/` (SwiftUI) | `CameraStreamer.swift` samples the iPhone camera at ~1 fps, JPEG->base64, POSTs to `/api/frames` (source `"ios_app"`) — the phone stands in for the Meta glasses. `ApiClient.swift` + `Models.swift` mirror the backend JSON via `convertFromSnakeCase`. `Speaker.swift` reads `presentation.spoken_text` via AVSpeechSynthesizer. `DemoCatalog.swift` polls `GET /api/comparison` every 5 s. |
+| iOS app | `apps/ios/ReLoop/ReLoop/` (SwiftUI) | `CameraStreamer.swift` samples the iPhone camera at ~1 fps, JPEG->base64, POSTs to `/api/frames` (source `"ios_app"`) — the phone stands in for the Meta glasses. `ApiClient.swift` + `Models.swift` mirror the backend JSON via `convertFromSnakeCase`. `Speaker.swift` reads `presentation.spoken_text` via AVSpeechSynthesizer. `DemoCatalog.swift` polls `GET /api/comparison` every 5 s. |
 | Scripts | `scripts/evaluate-fixtures.js` (per-field extraction accuracy vs `packages/fixtures/expected/`), `scripts/evaluate-model.js` (scenario table + optional CSV calibration harness), `scripts/extract-clip-frames.sh` (ffmpeg ~1 fps frame extraction; output must stay out of git) | Measurement is real or absent — the gemini evaluation is *skipped*, not faked, without a key and real images; calibration numbers are never printed without historical data. |
 
 Tests live in `tests/*.test.js` (`npm test` = `node --test`); `tests/market-adapter.test.js` replays real recorded Polymarket responses from `packages/fixtures/market/` so provider normalization is tested with zero network.

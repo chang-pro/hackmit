@@ -2,7 +2,7 @@
 
 The one-line claim this demo proves:
 
-> Look at a game through Meta glasses. BloomKnights identifies the exact broadcast and moment, replaces the camera view with its synchronized local stream, and shows the model probability beside the prediction-market probability without a search or sport picker.
+> Look at a game through Meta glasses. ReLoop identifies the exact broadcast and moment, replaces the camera view with its synchronized local stream, and shows the model probability beside the prediction-market probability without a search or sport picker.
 
 ## Canonical stage setup
 
@@ -58,7 +58,7 @@ Show the camera detector preview before analysis.
 
 Say:
 
-> “Prediction markets know their contracts, but they do not know what I am looking at. I look at a broadcast, BloomKnights identifies the exact moment, and then the clean broadcast takes over automatically.”
+> “Prediction markets know their contracts, but they do not know what I am looking at. I look at a broadcast, ReLoop identifies the exact moment, and then the clean broadcast takes over automatically.”
 
 ### 0:20–1:05 — World Cup recognition and handoff
 

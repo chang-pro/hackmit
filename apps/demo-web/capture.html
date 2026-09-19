@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>BloomKnights — Camera</title>
+<title>ReLoop — Camera</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -386,7 +386,7 @@
 
   <div class="overlay">
     <header class="ops-bar" id="opsBar" hidden>
-      <div class="ops-brand">BloomKnights</div>
+      <div class="ops-brand">ReLoop</div>
       <div class="ops-live"><span class="pulse" aria-hidden="true"></span>LIVE</div>
       <div class="ops-meta" id="opsMeta"></div>
       <div class="ops-side">
@@ -1474,7 +1474,7 @@ function startDemoFeed() {
   clearRenderedInsight();
   analyzeButton.hidden = true;
   $("idleHint").textContent = "Local stream is active. No camera, relay, or bandwidth is being used.";
-  return "BloomKnights local stream started.";
+  return "ReLoop local stream started.";
 }
 
 
@@ -1935,7 +1935,7 @@ window.bloomPlayback = Object.freeze({
 });
 window.bloomDemo = Object.freeze({
   start: startDemoFeed,
-  stop: () => { stopDemoFeed(); return "BloomKnights local stream stopped."; },
+  stop: () => { stopDemoFeed(); return "ReLoop local stream stopped."; },
   sequence: DEMO_REHEARSAL_SEQUENCE,
 });
 $("steps").innerHTML = STEPS.map((step) => "<li>" + step + "</li>").join("");
@@ -2113,7 +2113,7 @@ if (idleTitleEl) setInterval(() => {
         executionBackend = "WebGPU";
         return session;
       } catch (error) {
-        console.warn("BloomKnights WebGPU initialization failed; falling back to WASM", error);
+        console.warn("ReLoop WebGPU initialization failed; falling back to WASM", error);
       }
     }
     executionBackend = "WASM";
@@ -2169,7 +2169,7 @@ if (idleTitleEl) setInterval(() => {
       running = false;
       bridge.setDetections([], "yolo");
       bridge.setTrackerState("YOLO unavailable", "Live tracking could not start in this browser; event analysis is still available.");
-      console.warn("BloomKnights YOLO tracker failed", error);
+      console.warn("ReLoop YOLO tracker failed", error);
       return;
     }
     const targetInterval = executionBackend === "WebGPU" ? WEBGPU_INTERVAL_MS : WASM_INTERVAL_MS;

@@ -4,6 +4,11 @@
 # The committed hand-written BloomKnights.xcodeproj is the no-SDK fallback —
 # it builds without this step (glasses tab then offers Phone camera mode only).
 # Mirrors the proven PokerAI setup (Documents/code/PokerAI/project.yml).
+# The app is ReLoop. The Xcode project, target, bundle id (com.bloomknights.app)
+# and URL scheme (bloomknights://) deliberately keep the old name: the bundle id
+# and scheme are what the Meta Wearables Developer Center registration is tied
+# to, and renaming them breaks glasses registration until it is re-registered.
+# Only CFBundleDisplayName changed, which is what shows on the home screen.
 name: BloomKnights
 options:
   bundleIdPrefix: com.bloomknights
@@ -24,7 +29,7 @@ targets:
     info:
       path: BloomKnights/Info.plist
       properties:
-        CFBundleDisplayName: BloomKnights
+        CFBundleDisplayName: ReLoop
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         CFBundleURLTypes:
