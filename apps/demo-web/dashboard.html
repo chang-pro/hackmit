@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ReLoop Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #20263a; --ink-muted: rgba(42,49,73,.70); --ink-faint: rgba(61,70,96,.50);
+    --glass: rgba(255,255,255,.55); --glass-deep: rgba(255,255,255,.78);
+    --line: rgba(255,255,255,.72); --line-strong: rgba(84,94,132,.18);
+    --accent: #a99bff; --pink: #ff8fc4; --blue: #79c8ff; --mint: #78f3d1;
+    --sold: #1f9d74; --live: #3a8fd6; --drafted: #8a73f0; --routed: #9aa1b8;
+    --spectrum: linear-gradient(120deg, var(--pink) 0%, #b9a2ff 34%, var(--blue) 67%, var(--mint) 100%);
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--ink);
+    background: radial-gradient(1200px 600px at 10% -10%, #ffe1ef 0%, transparent 60%),
+                radial-gradient(1000px 600px at 110% 10%, #cfeaff 0%, transparent 55%),
+                #f6f7fc;
+    font-family: "Outfit", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; display: grid; gap: 20px; }
+  .panel { background: var(--glass); border: 1px solid var(--line); border-radius: 22px;
+           box-shadow: 0 10px 40px rgba(60,70,120,.08); backdrop-filter: blur(18px); padding: 22px 24px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 22px; letter-spacing: -.01em; }
+  .brand span { background: var(--spectrum); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .status { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--ink-muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--routed); }
+  .dot.on { background: var(--sold); box-shadow: 0 0 0 4px rgba(31,157,116,.15); }
+  button { font: inherit; font-size: 13px; color: var(--ink); background: var(--glass-deep);
+           border: 1px solid var(--line-strong); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  button:hover { background: #fff; }
+
+  /* Hero: recovered dollars + goal bar. Sized to read from across a room. */
+  .hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: end; }
+  .label { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-faint); font-weight: 600; }
+  .recovered { font-size: clamp(56px, 9vw, 112px); font-weight: 700; line-height: 1; letter-spacing: -.03em; margin: 6px 0 14px; font-variant-numeric: tabular-nums; }
+  .bar { height: 18px; border-radius: 999px; background: rgba(84,94,132,.12); overflow: hidden; }
+  .bar-fill { height: 100%; width: 0; background: var(--spectrum); border-radius: inherit; transition: width .8s var(--ease); }
+  .bar-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 16px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .bar-meta strong { color: var(--ink); }
+  .working { font-size: clamp(22px, 2.6vw, 32px); font-weight: 600; line-height: 1.2; }
+  .working em { font-style: normal; background: var(--spectrum); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stats { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  .stat { font-size: 15px; color: var(--ink-muted); }
+  .stat b { display: block; font-size: 26px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* Columns: drafted -> live -> sold, plus routed-to-reuse. */
+  .board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .col h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .col h2 .n { font-family: var(--mono); font-size: 13px; color: var(--ink-faint); }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .cards { display: grid; gap: 10px; }
+  .card { background: var(--glass-deep); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--routed));
+          border-radius: 14px; padding: 12px 14px; animation: in .5s var(--ease); }
+  .card .t { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
+  .card .p { font-family: var(--mono); font-size: 15px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card .p s { color: var(--ink-faint); margin-right: 6px; }
+  .card .m { font-size: 13px; color: var(--ink-muted); margin-top: 6px; }
+  .card a { color: var(--live); text-decoration: none; font-size: 13px; }
+  .empty { font-size: 14px; color: var(--ink-faint); padding: 10px 2px; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .feed li { display: grid; grid-template-columns: 78px 96px minmax(0, 1fr); gap: 12px; font-size: 15px; align-items: baseline; }
+  .feed time, .feed .k { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; }
+    .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 520px) {
+    main { padding: 16px 16px 32px; }
+    .board { grid-template-columns: 1fr; }
+    .feed li { grid-template-columns: 64px minmax(0, 1fr); }
+    .feed .k { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand"><span>ReLoop</span> dashboard</div>
+    <div class="status">
+      <span class="dot" id="dot"></span><span id="conn">Connecting…</span>
+      <button id="seed" type="button">Load demo events</button>
+    </div>
+  </header>
+
+  <section class="panel hero">
+    <div>
+      <div class="label" id="goal-label">Recovered</div>
+      <div class="recovered" id="recovered">$0</div>
+      <div class="bar"><div class="bar-fill" id="bar"></div></div>
+      <div class="bar-meta"><span id="goal-left">No goal set yet</span><span id="goal-target"></span></div>
+    </div>
+    <div>
+      <div class="working" id="working">Waiting for the first approved item</div>
+      <div class="stats">
+        <div class="stat"><b id="n-drafted">0</b>drafted</div>
+        <div class="stat"><b id="n-live">0</b>live</div>
+        <div class="stat"><b id="n-sold">0</b>sold</div>
+        <div class="stat"><b id="n-routed">0</b>donated / recycled</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="board" id="board"></section>
+
+  <section class="panel">
+    <div class="label" style="margin-bottom:12px">Activity</div>
+    <ul class="feed" id="feed"><li class="empty">Nothing yet.</li></ul>
+  </section>
+</main>
+
+<script type="module">
+import { foldDashboard } from "/dashboard-fold.js";
+
+const COLUMNS = [
+  { key: "drafted", title: "Drafted", color: "var(--drafted)", statuses: ["drafted"] },
+  { key: "live", title: "Live on Marketplace", color: "var(--live)", statuses: ["live"] },
+  { key: "sold", title: "Sold", color: "var(--sold)", statuses: ["sold"] },
+  { key: "routed", title: "Donated / recycled", color: "var(--routed)", statuses: ["donated", "recycled"] },
+];
+const SOURCE = { DOG: "Found by the dog", GLASSES: "Seen through the glasses", PHONE: "Photographed on the phone" };
+
+let events = [];
+const $ = (id) => document.getElementById(id);
+const usd = (n) => `$${Math.round(n).toLocaleString("en-US")}`;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+function card(c) {
+  let price = "";
+  if (c.status === "sold" && c.soldUsd !== null) {
+    price = `${c.listUsd && c.listUsd !== c.soldUsd ? `<s>${usd(c.listUsd)}</s>` : ""}${usd(c.soldUsd)}`;
+  } else if (c.listUsd !== null && !["donated", "recycled"].includes(c.status)) {
+    price = `${usd(c.listUsd)}${c.lastOfferUsd ? ` · offer ${usd(c.lastOfferUsd)}` : ""}`;
+  } else if (c.status === "donated" || c.status === "recycled") {
+    price = c.status === "donated" ? "Donated" : "Recycled";
+  }
+  const where = SOURCE[c.source] ? `${SOURCE[c.source]}${c.spot ? ` near the ${esc(c.spot.replace(/_/g, " "))}` : ""}` : "";
+  const link = c.url && /^https?:\/\//.test(c.url) ? ` · <a href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>` : "";
+  return `<div class="card" style="--c:${COLUMNS.find((col) => col.statuses.includes(c.status))?.color}">
+    <div class="t">${esc(c.label)}</div>
+    ${price ? `<div class="p">${price}</div>` : ""}
+    ${where || link ? `<div class="m">${where}${link}</div>` : ""}
+  </div>`;
+}
+
+function render() {
+  const d = foldDashboard(events);
+
+  $("recovered").textContent = usd(d.recoveredUsd);
+  if (d.goal.targetUsd) {
+    const pct = Math.min(100, (d.recoveredUsd / d.goal.targetUsd) * 100);
+    $("bar").style.width = `${pct}%`;
+    $("goal-label").textContent = `Recovered toward ${usd(d.goal.targetUsd)}${d.goal.mode ? ` · ${d.goal.mode.replace(/_/g, " ").toLowerCase()}` : ""}`;
+    $("goal-left").innerHTML = d.goalGapUsd === 0 ? "<strong>Goal reached</strong>" : `<strong>${usd(d.goalGapUsd)}</strong> left to goal`;
+    $("goal-target").textContent = `${Math.round(pct)}%`;
+  } else {
+    $("bar").style.width = "0%";
+    $("goal-label").textContent = "Recovered";
+    $("goal-left").textContent = "No goal set yet";
+    $("goal-target").textContent = "";
+  }
+
+  $("working").innerHTML = d.workingOn > 0
+    ? `Agent still working on <em>${d.workingOn}</em> item${d.workingOn === 1 ? "" : "s"}`
+    : d.counts.sold > 0 ? "Everything approved is sold" : "Waiting for the first approved item";
+  $("n-drafted").textContent = d.counts.drafted;
+  $("n-live").textContent = d.counts.live;
+  $("n-sold").textContent = d.counts.sold;
+  $("n-routed").textContent = d.counts.donated + d.counts.recycled;
+
+  $("board").innerHTML = COLUMNS.map((col) => {
+    const cards = d.cards.filter((c) => col.statuses.includes(c.status));
+    return `<div class="panel col">
+      <h2><span class="swatch" style="background:${col.color}"></span>${col.title}<span class="n">${cards.length}</span></h2>
+      <div class="cards">${cards.length ? cards.map(card).join("") : `<div class="empty">None yet</div>`}</div>
+    </div>`;
+  }).join("");
+
+  $("feed").innerHTML = d.feed.length
+    ? d.feed.map((e) => `<li><time>${clock(e.ts)}</time><span class="k">${esc(e.kind)}</span><span>${esc(e.text)}</span></li>`).join("")
+    : `<li class="empty">Nothing yet.</li>`;
+}
+
+function connect() {
+  const source = new EventSource("/api/events/stream");
+  source.addEventListener("snapshot", (msg) => {
+    events = JSON.parse(msg.data);
+    render();
+  });
+  source.onmessage = (msg) => {
+    const event = JSON.parse(msg.data);
+    events = event.kind === "RESET" ? [] : [...events, event];
+    render();
+  };
+  source.onopen = () => { $("dot").classList.add("on"); $("conn").textContent = "Live"; };
+  // EventSource reconnects on its own and the server replays a fresh snapshot.
+  source.onerror = () => { $("dot").classList.remove("on"); $("conn").textContent = "Reconnecting…"; };
+}
+
+$("seed").addEventListener("click", async () => {
+  $("seed").disabled = true;
+  try { await fetch("/api/events/seed", { method: "POST" }); } finally { $("seed").disabled = false; }
+});
+
+render();
+connect();
+</script>
+</body>
+</html>

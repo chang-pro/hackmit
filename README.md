@@ -286,6 +286,7 @@ Unlike a scoreboard, a room is a complete observation in a single frame, so the 
 - `services/vision/backends/` — the item identification + pricing backend
 - `services/capture/` — frame gateway, frame selector, dataset writer
 - `services/demo/` — local stream playback for demos
+- `services/events/` — append-only event log and the dashboard fold ([docs/architecture/EVENTS.md](docs/architecture/EVENTS.md))
 - `tests/` — node:test coverage for the server, gateway, selector, and page contracts
 
 ## Rules for contributors and AI agents
@@ -294,6 +295,7 @@ Unlike a scoreboard, a room is a complete observation in a single frame, so the 
 - **Prices come from the model, and the model says why.** Every item carries a `price_basis`. If you cannot explain a number on stage, do not show it.
 - **Never let a bad box through.** A box that fails validation is dropped, not clamped into something plausible. A phantom item in the total is worse than a missing one.
 - **Keep the analysis gate.** Do not add a code path that sends frames to a model without an explicit start.
+- **Report progress as events.** The dashboard (`/dashboard`) is a fold over `POST /api/events`. Before building anything that sets a goal, approves a plan, lists or sells, read [docs/architecture/EVENTS.md](docs/architecture/EVENTS.md) — it says which events each lane owes.
 - **Run `npm test` before you push.** `main` must stay green.
 
 ## Honest scope and limitations
