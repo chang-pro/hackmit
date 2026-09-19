@@ -34,3 +34,8 @@ secrets.*
 # XcodeGen regenerates the project and workspace; only project.yml is the source.
 apps/ios/BloomKnights/BloomKnights.xcodeproj/project.xcworkspace/
 >>>>>>> a88508c6ecdc560901ddfd6d33d8b06b484e73a4
+
+# CDP Chrome profile — holds live muse.ai session cookies. Never commit.
+.reloop/
+cdp-profile/
+recording*.json

@@ -3,7 +3,7 @@
 //
 // Chrome must already be running with --remote-debugging-port. A running
 // Chrome cannot have the port attached after the fact, so it has to be
-// launched with the flag (see services/muse/README.md).
+// launched with the flag (see facebook-marketplace/README.md).
 
 const DEFAULT_ENDPOINT = process.env.CDP_ENDPOINT ?? "http://127.0.0.1:9222";
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -34,7 +34,7 @@ export async function listTargets({ endpoint = DEFAULT_ENDPOINT, timeoutMs = 5_0
     // This is the failure everyone hits first, so it names the fix.
     throw new CdpError(
       `no debuggable Chrome at ${endpoint}. Quit Chrome completely, then relaunch it with ` +
-        `--remote-debugging-port=9222 (see services/muse/README.md). Underlying error: ${err.message}`
+        `--remote-debugging-port=9222 (see facebook-marketplace/README.md). Underlying error: ${err.message}`
     );
   }
   return targets.filter((t) => t.type === "page");

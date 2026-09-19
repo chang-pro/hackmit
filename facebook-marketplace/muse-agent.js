@@ -14,16 +14,30 @@ import { CdpError, CdpSession, findTarget, openTarget } from "./cdp.js";
 const MUSE_URL = process.env.MUSE_URL ?? "https://muse.ai";
 const MUSE_MATCH = process.env.MUSE_URL_MATCH ?? "muse.ai";
 
+// Every muse.ai chat lives at the same URL, so a chat cannot be targeted by
+// link — it has to be selected by name in the sidebar. All Marketplace posting
+// goes through ONE dedicated chat; sending a "post this to Facebook"
+// instruction into the wrong thread is the failure worth engineering against.
+const MUSE_CHAT = process.env.MUSE_CHAT ?? "post items to facebook marketplace";
+const THREAD_ROW = '[data-testid="hatch-thread-row"]';
+
+// Read off the live logged-in page on 2026-09-19. muse.ai is a Tailwind app
+// with no stable data-testid on the chat bubbles, so these are class-based and
+// WILL break when the markup changes — rerun probe() and update them.
+//
+// The message selector deliberately excludes the user's own bubble. Matching
+// every bubble would make awaitReply() return the echo of what we just sent.
 export const selectors = {
-  input: process.env.MUSE_INPUT_SELECTOR ?? null,
-  send: process.env.MUSE_SEND_SELECTOR ?? null,
-  message: process.env.MUSE_MESSAGE_SELECTOR ?? null,
+  input: process.env.MUSE_INPUT_SELECTOR ?? 'textarea[aria-label="Message"]',
+  send: process.env.MUSE_SEND_SELECTOR ?? null, // Enter submits; no button needed
+  message:
+    process.env.MUSE_MESSAGE_SELECTOR ??
+    ".hatch-chat-groupable-bubble:not(.bg-chat-user-bubble)",
 };
 
 function requireSelectors() {
-  const missing = Object.entries(selectors)
-    .filter(([, value]) => !value)
-    .map(([name]) => name);
+  const missing = ["input", "message"]
+    .filter((name) => !selectors[name]);
   if (missing.length > 0) {
     throw new CdpError(
       `muse selectors not configured: ${missing.join(", ")}. Run probe() against the live tab ` +
@@ -74,6 +88,44 @@ export async function probe() {
   }
 }
 
+// Returns the name of the chat currently open, read from the header.
+async function currentChat(cdp) {
+  return cdp.evaluate(`(() => {
+    const h = document.querySelector("h1, h2");
+    return h ? (h.innerText || "").trim() : null;
+  })()`);
+}
+
+function matches(text, wanted) {
+  const norm = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const a = norm(text);
+  const b = norm(wanted);
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+// Clicks the sidebar row for the wanted chat. Returns false when no row
+// matches, which the caller must treat as fatal rather than sending anyway.
+export async function selectChat(cdp, wanted = MUSE_CHAT) {
+  if (matches(await currentChat(cdp), wanted)) return true;
+
+  const rows = await cdp.evaluate(`(() => {
+    return [...document.querySelectorAll(${JSON.stringify(THREAD_ROW)})]
+      .map((e, i) => ({ i, text: (e.innerText || "").trim().split("\n")[0].slice(0, 80) }));
+  })()`);
+  const norm = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const target = (rows ?? []).find((r) => matches(r.text, wanted));
+  if (!target) return false;
+
+  await cdp.evaluate(`(() => {
+    const rows = document.querySelectorAll(${JSON.stringify(THREAD_ROW)});
+    const row = rows[${target.i}];
+    if (row) row.click();
+    return true;
+  })()`);
+  await new Promise((done) => setTimeout(done, 1_500));
+  return matches(await currentChat(cdp), wanted);
+}
+
 function messageCountExpression() {
   return `document.querySelectorAll(${JSON.stringify(selectors.message)}).length`;
 }
@@ -111,11 +163,25 @@ async function awaitReply(cdp, priorCount, { timeoutMs, settleMs }) {
   throw new CdpError(`muse.ai did not reply within ${timeoutMs}ms`);
 }
 
-export async function ask(instruction, { timeoutMs = 120_000, settleMs = 1_500 } = {}) {
+export async function ask(
+  instruction,
+  { timeoutMs = 120_000, settleMs = 1_500, chat = MUSE_CHAT, requireChat = true } = {}
+) {
   requireSelectors();
   const cdp = await session();
   try {
     await cdp.waitFor(selectors.input);
+    if (chat) {
+      const onTarget = await selectChat(cdp, chat);
+      // Refusing beats posting a Marketplace listing into a personal thread.
+      if (!onTarget && requireChat) {
+        throw new CdpError(
+          `could not switch to the "${chat}" chat, and refused to send into ` +
+            `"${await currentChat(cdp)}" instead. Open that chat in the CDP Chrome window, ` +
+            `or set MUSE_CHAT to its exact name.`
+        );
+      }
+    }
     const priorCount = await cdp.evaluate(messageCountExpression());
     await cdp.typeInto(selectors.input, instruction);
     if (selectors.send) await cdp.click(selectors.send);
