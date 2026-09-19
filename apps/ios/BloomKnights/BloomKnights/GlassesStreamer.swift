@@ -383,7 +383,7 @@ final class FrameUplink: @unchecked Sendable {
             defer { completion() }
             guard let self else { return }
             do {
-                let api = try ApiClient.fromSettings()
+                let api = try await ApiClient.fromSettings()
                 let result = try await api.submitFrame(submission)
                 if result.selection?.accepted == true {
                     self.report(acceptedDelta: 1)
@@ -392,6 +392,10 @@ final class FrameUplink: @unchecked Sendable {
                 }
             } catch {
                 self.report(failedDelta: 1)
+                // The path may have changed under us (cable pulled, wifi
+                // roamed, tailnet dropped). Re-probe every known address in
+                // parallel so the next frame goes wherever the Mac now is.
+                await BackendLocator.shared.reselect()
             }
         }
     }
