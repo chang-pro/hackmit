@@ -195,6 +195,22 @@ mutation ProductVariantUpdate($input: ProductVariantInput!) {
 }
 `;
 
+const PUBLISHABLE_PUBLISH_MUTATION = `
+mutation PublishablePublish($id: ID!, $input: [PublicationInput!]!) {
+  publishablePublish(id: $id, input: $input) {
+    publishable {
+      availablePublicationsCount {
+        count
+      }
+    }
+    userErrors {
+      field
+      message
+    }
+  }
+}
+`;
+
 /**
  * Creates a new product listing in the Shopify store.
  *
@@ -301,7 +317,55 @@ export async function createProduct({
     }
   }
 
-  const productUrl = prod.onlineStoreUrl || prod.onlineStorePreviewUrl || `https://${cleanDomain}/products/${prod.handle}`;
+  // 1. Try GraphQL publishablePublish to all active sales channels
+  try {
+    const pubQuery = `
+      query GetPublications {
+        publications(first: 5) {
+          nodes {
+            id
+            name
+          }
+        }
+      }
+    `;
+    const pubData = await shopifyGraphql(pubQuery, {}, customFetch);
+    const pubNodes = pubData?.publications?.nodes ?? [];
+    const inputs = pubNodes.map((p) => ({ publicationId: p.id }));
+    if (inputs.length > 0) {
+      await shopifyGraphql(
+        PUBLISHABLE_PUBLISH_MUTATION,
+        { id: prod.id, input: inputs },
+        customFetch
+      );
+    }
+  } catch {
+    // Non-fatal if read_publications/write_publications not granted
+  }
+
+  // 2. Explicitly publish to Online Store sales channel via REST API
+  try {
+    const token = await getOrExchangeAccessToken(customFetch);
+    const publishUrl = `https://${cleanDomain}/admin/api/${apiVersion}/products/${numId}.json`;
+    await customFetch(publishUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": token,
+      },
+      body: JSON.stringify({
+        product: {
+          id: Number(numId),
+          published: true,
+          published_at: new Date().toISOString(),
+        },
+      }),
+    });
+  } catch (err) {
+    // Non-fatal if scopes don't allow REST updates
+  }
+
+  const publicUrl = `https://${cleanDomain}/products/${prod.handle}`;
 
   return {
     dry_run: false,
@@ -311,10 +375,50 @@ export async function createProduct({
       handle: prod.handle,
       status: prod.status,
       price: formattedPrice,
-      url: productUrl,
+      url: publicUrl,
       previewUrl: prod.onlineStorePreviewUrl || null,
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
     },
   };
 }
 
+/**
+ * Explicitly publishes an existing product to the Online Store sales channel.
+ */
+export async function publishProduct(productId, customFetch = fetch) {
+  const config = getShopifyConfig();
+  const cleanDomain = config.domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const numId = String(productId).split("/").pop();
+  const gid = String(productId).startsWith("gid://") ? productId : `gid://shopify/Product/${numId}`;
+
+  try {
+    const pubQuery = `query { publications(first: 5) { nodes { id name } } }`;
+    const pubData = await shopifyGraphql(pubQuery, {}, customFetch);
+    const inputs = (pubData?.publications?.nodes ?? []).map((p) => ({ publicationId: p.id }));
+    if (inputs.length > 0) {
+      await shopifyGraphql(PUBLISHABLE_PUBLISH_MUTATION, { id: gid, input: inputs }, customFetch);
+    }
+  } catch {}
+
+  try {
+    const token = await getOrExchangeAccessToken(customFetch);
+    const publishUrl = `https://${cleanDomain}/admin/api/${config.apiVersion}/products/${numId}.json`;
+    const res = await customFetch(publishUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": token,
+      },
+      body: JSON.stringify({
+        product: {
+          id: Number(numId),
+          published: true,
+          published_at: new Date().toISOString(),
+        },
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
