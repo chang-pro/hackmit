@@ -38,7 +38,7 @@
 //   GET  /dashboard             — the event-log dashboard (goal, recovered $, listing cards)
 
 import { createServer } from "node:http";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -48,6 +48,7 @@ import { ItemAnalyzer } from "./item-analyzer.js";
 import { RIGHTCODES_ITEMS_MODEL } from "../vision/backends/rightcodes-items.js";
 import { DraftQueue } from "../market/draft-queue.js";
 import { Market } from "../market/market.js";
+import { RepricingJob } from "../market/repricing.js";
 import { EventLog } from "../events/event-log.js";
 import { foldDashboard } from "../events/dashboard-fold.js";
 import { CaptureGateway } from "../capture/gateway.js";
@@ -63,6 +64,10 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
 const MAX_PHOTOS = 200;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const TINY_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64"
+);
 
 
 function isIceServerList(value) {
@@ -217,8 +222,17 @@ export function createReLoopServer({
   itemAnalyzer = new ItemAnalyzer(),
   eventLog = new EventLog(),
   draftQueue = new DraftQueue({ eventLog }),
+  marketFile = process.env.RELOOP_MARKET_FILE ?? (process.env.NODE_ENV === "test" ? null : join(ROOT, "data", "market_state.json")),
+  market: customMarket = null,
+  enableRepricing = process.env.ENABLE_REPRICING === "1",
 } = {}) {
-  const market = new Market({ eventLog, draftQueue });
+  const market = customMarket ?? new Market({ eventLog, draftQueue, file: marketFile });
+  const repricingJob = new RepricingJob({
+    market,
+    intervalMs: Number(process.env.REPRICING_INTERVAL_MS ?? 60_000),
+    enabled: enableRepricing,
+  });
+  const photosDir = join(ROOT, "data", "photos");
   const photos = new Map();
   // Item identification is what the live camera path runs: every frame is
   // scored for resellable objects and a price, which the capture page draws
@@ -394,8 +408,15 @@ export function createReLoopServer({
     const stored = frameId ? gateway.get(frameId) : null;
     if (!stored) return null;
     const id = `pho_${randomUUID().slice(0, 12)}`;
-    photos.set(id, { bytes: imageBytes(stored.image_base64), mime: stored.mime_type || "image/jpeg" });
+    const bytes = imageBytes(stored.image_base64);
+    const mime = stored.mime_type || "image/jpeg";
+    photos.set(id, { bytes, mime });
     while (photos.size > MAX_PHOTOS) photos.delete(photos.keys().next().value);
+    try {
+      if (!existsSync(photosDir)) mkdirSync(photosDir, { recursive: true });
+      writeFileSync(join(photosDir, `${id}.bin`), bytes);
+      writeFileSync(join(photosDir, `${id}.meta`), JSON.stringify({ mime }));
+    } catch {}
     return id;
   }
 
@@ -418,7 +439,7 @@ export function createReLoopServer({
       items,
       goal: body.goal ?? {},
       keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
-      photoUrl: photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null,
+      photoUrl: body.photo_url ?? (photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null),
       source: body.source ?? latest?.frame_source ?? null,
     });
     sendJson(res, 201, plan);
@@ -470,7 +491,27 @@ export function createReLoopServer({
         if (req.method === "POST" && parts[3] === "marketplace") return await handleMarketplaceLive(req, res, parts[2]);
       }
       if (req.method === "GET" && parts[1] === "photos" && parts[2]) {
-        const photo = photos.get(parts[2]);
+        const photoId = parts[2];
+        let photo = photos.get(photoId);
+        if (!photo) {
+          const diskBin = join(photosDir, `${photoId}.bin`);
+          const diskMeta = join(photosDir, `${photoId}.meta`);
+          if (existsSync(diskBin)) {
+            try {
+              const bytes = readFileSync(diskBin);
+              let mime = "image/jpeg";
+              if (existsSync(diskMeta)) {
+                try { mime = JSON.parse(readFileSync(diskMeta, "utf8")).mime || mime; } catch {}
+              }
+              photo = { bytes, mime };
+              photos.set(photoId, photo);
+            } catch {}
+          }
+        }
+        if (!photo && (photoId.startsWith("demo_") || photoId.startsWith("pho_"))) {
+          res.writeHead(200, responseHeaders("image/jpeg"));
+          return res.end(TINY_JPEG);
+        }
         if (!photo) return sendJson(res, 404, { error: "photo not found" });
         res.writeHead(200, responseHeaders(photo.mime));
         return res.end(photo.bytes);
@@ -494,7 +535,11 @@ export function createReLoopServer({
     const fixture = JSON.parse(await readFile(join(ROOT, "contracts", "fixtures", "events.json"), "utf8"));
     eventLog.clear();
     for (const event of fixture) eventLog.append(event);
-    sendJson(res, 200, { seeded: fixture.length });
+    const marketSeed = market.seedDemoData();
+    sendJson(res, 200, {
+      seeded: fixture.length,
+      market: { planId: marketSeed.plan.id, listings: marketSeed.listings.length },
+    });
   }
 
   function handleEventStream(req, res) {
@@ -754,6 +799,13 @@ export function createReLoopServer({
         sendJson(res, 200, market.catalog());
       } else if (req.method === "GET" && url.pathname === "/api/drafts") {
         sendJson(res, 200, draftQueue.status());
+      } else if (req.method === "POST" && url.pathname === "/api/market/reprice") {
+        const body = await readOptionalJsonBody(req);
+        const repriced = market.reprice({
+          dropPct: body.drop_pct ? Number(body.drop_pct) : undefined,
+          dropAmount: body.drop_amount ? Number(body.drop_amount) : undefined,
+        });
+        sendJson(res, 200, { repriced });
       } else if (
         url.pathname === "/api/plans" ||
         url.pathname.startsWith("/api/plans/") ||

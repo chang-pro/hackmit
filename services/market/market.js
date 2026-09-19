@@ -10,6 +10,8 @@
 //
 // Seller floors live in #rules, a private field. No method returns them.
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { buildPlan } from "./planner.js";
 import { respond } from "./seller.js";
@@ -28,15 +30,53 @@ const shortId = (prefix) => `${prefix}_${randomUUID().slice(0, 8)}`;
 export class Market {
   #eventLog;
   #draftQueue;
+  #file;
   #rules = new Map(); // listingId -> { floorUsd, autoAcceptUsd, maxRounds }
   #pendingRules = new Map(); // planId -> Map(itemId -> rules), until approval
   plans = new Map();
   listings = new Map();
   threads = new Map();
 
-  constructor({ eventLog, draftQueue }) {
+  constructor({ eventLog, draftQueue, file = process.env.RELOOP_MARKET_FILE || null } = {}) {
     this.#eventLog = eventLog;
     this.#draftQueue = draftQueue;
+    this.#file = file;
+    this.#load();
+  }
+
+  #load() {
+    if (!this.#file || !existsSync(this.#file)) return;
+    try {
+      const raw = readFileSync(this.#file, "utf8");
+      if (!raw.trim()) return;
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.plans)) this.plans = new Map(data.plans);
+      if (Array.isArray(data.listings)) this.listings = new Map(data.listings);
+      if (Array.isArray(data.rules)) this.#rules = new Map(data.rules);
+      if (Array.isArray(data.pendingRules)) {
+        this.#pendingRules = new Map(data.pendingRules.map(([pid, entries]) => [pid, new Map(entries)]));
+      }
+      if (Array.isArray(data.threads)) this.threads = new Map(data.threads);
+    } catch (err) {
+      console.error(`Failed to load market state from ${this.#file}:`, err.message);
+    }
+  }
+
+  #save() {
+    if (!this.#file) return;
+    try {
+      const data = {
+        plans: [...this.plans.entries()],
+        listings: [...this.listings.entries()],
+        rules: [...this.#rules.entries()],
+        pendingRules: [...this.#pendingRules.entries()].map(([pid, rMap]) => [pid, [...rMap.entries()]]),
+        threads: [...this.threads.entries()],
+      };
+      mkdirSync(dirname(this.#file), { recursive: true });
+      writeFileSync(this.#file, JSON.stringify(data, null, 2), "utf8");
+    } catch (err) {
+      console.error(`Failed to persist market state to ${this.#file}:`, err.message);
+    }
   }
 
   #emit(event) {
@@ -58,6 +98,7 @@ export class Market {
     const stored = { ...plan, id: planId, createdAt: new Date().toISOString(), photoUrl, source, items: keyed };
     this.plans.set(planId, stored);
     this.#pendingRules.set(planId, rules);
+    this.#save();
     return this.publicPlan(stored);
   }
 
@@ -144,6 +185,7 @@ export class Market {
       });
       listing.marketplace.draftId = job.id;
     }
+    this.#save();
     return { plan: this.publicPlan(plan), listings: created.map((l) => this.publicListing(l)) };
   }
 
@@ -193,6 +235,7 @@ export class Market {
       url: listing.marketplace.url,
       text: `${listing.title} is live on Marketplace`,
     });
+    this.#save();
     return this.publicListing(listing);
   }
 
@@ -237,6 +280,7 @@ export class Market {
       thread.closed = true;
     }
     thread.messages.push({ frm: "SELLER", priceUsd: reply.priceUsd, text: reply.text, ts: now });
+    this.#save();
     return { threadId: thread.id, move: reply.move, priceUsd: reply.priceUsd, text: reply.text, listing: this.publicListing(listing) };
   }
 
@@ -262,6 +306,214 @@ export class Market {
       amountUsd: listing.soldUsd,
       text: `Sold the ${listing.title} for $${listing.soldUsd}`,
     });
+    this.#save();
     return { listing: this.publicListing(listing), paid: false, note: "Mock checkout: no payment was taken." };
+  }
+
+  reprice({ dropPct = 0.05, dropAmount = 5 } = {}) {
+    const repriced = [];
+    for (const listing of this.listings.values()) {
+      if (listing.status !== "ACTIVE") continue;
+      const rules = this.#rules.get(listing.id);
+      if (!rules || typeof rules.floorUsd !== "number") continue;
+      if (listing.listUsd <= rules.floorUsd) continue;
+
+      const drop = Math.max(dropAmount, Math.round(listing.listUsd * dropPct));
+      const newPrice = Math.max(rules.floorUsd, listing.listUsd - drop);
+      if (newPrice < listing.listUsd) {
+        const oldPrice = listing.listUsd;
+        listing.listUsd = newPrice;
+        this.#emit({
+          kind: "REPRICED",
+          itemId: listing.itemId,
+          listingId: listing.id,
+          label: listing.title,
+          amountUsd: newPrice,
+          text: `Repriced ${listing.title} from $${oldPrice} to $${newPrice}`,
+        });
+        repriced.push({ id: listing.id, title: listing.title, oldPrice, newPrice });
+      }
+    }
+    if (repriced.length > 0) this.#save();
+    return repriced;
+  }
+
+  seedDemoData() {
+    this.plans.clear();
+    this.listings.clear();
+    this.#rules.clear();
+    this.#pendingRules.clear();
+    this.threads.clear();
+
+    const planId = "plan_demo_01";
+    const demoItems = [
+      {
+        id: `${planId}_01`,
+        label: "Sony PS4 Slim",
+        condition: "good",
+        price_usd: 185,
+        price_basis: "used PS4 Slim consoles sell around $185",
+        sourceItemId: "item_001",
+      },
+      {
+        id: `${planId}_02`,
+        label: "27in 1440p monitor",
+        condition: "good",
+        price_usd: 150,
+        price_basis: "1440p 144Hz monitors sell around $150",
+        sourceItemId: "item_002",
+      },
+      {
+        id: `${planId}_03`,
+        label: "Wireless gaming headset",
+        condition: "fair",
+        price_usd: 45,
+        price_basis: "worn pads drop the usual $60",
+        sourceItemId: "item_003",
+      },
+      {
+        id: `${planId}_04`,
+        label: "Mechanical keyboard",
+        condition: "like_new",
+        price_usd: 95,
+        price_basis: "recent sold listings average $95",
+        sourceItemId: "item_004",
+      },
+    ];
+
+    const plan = {
+      id: planId,
+      goal: { mode: "CASH", targetUsd: 300, deadline: null },
+      expectedUsd: 475,
+      goalGapUsd: 0,
+      approved: true,
+      approvedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      photoUrl: "/api/photos/demo_room",
+      source: "rayban_sdk",
+      items: demoItems,
+      decisions: [
+        {
+          itemId: `${planId}_01`,
+          action: "SELL",
+          band: { quickUsd: 160, normalUsd: 185, maxUsd: 215, basis: "used PS4 Slim consoles sell around $185" },
+          listUsd: 190,
+          reason: "Cash mode: list high, negotiate down",
+        },
+        {
+          itemId: `${planId}_02`,
+          action: "SELL",
+          band: { quickUsd: 130, normalUsd: 150, maxUsd: 175, basis: "1440p 144Hz monitors sell around $150" },
+          listUsd: 155,
+          reason: "Cash mode: list high, negotiate down",
+        },
+        {
+          itemId: `${planId}_03`,
+          action: "SELL",
+          band: { quickUsd: 40, normalUsd: 45, maxUsd: 55, basis: "worn pads drop the usual $60" },
+          listUsd: 45,
+          reason: "Cash mode: list at normal price",
+        },
+        {
+          itemId: `${planId}_04`,
+          action: "SELL",
+          band: { quickUsd: 80, normalUsd: 95, maxUsd: 110, basis: "recent sold listings average $95" },
+          listUsd: 100,
+          reason: "Cash mode: list high, negotiate down",
+        },
+      ],
+    };
+    this.plans.set(planId, plan);
+
+    const listings = [
+      {
+        id: "lst_demo_ps4",
+        itemId: `${planId}_01`,
+        title: "Sony PS4 Slim",
+        condition: "good",
+        description: "Sony PS4 Slim, good condition. Priced from: used PS4 Slim consoles sell around $185.",
+        photoUrl: "/api/photos/demo_ps4",
+        listUsd: 190,
+        basis: "used PS4 Slim consoles sell around $185",
+        status: "ACTIVE",
+        soldUsd: null,
+        marketplace: {
+          status: "drafted",
+          url: "https://www.facebook.com/marketplace/item/1029384756",
+          draftId: "draft_001",
+        },
+      },
+      {
+        id: "lst_demo_monitor",
+        itemId: `${planId}_02`,
+        title: "27in 1440p monitor",
+        condition: "good",
+        description: "27in 1440p monitor, good condition. Priced from: 1440p 144Hz monitors sell around $150.",
+        photoUrl: "/api/photos/demo_monitor",
+        listUsd: 155,
+        basis: "1440p 144Hz monitors sell around $150",
+        status: "ACTIVE",
+        soldUsd: null,
+        marketplace: {
+          status: "drafted",
+          url: "https://www.facebook.com/marketplace/item/2938475610",
+          draftId: "draft_002",
+        },
+      },
+      {
+        id: "lst_demo_headset",
+        itemId: `${planId}_03`,
+        title: "Wireless gaming headset",
+        condition: "fair",
+        description: "Wireless gaming headset, fair condition. Priced from: worn pads drop the usual $60.",
+        photoUrl: "/api/photos/demo_headset",
+        listUsd: 45,
+        basis: "worn pads drop the usual $60",
+        status: "ACTIVE",
+        soldUsd: null,
+        marketplace: {
+          status: "drafted",
+          url: "https://www.facebook.com/marketplace/item/3847561029",
+          draftId: "draft_003",
+        },
+      },
+      {
+        id: "lst_demo_keyboard",
+        itemId: `${planId}_04`,
+        title: "Mechanical keyboard",
+        condition: "like_new",
+        description: "Mechanical keyboard, like new condition. Priced from: recent sold listings average $95.",
+        photoUrl: "/api/photos/demo_keyboard",
+        listUsd: 100,
+        basis: "recent sold listings average $95",
+        status: "ACTIVE",
+        soldUsd: null,
+        marketplace: {
+          status: "drafted",
+          url: "https://www.facebook.com/marketplace/item/4857201938",
+          draftId: "draft_004",
+        },
+      },
+    ];
+
+    for (const listing of listings) {
+      this.listings.set(listing.id, listing);
+    }
+    this.#rules.set("lst_demo_ps4", { floorUsd: 160, autoAcceptUsd: 185, maxRounds: 4 });
+    this.#rules.set("lst_demo_monitor", { floorUsd: 130, autoAcceptUsd: 150, maxRounds: 4 });
+    this.#rules.set("lst_demo_headset", { floorUsd: 35, autoAcceptUsd: 45, maxRounds: 4 });
+    this.#rules.set("lst_demo_keyboard", { floorUsd: 80, autoAcceptUsd: 95, maxRounds: 4 });
+
+    this.#save();
+    return { plan, listings };
+  }
+
+  clear() {
+    this.plans.clear();
+    this.listings.clear();
+    this.#rules.clear();
+    this.#pendingRules.clear();
+    this.threads.clear();
+    this.#save();
   }
 }
