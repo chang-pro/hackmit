@@ -197,19 +197,19 @@ function render() {
 }
 
 function connect() {
-  const source = new EventSource("/api/events/stream");
-  source.addEventListener("snapshot", (msg) => {
-    events = JSON.parse(msg.data);
-    render();
-  });
-  source.onmessage = (msg) => {
-    const event = JSON.parse(msg.data);
-    events = event.kind === "RESET" ? [] : [...events, event];
-    render();
-  };
-  source.onopen = () => { $("dot").classList.add("on"); $("conn").textContent = "Live"; };
-  // EventSource reconnects on its own and the server replays a fresh snapshot.
-  source.onerror = () => { $("dot").classList.remove("on"); $("conn").textContent = "Reconnecting…"; };
+  async function poll() {
+    try {
+      if (!document.hidden) {
+        const response = await fetch('/api/events', {cache:'no-store', signal:AbortSignal.timeout(5000)});
+        if (!response.ok) throw Error('Events unavailable');
+        events = (await response.json()).events;
+        render();
+        $("dot").classList.add("on"); $("conn").textContent = "Live";
+      }
+    } catch { $("dot").classList.remove("on"); $("conn").textContent = "Reconnecting…"; }
+    finally { setTimeout(poll, 1500); }
+  }
+  poll();
 }
 
 $("seed").addEventListener("click", async () => {
@@ -220,5 +220,6 @@ $("seed").addEventListener("click", async () => {
 render();
 connect();
 </script>
+<script type="module" src="/robot-controls.js?v=3"></script>
 </body>
 </html>

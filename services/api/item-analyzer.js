@@ -113,7 +113,7 @@ export class ItemAnalyzer {
       this.#latestAt = Date.now();
       this.#lastError = null;
       this.#analyzedCount += 1;
-      if (frame?.source === "glasses_photo") this.#latestPhoto = this.#latest;
+      if (["glasses_photo", "robot_snapshot"].includes(frame?.source)) this.#latestPhoto = this.#latest;
       return { analysis_status: "analyzed", items: this.#latest };
     } catch (err) {
       if (generation !== this.#generation) {
