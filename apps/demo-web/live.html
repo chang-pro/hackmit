@@ -23,6 +23,14 @@
   #shot { max-width: min(92vw, 720px); max-height: 82vh; border-radius: 12px; background: #141821; }
   #shot[hidden] { display: none; }
   #boxes { position: absolute; inset: 0; pointer-events: none; }
+  /* Picture mode: the frame is frozen, so its boxes can be tapped to choose
+     what gets listed. Live boxes stay untouchable; they move under the finger. */
+  #boxes.pick .box { pointer-events: auto; cursor: pointer; }
+  #boxes.pick .box.off { opacity: .35; border-style: dashed; background: none; }
+  #boxes.pick .box.off .tag { opacity: .6; text-decoration: line-through; }
+  #picBar { margin-top: .6rem; display: flex; gap: .7rem; align-items: center; line-height: 1.3; font-size: .78rem; color: #ffcf6b; }
+  #picBar[hidden] { display: none; }
+  #picBar button { padding: .3rem .7rem; border-radius: 8px; border: 1px solid #39425a; background: #161b27; color: #e7ecf5; font: inherit; cursor: pointer; }
   .box { position: absolute; border: 2px solid var(--c); border-radius: 6px; background: color-mix(in srgb, var(--c) 12%, transparent); }
   .tag {
     position: absolute; left: -2px; top: -1.45rem; padding: .1rem .4rem;
@@ -54,8 +62,8 @@
   button.go:hover:not(:disabled) { background: #6cf0ab; }
   #panel { margin-top: 1.1rem; border-top: 1px solid #222838; padding-top: .9rem; }
   .eyebrow { color: #7d8aa3; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .5rem; }
-  #goals { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; align-items: stretch; }
-  #goals button.on, .goal-amount.on { background: #2b3550; border-color: #55e39b; }
+  #goals, #channels { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; align-items: stretch; }
+  #goals button.on, #channels button.on, .goal-amount.on { background: #2b3550; border-color: #55e39b; }
   /* The cash goal is a chip you can type in: same shape as the others, with
      the amount editable in place instead of fixed at one number. */
   .goal-amount { display: flex; align-items: baseline; gap: .1rem; cursor: text;
@@ -65,6 +73,9 @@
                        border-bottom: 1px dashed #55e39b88; padding: 0 .1rem; text-align: right; }
   .goal-amount input:focus { outline: none; border-bottom-color: #55e39b; }
   .goal-amount input::-webkit-outer-spin-button, .goal-amount input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .chan { margin-top: .25rem; font-size: .7rem; color: #9aa6bd; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+  .chan .name { color: #7d8aa3; }
+  .chan button { padding: .2rem .45rem; font-size: .68rem; }
   .acts { display: flex; gap: .4rem; flex-wrap: wrap; }
   #plan { margin-top: .8rem; display: flex; flex-direction: column; gap: .5rem; max-height: 40vh; overflow: auto; }
   .d { border-left: 3px solid var(--c, #3d4761); padding: .3rem 0 .3rem .5rem; }
@@ -91,6 +102,10 @@
   <div id="stage">
     <img id="shot" alt="Newest frame from the glasses" hidden />
     <div id="boxes"></div>
+    <div id="picBar" hidden>
+      <span>Picture · tap an item to leave it out</span>
+      <button id="backToLive" type="button">Back to live</button>
+    </div>
   </div>
 
   <aside>
@@ -109,6 +124,8 @@
     <section id="panel">
       <div class="eyebrow">Goal</div>
       <div id="goals"></div>
+      <div class="eyebrow">List on</div>
+      <div id="channels"></div>
       <div class="acts">
         <button id="analyze" type="button">Start pricing</button>
         <button id="makePlan" type="button">Review these items</button>
@@ -122,6 +139,7 @@
         <div id="confirmText"></div>
         <div class="confirm-acts">
           <button id="approve" class="go" type="button">Yes, list them</button>
+          <button id="voice" type="button" title="Hear the plan read back, correct it out loud, then say yes">Confirm by voice</button>
           <button id="cancel" type="button">Not now</button>
         </div>
       </div>
@@ -162,7 +180,7 @@ async function pollFrame() {
     $("state").textContent = live ? "live" : "stalled";
     $("msg").textContent = "";
 
-    if (frame.frame_id && frame.frame_id !== lastId) {
+    if (!picture && frame.frame_id && frame.frame_id !== lastId) {
       lastId = frame.frame_id;
       const now = performance.now();
       stamps = stamps.filter((t) => now - t < 5000).concat(now);
@@ -181,6 +199,81 @@ async function pollFrame() {
   }
 }
 
+// ── Picture mode ─────────────────────────────────────────────────────────────
+// A still taken from the glasses freezes the page on that exact image. The
+// boxes were measured on it, so they stay true while you decide, and tapping
+// one leaves that item out of what gets listed. The stream keeps uploading and
+// pricing underneath; only the DISPLAY is pinned, so going back is instant.
+let picture = null;          // { photoId, items, selected:Set }
+let lastPhotoStamp = null;
+const pageLoadedAt = Date.now();
+
+function paintPicture() {
+  const chosen = picture.items.filter((it) => picture.selected.has(it.id));
+  $("total").textContent = "$" + chosen.reduce((sum, it) => sum + (it.price_usd || 0), 0);
+  $("cap").textContent = `estimated resale value · ${chosen.length} of ${picture.items.length} chosen`;
+  $("list").replaceChildren(...picture.items.map((it) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.opacity = picture.selected.has(it.id) ? "1" : ".4";
+    row.style.cursor = "pointer";
+    row.title = it.price_basis || "Estimated resale value";
+    const n = document.createElement("span"); n.className = "n"; n.textContent = it.label;
+    const p = document.createElement("span"); p.className = "p"; p.textContent = "$" + it.price_usd;
+    row.append(n, p);
+    row.addEventListener("click", () => togglePick(it.id));
+    return row;
+  }));
+  $("boxes").classList.add("pick");
+  $("boxes").replaceChildren(...picture.items.map((it) => {
+    const b = document.createElement("div");
+    b.className = "box" + (picture.selected.has(it.id) ? "" : " off");
+    b.style.setProperty("--c", colorFor(it.price_usd));
+    b.style.left = (it.bbox.x / 10) + "%";
+    b.style.top = (it.bbox.y / 10) + "%";
+    b.style.width = (it.bbox.width / 10) + "%";
+    b.style.height = (it.bbox.height / 10) + "%";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = it.label.toUpperCase() + "  $" + it.price_usd;
+    b.append(tag);
+    b.addEventListener("click", () => togglePick(it.id));
+    return b;
+  }));
+}
+
+function togglePick(id) {
+  if (!picture) return;
+  if (picture.selected.has(id)) picture.selected.delete(id); else picture.selected.add(id);
+  paintPicture();
+}
+
+function enterPicture(photo) {
+  picture = { photoId: photo.photo_id, items: photo.items, selected: new Set(photo.items.map((it) => it.id)) };
+  $("shot").src = photo.photo_url;
+  $("shot").hidden = false;
+  $("picBar").hidden = false;
+  $("msg").textContent = photo.items.length ? "" : "Nothing resellable found in that picture.";
+  paintPicture();
+}
+
+function exitPicture() {
+  picture = null;
+  lastId = null;                       // so the very next poll swaps the live frame back in
+  $("picBar").hidden = true;
+  $("boxes").classList.remove("pick");
+  $("boxes").replaceChildren();
+  $("cap").textContent = "estimated resale value";
+  pollItems();
+}
+$("backToLive").addEventListener("click", exitPicture);
+
+// What the review panel should plan from: only what is chosen in the picture,
+// with the picture itself as the listing photo. Null while live.
+window.reloopPicture = () => picture
+  ? { items: picture.items.filter((it) => picture.selected.has(it.id)), photo_id: picture.photoId }
+  : null;
+
 async function pollItems() {
   let data;
   try {
@@ -196,6 +289,15 @@ async function pollItems() {
     if (data?.queue?.last_error) $("msg").textContent = "Pricing error: " + data.queue.last_error;
     return;
   }
+  // A still taken since this page opened freezes the view on it. One taken
+  // before that is history, not something to hijack a fresh page with.
+  const still = data.photo;
+  if (still && still.generated_at !== lastPhotoStamp) {
+    lastPhotoStamp = still.generated_at;
+    if (Date.parse(still.generated_at) > pageLoadedAt) enterPicture(still);
+  }
+  if (picture) return;   // the picture owns the list, the total and the boxes
+
   const refs = $("pricingSources");
   if (refs.dataset.result !== data.generated_at) {
     refs.dataset.result = data.generated_at;
@@ -277,7 +379,16 @@ setInterval(pollItems, ITEM_POLL_MS);
     { id: "zero", label: "Waste nothing", mode: "ZERO_WASTE", amount: true },
     { id: "clear", label: "Clear out fast", mode: "CLEAR_OUT" },
   ];
+  // Where an approved item is listed. Shopify goes live by itself; Marketplace
+  // can only be taken as far as a draft, and Facebook needs a human tap to
+  // publish it, so that last step is handed back to the person here.
+  const CHANNELS = [
+    { id: "shopify", label: "Shopify", channels: ["shopify"] },
+    { id: "marketplace", label: "Marketplace", channels: ["marketplace"] },
+    { id: "both", label: "Both", channels: ["shopify", "marketplace"] },
+  ];
   let chosen = GOALS[0];
+  let channel = CHANNELS[0];
   let plan = null;
   let pricingOn = false;
 
@@ -325,6 +436,19 @@ setInterval(pollItems, ITEM_POLL_MS);
     }
   });
   paintGoals();
+
+  el("channels").innerHTML = CHANNELS.map((c) => `<button type="button" data-chan="${c.id}">${esc(c.label)}</button>`).join("");
+  function paintChannels() {
+    for (const b of el("channels").children) b.classList.toggle("on", b.dataset.chan === channel.id);
+  }
+  el("channels").addEventListener("click", (e) => {
+    const id = e.target.closest("button")?.dataset.chan;
+    if (!id) return;
+    channel = CHANNELS.find((c) => c.id === id);
+    paintChannels();
+    if (plan && !plan.approved) renderConfirm();
+  });
+  paintChannels();
 
   async function api(path, body) {
     const res = await fetch(path, body
@@ -392,7 +516,9 @@ setInterval(pollItems, ITEM_POLL_MS);
     const sell = live.filter((d) => d.action === "SELL");
     const other = live.filter((d) => ["DONATE", "RECYCLE"].includes(d.action));
     const total = sell.reduce((sum, d) => sum + (d.listUsd ?? 0), 0);
-    const bits = [`put <b>${sell.length} item${sell.length === 1 ? "" : "s"}</b> up for sale, asking <b>${usd(total)}</b>`];
+    const where = channel.id === "both" ? "on Shopify and Facebook Marketplace"
+      : channel.id === "marketplace" ? "on Facebook Marketplace" : "on Shopify";
+    const bits = [`put <b>${sell.length} item${sell.length === 1 ? "" : "s"}</b> up for sale ${where}, asking <b>${usd(total)}</b>`];
     if (other.length) bits.push(`and set ${other.length} aside to donate or recycle`);
 
     // The plan was built for the amount that was typed at the time, so if it
@@ -435,7 +561,11 @@ setInterval(pollItems, ITEM_POLL_MS);
     el("makePlan").disabled = true;
     el("plan").innerHTML = `<div class="why">Planning…</div>`;
     try {
-      plan = await api("/api/plans", { goal: currentGoal() });
+      const pic = window.reloopPicture?.();
+      if (pic && pic.items.length === 0) throw new Error("Choose at least one item in the picture.");
+      plan = await api("/api/plans", pic
+        ? { goal: currentGoal(), items: pic.items, photo_id: pic.photo_id }
+        : { goal: currentGoal() });
       kept.clear();
       renderPlan();
     } catch (err) {
@@ -444,6 +574,27 @@ setInterval(pollItems, ITEM_POLL_MS);
       el("plan").innerHTML = `<div class="why">${esc(err.message)}</div>`;
     } finally {
       el("makePlan").disabled = false;
+    }
+  });
+
+  // Confirm out loud instead. Everything chosen on this page has to be true on
+  // the SERVER before the voice session starts, because the assistant reads the
+  // plan from there: the place to list, and any item unticked here. Otherwise
+  // it would read back, and get a yes for, a plan the page no longer shows.
+  el("voice").addEventListener("click", async () => {
+    if (!plan || plan.approved) return;
+    el("voice").disabled = true;
+    try {
+      const id = encodeURIComponent(plan.id);
+      await api(`/api/plans/${id}/channels`, { channels: channel.channels });
+      for (const itemId of kept) {
+        await api(`/api/plans/${id}/revise`, { item_id: itemId, action: "KEEP" });
+      }
+      window.open(`/confirm?plan=${id}`, "_blank", "noopener");
+    } catch (err) {
+      el("msg").textContent = err.message;
+    } finally {
+      el("voice").disabled = false;
     }
   });
 
@@ -466,6 +617,7 @@ setInterval(pollItems, ITEM_POLL_MS);
       const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/approve`, {
         location,
         keep_item_ids: [...kept],
+        channels: channel.channels,
       });
       plan.approved = true;
       el("confirm").hidden = true;
@@ -489,30 +641,61 @@ setInterval(pollItems, ITEM_POLL_MS);
     } catch { return; }
     const card = el("plan").querySelector(`[data-item="${CSS.escape(listing.itemId ?? "")}"] .st`);
     const shop = listing.shopify ?? {};
+    const fb = listing.marketplace ?? {};
     if (card) {
-      if (shop.status === "live") {
-        card.innerHTML = shop.url
-          ? `live · <a href="${esc(shop.url)}" target="_blank" rel="noopener">open listing</a>${shop.dryRun ? " (dry run)" : ""}`
-          : `live${shop.dryRun ? " (dry run)" : ""}`;
-      } else if (shop.status === "unlisted") {
-        // Created, but the storefront link would 404. Offer the admin page,
-        // which does work, rather than a link that looks broken on stage.
-        card.innerHTML = `created but not on the storefront${shop.adminUrl ? ` · <a href="${esc(shop.adminUrl)}" target="_blank" rel="noopener">open in admin</a>` : ""}<br><span style="color:#ffcf6b">${esc(shop.error ?? "")}</span>`;
-      } else if (shop.status === "failed") {
-        card.textContent = `not listed: ${shop.error ?? "unknown error"}`;
-      } else {
-        card.textContent = "listing…";
+      const lines = [];
+      if (shop.status !== "off") {
+        const shopLine =
+          shop.status === "live"
+            ? (shop.url
+                ? `live · <a href="${esc(shop.url)}" target="_blank" rel="noopener">open listing</a>${shop.dryRun ? " (dry run)" : ""}`
+                : `live${shop.dryRun ? " (dry run)" : ""}`)
+            : shop.status === "unlisted"
+              // Created, but the storefront link would 404. Offer the admin
+              // page, which does work, rather than a link that looks broken.
+              ? `created but not on the storefront${shop.adminUrl ? ` · <a href="${esc(shop.adminUrl)}" target="_blank" rel="noopener">open in admin</a>` : ""} <span style="color:#ffcf6b">${esc(shop.error ?? "")}</span>`
+              : shop.status === "failed"
+                ? `not listed: ${esc(shop.error ?? "unknown error")}`
+                : "listing…";
+        lines.push(`<div class="chan"><span class="name">Shopify</span> ${shopLine}</div>`);
       }
-      if (listing.marketplace?.status === "drafted") {
-        card.innerHTML += listing.marketplace.url
-          ? ` · <a href="${esc(listing.marketplace.url)}" target="_blank" rel="noopener">Marketplace draft</a>`
-          : " · Marketplace draft ready";
+      if (fb.status !== "off") {
+        // Facebook will not let an agent publish, so the draft is handed back:
+        // open it, tap Publish there, then tell us it is up.
+        const fbLine =
+          fb.status === "live"
+            ? (fb.url ? `posted · <a href="${esc(fb.url)}" target="_blank" rel="noopener">open</a>` : "posted")
+            : fb.status === "drafted"
+              ? `${fb.url ? `<a href="${esc(fb.url)}" target="_blank" rel="noopener">open draft in Facebook</a>` : "draft ready in Facebook"}
+                 <button type="button" data-posted="${esc(listing.id)}">I published it</button>`
+              : fb.status === "failed"
+                ? `draft failed: ${esc(fb.error ?? "unknown error")}`
+                : "preparing draft… (up to 2 min)";
+        lines.push(`<div class="chan"><span class="name">Marketplace</span> ${fbLine}</div>`);
       }
+      card.innerHTML = lines.join("");
     }
-    const settled = ["live", "unlisted", "failed"].includes(shop.status) &&
-      ["off", "drafted", "failed"].includes(listing.marketplace?.status);
-    if (!settled && attempt < 60) setTimeout(() => pollListing(id, attempt + 1), 2000);
+    // "unlisted" is settled too: the product exists and is not coming back.
+    const shopSettled = ["off", "live", "unlisted", "failed"].includes(shop.status);
+    // "drafted" is not settled: it waits for the person to publish in Facebook.
+    const fbSettled = ["off", "live", "failed"].includes(fb.status);
+    if (!(shopSettled && fbSettled) && attempt < 90) setTimeout(() => pollListing(id, attempt + 1), 2000);
   }
+
+  // "I published it" -> the listing is live on Marketplace, which is what the
+  // dashboard and the event log record.
+  el("plan").addEventListener("click", async (e) => {
+    const listingId = e.target.closest("[data-posted]")?.dataset.posted;
+    if (!listingId) return;
+    e.target.disabled = true;
+    try {
+      await api(`/api/listings/${encodeURIComponent(listingId)}/marketplace`, {});
+      pollListing(listingId, 0);
+    } catch (err) {
+      el("msg").textContent = err.message;
+      e.target.disabled = false;
+    }
+  });
 })();
 </script>
 

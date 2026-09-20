@@ -53,3 +53,10 @@ dist/
 
 
 uv.lock
+# Runtime market state: listings, threads, sales. Regenerated at runtime;
+# committing it ships stale listings that point at deleted Shopify products.
+data/market_state.json
+
+# Stills and frames saved for listings. Real camera images of real rooms and
+# people: never commit them, this repo is public.
+data/photos/

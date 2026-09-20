@@ -49,11 +49,25 @@ Two channels per SELL item, plus an optional third:
 2. **ReLoop store** — live on approval at `/catalog.json`. Our seller agent
    negotiates here with a floor enforced in code, which is what makes the
    negotiation and "sold after you walked away" demo possible.
-3. **Facebook Marketplace (opt-in)** — set `RELOOP_MARKETPLACE_DRAFTS=1`. muse.ai
-   builds a *draft* only: it needs a logged-in Chrome, a public photo URL and up
-   to 150 s per item, and it does not publish or negotiate. A human publishes the
-   draft, then reports it with `POST /api/listings/:id/marketplace { url }`. Off
-   by default, because the demo should not depend on it.
+3. **Facebook Marketplace** — chosen per approval (see below), or defaulted on
+   with `RELOOP_MARKETPLACE_DRAFTS=1`. muse.ai builds a *draft* only: it needs a
+   logged-in Chrome, a public photo URL and up to 150 s per item, and it does not
+   publish or negotiate. Facebook requires a person to tap Publish, so the page
+   hands the draft back: **open draft in Facebook** → publish it there →
+   **I published it**, which calls `POST /api/listings/:id/marketplace` and
+   appends `LISTED`.
+
+### Choosing channels
+
+The **List on** chips on `/` — Shopify, Marketplace, or Both — set `channels` on
+the approve call (`["shopify"]`, `["marketplace"]`, or both). Omitting `channels`
+keeps the server default: Shopify, plus Marketplace when
+`RELOOP_MARKETPLACE_DRAFTS=1`. A channel that is not selected reports `status:
+"off"` on the listing and is not shown on the card.
+
+Each channel resolves independently: a failed Shopify publish does not stop the
+Marketplace draft, one item's draft failing does not stop the others, and the
+approval itself returns immediately either way.
 
 ## The approve flow (what a person actually does)
 
@@ -64,9 +78,11 @@ On `/`:
 2. Point the glasses or phone at the items; prices appear on the feed.
 3. Pick a goal chip, then **Plan these items** — `POST /api/plans`, showing each
    decision with its reason and the expected total. Nothing is listed yet.
-4. **Approve & list** — `POST /api/plans/:id/approve`. Each SELL item is listed
-   in the ReLoop store and published to Shopify; each card then shows "live" with
-   a link to the product (and the Marketplace draft link when that is enabled).
+4. Pick **List on**: Shopify, Marketplace or Both.
+5. **Yes, list N** — `POST /api/plans/:id/approve`. Each SELL item is listed in
+   the ReLoop store and published to the chosen channels; each card then shows
+   its per-channel status. Marketplace cards offer the draft and an **I published
+   it** button once a person has published it in Facebook.
 
 ### Photos, location, category
 

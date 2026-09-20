@@ -77,12 +77,26 @@ struct Presentation: Codable, Equatable {
 // MARK: - POST /api/frames
 
 struct FrameSubmission: Codable {
-    var source: String           // "ios_app"
+    var source: String           // "ios_app", "rayban_sdk", "glasses_photo"
     var sport: String            // selected sport (forward-compat; server may ignore)
     var capturedAt: String       // ISO-8601
     var imageBase64: String
     var width: Int
     var height: Int
+    // A deliberate still is priced immediately instead of waiting for the
+    // streaming interval. Omitted for stream frames so they stay throttled.
+    var forceAnalysis: Bool?
+
+    init(source: String, sport: String = "auto", capturedAt: String,
+         imageBase64: String, width: Int, height: Int, forceAnalysis: Bool? = nil) {
+        self.source = source
+        self.sport = sport
+        self.capturedAt = capturedAt
+        self.imageBase64 = imageBase64
+        self.width = width
+        self.height = height
+        self.forceAnalysis = forceAnalysis
+    }
 }
 
 struct FrameSubmissionResponse: Codable {

@@ -24,6 +24,14 @@ export class ItemAnalyzer {
   // Bumped by reset(). A call that was already in flight when the analyzer
   // was reset must not write its result back afterwards.
   #generation = 0;
+  // A deliberate still that arrived while another analysis was running. It is
+  // held and run next instead of being dropped: a stream frame that loses the
+  // race is replaced by the next one in 200ms, a photo someone chose to take
+  // is not.
+  #pendingForced = null;
+  // The last result that came from a deliberate still, kept apart from
+  // #latest because stream analyses overwrite that every few seconds.
+  #latestPhoto = null;
 
   constructor({ backend = selectedItemsBackend(), intervalMs = DEFAULT_INTERVAL_MS } = {}) {
     this.#backend = backend;
@@ -38,6 +46,8 @@ export class ItemAnalyzer {
     this.#latestAt = 0;
     this.#lastError = null;
     this.#analyzedCount = 0;
+    this.#pendingForced = null;
+    this.#latestPhoto = null;
   }
 
   status() {
@@ -55,11 +65,19 @@ export class ItemAnalyzer {
     return this.#latest;
   }
 
+  latestPhoto() {
+    return this.#latestPhoto;
+  }
+
   // Returns { analysis_status: "analyzed" | "skipped" | "error", ... }. A
   // skipped frame is the normal case — it means a recent result still stands.
   async submit(frame, { force = false } = {}) {
     const now = Date.now();
     if (this.#inFlight) {
+      if (force) {
+        this.#pendingForced = frame; // newest deliberate still wins
+        return { analysis_status: "queued", reason: "analysis_in_flight", items: this.#latest };
+      }
       return { analysis_status: "skipped", reason: "analysis_in_flight", items: this.#latest };
     }
     if (!force && now - this.#lastStartedAt < this.#intervalMs) {
@@ -85,6 +103,7 @@ export class ItemAnalyzer {
       this.#latestAt = Date.now();
       this.#lastError = null;
       this.#analyzedCount += 1;
+      if (frame?.source === "glasses_photo") this.#latestPhoto = this.#latest;
       return { analysis_status: "analyzed", items: this.#latest };
     } catch (err) {
       if (generation !== this.#generation) {
@@ -96,7 +115,13 @@ export class ItemAnalyzer {
       // Only the call that still owns the slot may release it; otherwise a
       // superseded call clears the guard out from under a live one and two
       // model calls run at once.
-      if (generation === this.#generation) this.#inFlight = false;
+      if (generation === this.#generation) {
+        this.#inFlight = false;
+        // Run the still that was waiting, now that the slot is free.
+        const next = this.#pendingForced;
+        this.#pendingForced = null;
+        if (next) this.submit(next, { force: true }).catch(() => {});
+      }
     }
   }
 }
