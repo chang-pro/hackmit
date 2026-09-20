@@ -321,7 +321,7 @@ test("the status page's one read: listings, conversations, what needs a tap, and
   const plan = await post("/api/plans", { items: [{ id: "it_dog", label: "Ceramic Dog Statue", condition: "good", price_usd: 704, price_basis: "comps" }], goal: { mode: "CASH" } });
   const listing = (await post(`/api/plans/${plan.id}/approve`, { channels: ["marketplace"] })).listings[0];
   await new Promise((done) => setTimeout(done, 50)); // the stubbed draft settles
-  const reply = await post(`/api/listings/${listing.id}/messages`, { buyer: "Marcus T.", price_usd: Math.floor(listing.listUsd * 0.7), text: "cash today?" });
+  const reply = await post(`/api/listings/${listing.id}/messages`, { buyer: "Marcus T.", price_usd: Math.floor(listing.listUsd * 0.7), text: "cash today?", channel: "marketplace" });
   assert.match(reply.text, /firm/i);
 
   const status = await (await fetch(`${base}/api/status`)).json();
@@ -332,6 +332,8 @@ test("the status page's one read: listings, conversations, what needs a tap, and
   assert.equal(row.threads[0].messages.length, 2);
   assert.equal(status.totals.waiting_on_you, 1);
   assert.equal(status.totals.conversations, 1);
+  assert.equal(row.threads[0].channel, "facebook", "a relayed buyer is a Facebook buyer");
+  assert.equal(status.totals.unsent_replies, 1, "and the agent's answer is waiting to be delivered");
   assert.equal(status.totals.recovered_usd, 0);
   assert.equal(status.tracker.autoReply, false);
   assert.ok(status.drafts);

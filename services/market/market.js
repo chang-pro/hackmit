@@ -462,7 +462,9 @@ export class Market {
     if (!thread) {
       const open = [...this.threads.values()].filter((t) => t.listingId === listingId).length;
       if (open >= MAX_THREADS_PER_LISTING) throw fail(429, "too many threads on this listing");
-      thread = { id: shortId("thr"), listingId, channel: channel === "facebook" ? "facebook" : "agent", buyer: String(buyer).slice(0, 60), round: 0, lastCounterUsd: null, agreedUsd: null, closed: false, messages: [] };
+      // "marketplace" is what the approve call and the docs name that channel,
+      // so both spellings mean Facebook; anything else is our own API.
+      thread = { id: shortId("thr"), listingId, channel: ["facebook", "marketplace"].includes(String(channel).toLowerCase()) ? "facebook" : "agent", buyer: String(buyer).slice(0, 60), round: 0, lastCounterUsd: null, agreedUsd: null, closed: false, messages: [] };
       this.threads.set(thread.id, thread);
     }
     if (thread.closed) throw fail(409, "this negotiation is closed");
