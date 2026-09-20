@@ -15,7 +15,7 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { publishShopifyListing } from "../shopify/shopify-agent.js";
 import { buildPlan } from "./planner.js";
-import { respond } from "./seller.js";
+import { meetupReply, respond } from "./seller.js";
 
 const HOLD_MS = 10 * 60_000;
 const MAX_THREADS_PER_LISTING = 50;
@@ -476,6 +476,17 @@ export class Market {
     if (offer !== null && (!Number.isFinite(offer) || offer < 0)) throw fail(400, "priceUsd must be a non-negative number");
     const now = new Date().toISOString();
     thread.messages.push({ frm: "BUYER", priceUsd: offer, text: String(text).slice(0, 500), ts: now });
+
+    // The price is already agreed on this thread: the buyer is now setting up
+    // the hand-off ("5pm at the student center?"). Running that through the
+    // haggling policy answered it with the list price and "make me an offer".
+    if (thread.agreedUsd !== null) {
+      const answer = meetupReply(listing, thread.agreedUsd);
+      thread.messages.push({ frm: "SELLER", priceUsd: thread.agreedUsd, text: answer, ts: now });
+      thread.meetup = String(text).slice(0, 200);   // what the buyer proposed, for the owner
+      this.#save();
+      return { threadId: thread.id, move: "MEETUP", priceUsd: thread.agreedUsd, text: answer, listing: this.publicListing(listing) };
+    }
 
     const reply = respond({ priceUsd: offer }, listing, rules, thread.round, thread.lastCounterUsd);
     if (offer !== null) {
