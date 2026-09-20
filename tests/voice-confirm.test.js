@@ -120,7 +120,7 @@ test("the voice session hands the page a token and a setup locked to this plan, 
   assert.equal(status, 201);
   assert.equal(body.token, "auth_tokens/test");
   assert.match(body.ws_url, /BidiGenerateContentConstrained$/);
-  assert.deepEqual(body.setup.tools[0].functionDeclarations.map((f) => f.name), ["revise_item", "request_approval", "cancel"]);
+  assert.deepEqual(body.setup.tools[0].functionDeclarations.map((f) => f.name), ["revise_item", "set_channels", "request_approval", "cancel"]);
   const instruction = body.setup.systemInstruction.parts[0].text;
   for (const d of plan.decisions.filter((x) => x.action === "SELL")) {
     assert.ok(instruction.includes(d.itemId) && instruction.includes(`$${d.listUsd}`), `readback covers ${d.label}`);
@@ -148,4 +148,67 @@ test("the setup asks for both transcripts, since the person's words are what aut
   assert.deepEqual(setupMsg.inputAudioTranscription, {});
   assert.deepEqual(setupMsg.outputAudioTranscription, {});
   assert.deepEqual(setupMsg.generationConfig.responseModalities, ["AUDIO"]);
+});
+
+test("where it lists is chosen by voice, and choosing resets consent", async (t) => {
+  const { post, published } = setup(t);
+  const plan = await newPlan(post);
+
+  // Nothing chosen yet: the assistant is told to ask, not to assume both.
+  const before = await post(`/api/plans/${plan.id}/voice`);
+  const asked = before.body.setup.systemInstruction.parts[0].text;
+  assert.match(asked, /not chosen yet/);
+  assert.doesNotMatch(asked, /to their Shopify store and Facebook Marketplace/);
+
+  const bad = await post(`/api/plans/${plan.id}/channels`, { channels: ["ebay"] });
+  assert.equal(bad.status, 400);
+
+  const set = await post(`/api/plans/${plan.id}/channels`, { channels: ["marketplace"] });
+  assert.equal(set.status, 200);
+  assert.deepEqual(set.body.channels, ["marketplace"]);
+  assert.equal(set.body.revision, 1, "a change of place is a revision like any other");
+
+  // The readback now names the place, and says what Facebook cannot do.
+  const after = await post(`/api/plans/${plan.id}/voice`);
+  assert.match(after.body.setup.systemInstruction.parts[0].text, /Facebook Marketplace \(saved as a draft/);
+
+  // A yes given BEFORE the place changed must not publish to the new place.
+  const stale = await post(`/api/plans/${plan.id}/approve`, { via: "voice", heard: "yes", expected_revision: 0 });
+  assert.equal(stale.status, 409);
+
+  // Approving without naming channels uses the plan's own choice:
+  // Marketplace only, so Shopify is never called.
+  const ok = await post(`/api/plans/${plan.id}/approve`, { via: "voice", heard: "yes, go ahead", expected_revision: 1 });
+  assert.equal(ok.status, 200);
+  for (const listing of ok.body.listings) {
+    assert.equal(listing.shopify.status, "off");
+    assert.equal(listing.marketplace.status, "queued");
+  }
+  assert.equal(published.length, 0, "Shopify was not asked to publish anything");
+});
+
+test("the description is read back, can be reworded, and is what gets published", async (t) => {
+  const { post } = setup(t);
+  const plan = await newPlan(post);
+  const ps4 = plan.decisions.find((d) => d.label === "Sony PS4 Slim");
+  assert.match(ps4.description, /^Sony PS4 Slim, good condition\. Priced from:/, "every item has its description up front");
+
+  const session = await post(`/api/plans/${plan.id}/voice`);
+  assert.ok(session.body.setup.systemInstruction.parts[0].text.includes(ps4.description), "the assistant can read it aloud");
+
+  // A new title flows into a generated description...
+  const retitled = await post(`/api/plans/${plan.id}/revise`, { item_id: ps4.itemId, title: "Sony PS4 Slim 1TB" });
+  assert.match(retitled.body.decisions.find((d) => d.itemId === ps4.itemId).description, /^Sony PS4 Slim 1TB, good condition/);
+
+  // ...but never overwrites words the person chose themselves.
+  const mine = "PS4 Slim with one controller, works perfectly, smoke-free home.";
+  const reworded = await post(`/api/plans/${plan.id}/revise`, { item_id: ps4.itemId, description: mine });
+  assert.equal(reworded.status, 200);
+  const afterCondition = await post(`/api/plans/${plan.id}/revise`, { item_id: ps4.itemId, condition: "like new" });
+  assert.equal(afterCondition.body.decisions.find((d) => d.itemId === ps4.itemId).description, mine);
+
+  const approved = await post(`/api/plans/${plan.id}/approve`, { expected_revision: afterCondition.body.revision });
+  assert.equal(approved.status, 200);
+  const listing = approved.body.listings.find((l) => l.title === "Sony PS4 Slim 1TB");
+  assert.equal(listing.description, mine, "published text is the text that was confirmed");
 });

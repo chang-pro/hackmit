@@ -28,6 +28,15 @@ function fail(statusCode, message) {
 
 const shortId = (prefix) => `${prefix}_${randomUUID().slice(0, 8)}`;
 
+// What a buyer reads. One function so the text confirmed aloud before
+// publishing is exactly the text that gets published.
+export function describeItem(item) {
+  const condition = String(item.condition ?? "good").replace(/_/g, " ");
+  return `${item.label}, ${condition} condition. ${item.price_basis ? `Priced from: ${item.price_basis}.` : ""}`.trim();
+}
+
+const CHANNELS = ["shopify", "marketplace"];
+
 export class Market {
   #eventLog;
   #draftQueue;
@@ -111,6 +120,10 @@ export class Market {
     }));
     const keep = keepIds.map((id) => keyed.find((item) => item.sourceItemId === id || item.id === id)?.id).filter(Boolean);
     const { plan, rules } = buildPlan({ items: keyed, goal, keepIds: keep });
+    for (const decision of plan.decisions) {
+      const item = keyed.find((i) => i.id === decision.itemId);
+      if (item) decision.description = describeItem(item);
+    }
     const stored = { ...plan, id: planId, createdAt: new Date().toISOString(), photoUrl, source, items: keyed };
     this.plans.set(planId, stored);
     this.#pendingRules.set(planId, rules);
@@ -133,7 +146,7 @@ export class Market {
   // listed: a different price, title or condition, or keeping an item after all.
   // Every change bumps plan.revision, so an approval given for an earlier
   // readback cannot publish numbers the person never heard.
-  revisePlan(planId, { itemId, listUsd, title, condition, action } = {}) {
+  revisePlan(planId, { itemId, listUsd, title, condition, action, description } = {}) {
     const plan = this.plans.get(planId);
     if (!plan) throw fail(404, `no plan "${planId}"`);
     if (plan.approved) throw fail(409, "plan is already approved");
@@ -178,6 +191,17 @@ export class Market {
       decision.condition = next;
     }
 
+    if (description !== undefined) {
+      const next = String(description).trim();
+      if (!next) throw fail(400, "description must not be empty");
+      decision.description = next.slice(0, 600);
+      decision.descriptionCustom = true;
+    } else if ((title !== undefined || condition !== undefined) && !decision.descriptionCustom) {
+      // The generated text quotes the title and condition, so it follows them.
+      // Words the person chose themselves are never overwritten.
+      decision.description = describeItem(item);
+    }
+
     // expectedUsd is what the items should sell for, not what they are listed
     // at: the planner lists above the estimate for negotiating room. Each
     // item's autoAcceptUsd is that estimate, scaled above with its price.
@@ -193,6 +217,20 @@ export class Market {
   // options: { location: {lat, lon}, categories: {itemId: name}, photoUrls: {itemId: [url]} }
   // keepIds: items the person unticked while reviewing. They are approved as
   // KEEP -- nothing is listed, published or drafted for them.
+  setPlanChannels(planId, channels) {
+    const plan = this.plans.get(planId);
+    if (!plan) throw fail(404, `no plan "${planId}"`);
+    if (plan.approved) throw fail(409, "plan is already approved");
+    const asked = [...new Set((Array.isArray(channels) ? channels : []).map((c) => String(c).toLowerCase()))];
+    if (!asked.length || asked.some((c) => !CHANNELS.includes(c))) {
+      throw fail(400, `channels must be one or both of: ${CHANNELS.join(", ")}`);
+    }
+    plan.channels = asked;
+    plan.revision = (plan.revision ?? 0) + 1;
+    this.#save();
+    return this.publicPlan(plan);
+  }
+
   // channels: which storefronts this approval publishes to. Defaults to
   // Shopify plus Marketplace when the muse.ai bridge is switched on.
   #channelsFor(requested) {
@@ -209,7 +247,7 @@ export class Market {
     if (expectedRevision !== null && expectedRevision !== (plan.revision ?? 0)) {
       throw fail(409, `plan changed since it was confirmed (revision ${plan.revision ?? 0}, confirmed ${expectedRevision})`);
     }
-    const want = this.#channelsFor(channels);
+    const want = this.#channelsFor(channels ?? plan.channels ?? null);
     const kept = new Set(keepIds);
     for (const decision of plan.decisions) {
       if (!kept.has(decision.itemId)) continue;
@@ -264,7 +302,7 @@ export class Market {
         itemId: item.id,
         title: item.label,
         condition: item.condition,
-        description: `${item.label}, ${String(item.condition ?? "good").replace(/_/g, " ")} condition. ${item.price_basis ? `Priced from: ${item.price_basis}.` : ""}`.trim(),
+        description: decision.description ?? describeItem(item),
         photoUrl: photoUrls[item.id]?.[0] ?? plan.photoUrl ?? null,
         listUsd: decision.listUsd,
         basis: decision.band.basis,
