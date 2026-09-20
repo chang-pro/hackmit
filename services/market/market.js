@@ -467,26 +467,9 @@ export class Market {
       thread = { id: shortId("thr"), listingId, channel: ["facebook", "marketplace"].includes(String(channel).toLowerCase()) ? "facebook" : "agent", buyer: String(buyer).slice(0, 60), round: 0, lastCounterUsd: null, agreedUsd: null, closed: false, messages: [] };
       this.threads.set(thread.id, thread);
     }
-    // A person on Facebook who gets an error gets SILENCE: nothing is sent and
-    // they are left staring at their own message. Our own API can be told no;
-    // a human buyer is always answered.
-    const human = thread.channel === "facebook";
-    const say = (line) => {
-      const ts = new Date().toISOString();
-      thread.messages.push({ frm: "BUYER", priceUsd: null, text: String(text).slice(0, 500), ts });
-      thread.messages.push({ frm: "SELLER", priceUsd: null, text: line, ts });
-      this.#save();
-      return { threadId: thread.id, move: "INFO", priceUsd: null, text: line, listing: this.publicListing(listing) };
-    };
-    if (thread.closed) {
-      if (!human) throw fail(409, "this negotiation is closed");
-      return say(thread.lastCounterUsd
-        ? `Thanks for following up! $${thread.lastCounterUsd} is the best I can do on the ${listing.title}. It's yours at that price whenever you're ready.`
-        : `Thanks for following up! I can't go lower on the ${listing.title}, but it's still available at $${listing.listUsd}.`);
-    }
+    if (thread.closed) throw fail(409, "this negotiation is closed");
     if (listing.status === "PENDING" && listing.hold?.threadId !== thread.id) {
-      if (!human) throw fail(409, "another buyer has a hold on this listing");
-      return say(`Thanks for your interest in the ${listing.title}! I have a sale pending with another buyer right now. If it falls through, you're next and I'll message you right away.`);
+      throw fail(409, "another buyer has a hold on this listing");
     }
 
     const offer = priceUsd === null || priceUsd === undefined || priceUsd === "" ? null : Math.round(Number(priceUsd));
