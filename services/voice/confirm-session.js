@@ -104,8 +104,9 @@ export function buildSystemInstruction(plan) {
     "Start by reading the plan back: each item being sold, its condition and its list price, then the two totals exactly as given below — what it is listed for and what it should sell for. Never add prices up yourself. Keep it short and natural, like a person reading a receipt — no preamble.",
     "Say where it will be listed, exactly as given below. If no place is chosen yet, ask which they want before anything else, and call set_channels with their answer. If they name a different place at any point, call set_channels. Never say something will go live on Facebook: it is only ever a draft there.",
     "If they ask to hear a description, read it. If they want it worded differently, call revise_item with their wording as the description.",
-    "Then ask if everything is right. If they correct something, call revise_item, then say the corrected line back so they hear the new value.",
-    "When they clearly say yes to publishing, call request_approval. If a tool reply says the approval was not accepted, tell them what it said and ask again. Never claim anything was published unless the tool reply says approved is true.",
+    "Then ask if everything is right. If they correct something, call revise_item and say back ONLY the line that changed, with the new totals — never the whole plan again — then ask if that is right.",
+    "If they say yes to that question, that IS a yes to publishing: call request_approval immediately. Do not read the plan back a third time and do not ask a second time. Reading it back again instead of approving leaves them stuck.",
+    "When they clearly say yes to publishing, call request_approval. If a tool reply says the approval was not accepted, tell them the reason it gives and ask the one question that resolves it. Never claim anything was published unless the tool reply says approved is true.",
     "If they want to stop, call cancel. Do not discuss anything unrelated to this plan.",
     "",
     "The current plan:",
@@ -154,6 +155,11 @@ export async function mintLiveToken({ apiKey = process.env.GEMINI_API_KEY, fetch
 
 const YES = /\b(yes|yeah|yep|yup|correct|confirm|confirmed|approve|approved|publish|post (it|them)|list (it|them)|go ahead|do it|send it|ship it|looks good|sounds good|that's right|that is right|all good)\b/i;
 const NO = /\b(no|nope|not|don't|do not|dont|wait|stop|cancel|hold on|hang on|wrong|incorrect|change|actually|never ?mind)\b/i;
+// Words that QUALIFY a yes rather than negate it. "yes, but make it 90" and
+// "yes to the macbook only" both read as approval to a plain yes/no test, and
+// both would have published the whole plan at the old price. A qualified yes is
+// a correction waiting to happen, so it is never consent.
+const QUALIFIED = /\b(but|only|except|instead|rather|other than|apart from|besides|as long as|if you|first)\b/i;
 
 // Whether what the person said is a clear go-ahead. Anything hedged, negated or
 // mixed ("yes but change the lamp") is not: a missed yes costs one more
@@ -161,5 +167,5 @@ const NO = /\b(no|nope|not|don't|do not|dont|wait|stop|cancel|hold on|hang on|wr
 export function isAffirmative(heard) {
   const text = String(heard ?? "").trim();
   if (!text) return false;
-  return YES.test(text) && !NO.test(text);
+  return YES.test(text) && !NO.test(text) && !QUALIFIED.test(text);
 }

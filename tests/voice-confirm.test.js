@@ -212,3 +212,34 @@ test("the description is read back, can be reworded, and is what gets published"
   const listing = approved.body.listings.find((l) => l.title === "Sony PS4 Slim 1TB");
   assert.equal(listing.description, mine, "published text is the text that was confirmed");
 });
+
+test("only an unqualified yes is consent to publish", () => {
+  // A missed yes costs one more question. A false yes publishes listings to a
+  // real store, so everything hedged, negated, scoped or deferred is refused.
+  for (const heard of [
+    "yes", "yeah", "yep", "yup", "sure, go ahead", "go ahead", "do it", "just do it",
+    "publish it", "list them", "send it", "ship it", "looks good", "sounds good",
+    "that is right", "all good", "yes please", "ok publish", "approved", "confirm",
+    "yes that is correct", "perfect, publish",
+  ]) {
+    assert.equal(isAffirmative(heard), true, `"${heard}" is a clear yes`);
+  }
+
+  for (const heard of [
+    // plain refusals and hesitation
+    "no", "nope", "not yet", "wait", "hold on", "stop", "cancel", "never mind",
+    "hmm", "maybe", "I think so", "let me think", "not sure", "um", "", "   ",
+    "can you repeat that", "what was the total", "dont publish", "do not publish", "I said no",
+    // a yes with a correction attached
+    "yes but change the lamp", "yeah hold on", "yes actually wait", "change the price first",
+    // QUALIFIED approvals: these read as yes to a plain test and would have
+    // published the whole plan at the old price
+    "yes, but make it 90", "yes to the macbook only", "publish the lamp but not the macbook",
+    "yes if you fix the price", "yes except the lamp", "yes as long as it is 90",
+    "yes, everything other than the chair", "yes but first read it again",
+    // contradictions
+    "no, yes", "yes no",
+  ]) {
+    assert.equal(isAffirmative(heard), false, `"${heard}" is NOT consent`);
+  }
+});
