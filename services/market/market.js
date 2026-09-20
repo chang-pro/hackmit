@@ -429,7 +429,12 @@ export class Market {
   markMarketplaceLive(listingId, url = null) {
     const listing = this.#listing(listingId);
     listing.marketplace.status = "live";
-    if (url) listing.marketplace.url = url;
+    // Rendered as a link on the dashboard. esc() stops markup, but not a
+    // javascript: URL, so only a real Facebook address is ever stored.
+    if (url) {
+      if (!/^https:\/\/(www\.|m\.)?facebook\.com\//i.test(String(url))) throw fail(400, "url must be a facebook.com link");
+      listing.marketplace.url = String(url);
+    }
     this.#emit({
       kind: "LISTED",
       itemId: listing.itemId,

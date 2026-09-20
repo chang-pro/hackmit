@@ -259,18 +259,31 @@ test("a live stream frame never waits for the model", async (t) => {
   assert.equal(latest.status, 200, "the background analysis completed");
 });
 
+async function until(condition, { timeoutMs = 5000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("condition never became true");
+    await new Promise((done) => setTimeout(done, 5));
+  }
+}
+
 test("a deliberate still is never dropped, is kept, and does not hold the phone's request", async (t) => {
   // Three ways a Take Picture press used to be lost:
   //  - the stream selector rejected it as rate-limited (frames arrive every 200ms)
   //  - an analysis already in flight made the analyzer skip it
   //  - the frame ring (about 30 stream frames, a few seconds) aged it out
-  const MODEL_MS = 600;
+  // The model answers only when the test lets it, so "the phone was answered
+  // while the model was still thinking" is a fact, not a stopwatch reading. The
+  // stopwatch version failed whenever the laptop was busy.
   const seen = [];
+  const release = [];
+  let finished = 0;
   const slow = {
     name: "slow-items",
     async identifyItems(frame) {
       seen.push(frame.source);
-      await new Promise((done) => setTimeout(done, MODEL_MS));
+      await new Promise((done) => release.push(done));
+      finished += 1;
       return { items: [], item_count: 0, total_value_usd: 0, model: "slow", generated_at: new Date().toISOString() };
     },
   };
@@ -285,11 +298,10 @@ test("a deliberate still is never dropped, is kept, and does not hold the phone'
   // ...and the still lands 50ms later: inside the selector's window AND while
   // the analyzer is busy.
   await new Promise((done) => setTimeout(done, 50));
-  const started = Date.now();
   const still = await postFrame(base, framePayload({
     source: "glasses_photo", force_analysis: true, image_base64: "c3RpbGwtcGhvdG8=",
   }));
-  assert.ok(Date.now() - started < MODEL_MS / 2, "the phone is answered at once, not after the model");
+  assert.equal(finished, 0, "the phone is answered while the model is still thinking, not after it");
   assert.equal(still.body.selection.accepted, true, "the stream selector does not thin a still");
   assert.match(still.body.photo_url, /^\/api\/photos\/pho_/, "the still is copied out of the frame ring immediately");
 
@@ -298,10 +310,57 @@ test("a deliberate still is never dropped, is kept, and does not hold the phone'
   assert.equal(photo.status, 200);
 
   // Once the first analysis finishes, the queued still runs by itself.
-  await new Promise((done) => setTimeout(done, MODEL_MS * 2 + 400));
+  assert.deepEqual(seen, ["rayban_sdk"], "the still waits its turn behind the running analysis");
+  release.shift()();
+  await until(() => seen.length === 2);
   assert.deepEqual(seen, ["rayban_sdk", "glasses_photo"], "the still was analyzed, not skipped");
+  release.shift()();
+  await until(() => finished === 2);
 
   const latest = await (await fetch(`${base}/api/items/latest`)).json();
   assert.equal(latest.photo?.frame_source, "glasses_photo");
   assert.equal(latest.photo?.photo_url, still.body.photo_url, "the viewer can find the still's result and its image");
+});
+
+test("another website cannot drive the API", async (t) => {
+  // approve needs no body, so a plain cross-site form could publish listings
+  // to the live store with no preflight. The wildcard CORS grant also let any
+  // page read plans back.
+  const base = startServer(t);
+  const post = (headers) => fetch(`${base}/api/analysis/start`, { method: "POST", headers });
+
+  assert.equal((await post({ Origin: "https://evil.example" })).status, 403);
+  assert.equal((await post({ Origin: "null" })).status, 403, "sandboxed frames and file:// pages");
+  assert.equal((await post({})).status, 200, "the iOS app, curl and agents send no Origin");
+  assert.equal((await post({ Origin: base })).status, 200, "our own pages");
+
+  const viaProxy = await fetch(`${base}/api/analysis/start`, {
+    method: "POST",
+    headers: { Origin: "https://laptop.example.ts.net", "X-Forwarded-Host": "laptop.example.ts.net" },
+  });
+  assert.equal(viaProxy.status, 200, "the same page served through tailscale serve");
+
+  const read = await fetch(`${base}/api/health`, { headers: { Origin: "https://evil.example" } });
+  assert.equal(read.headers.get("access-control-allow-origin"), null, "no wildcard read grant");
+});
+
+test("a still is priced and kept even when stream pricing is off", async (t) => {
+  // Pressing Take Picture is asking for a price. It used to fall through the
+  // stream gate: not priced, not copied out of the frame ring, while the app
+  // said "Photo sent".
+  const base = startServer(t);
+  const stream = await postFrame(base, framePayload({ source: "rayban_sdk" }));
+  assert.equal(stream.body.analysis_status, "disabled", "stream frames stay gated");
+
+  const still = await postFrame(base, framePayload({ source: "glasses_photo", force_analysis: true, image_base64: "YS1zdGlsbA==" }));
+  assert.notEqual(still.body.analysis_status, "disabled");
+  assert.match(still.body.photo_url, /^\/api\/photos\/pho_/);
+});
+
+test("the photo route serves only ids this server mints", async (t) => {
+  const base = startServer(t);
+  for (const id of ["..", "%2e%2e%2f.env", "pho_../../.env", ".env", "x"]) {
+    const res = await fetch(`${base}/api/photos/${id}`);
+    assert.equal(res.status, 404, id);
+  }
 });

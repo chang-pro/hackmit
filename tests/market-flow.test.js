@@ -268,3 +268,37 @@ test("the draft link is the listing, even when muse.ai ends on a question", asyn
   await queue.enqueue({ item: { id: "i1", label: "Nike Blazer Sneakers", price_usd: 30 }, photoUrls: [] }).done;
   assert.equal(queue.status().jobs.at(-1).url, "https://www.facebook.com/marketplace/item/2843490642681154");
 });
+
+test("the seller's floor never reaches a public response", async (t) => {
+  // GET /api/drafts spread each job whole, and the job held the full draft
+  // result, which echoed floor_usd. A buyer's agent could read the seller's
+  // real bottom price as soon as a Marketplace draft finished.
+  const { base } = setupTestServer(t, {
+    mockDraft: async () => ({ reply: "Draft at https://www.facebook.com/marketplace/item/1", floor_usd: 111, floorUsd: 111 }),
+  });
+  const post = (p, b) => fetch(base + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b ?? {}) }).then((r) => r.json());
+  const plan = await post("/api/plans", { items: [{ id: "i", label: "Sony PS4 Slim", condition: "good", price_usd: 185, price_basis: "t" }], goal: {} });
+  const approved = await post(`/api/plans/${plan.id}/approve`, { channels: ["shopify", "marketplace"] });
+  await new Promise((done) => setTimeout(done, 150));
+
+  const listingId = approved.listings[0].id;
+  const bodies = await Promise.all([
+    fetch(`${base}/api/drafts`), fetch(`${base}/api/dashboard`), fetch(`${base}/api/events`),
+    fetch(`${base}/api/listings/${listingId}`), fetch(`${base}/api/plans/${plan.id}`),
+  ].map((p) => p.then((r) => r.text())));
+  const offer = await post(`/api/listings/${listingId}/messages`, { buyer: "b", price_usd: 100 });
+  for (const text of [...bodies, JSON.stringify(approved), JSON.stringify(offer)]) {
+    assert.doesNotMatch(text, /floor|autoAccept|maxRounds/i);
+  }
+});
+
+test("only a real Facebook link is stored when a draft is marked published", async (t) => {
+  const { base } = setupTestServer(t);
+  const post = (p, b) => fetch(base + p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b ?? {}) });
+  const plan = await (await post("/api/plans", { items: [{ id: "i", label: "Lamp", condition: "good", price_usd: 40, price_basis: "t" }], goal: {} })).json();
+  const approved = await (await post(`/api/plans/${plan.id}/approve`, { channels: ["marketplace"] })).json();
+  const id = approved.listings[0].id;
+  assert.equal((await post(`/api/listings/${id}/marketplace`, { url: "javascript:alert(1)" })).status, 400);
+  assert.equal((await post(`/api/listings/${id}/marketplace`, { url: "https://evil.example/facebook.com/" })).status, 400);
+  assert.equal((await post(`/api/listings/${id}/marketplace`, { url: "https://www.facebook.com/marketplace/item/1" })).status, 200);
+});

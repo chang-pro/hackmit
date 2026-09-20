@@ -435,6 +435,23 @@ final class RecorderBox: @unchecked Sendable {
         let u = docs.appendingPathComponent("reloop_\(Int(Date().timeIntervalSince1970)).mp4")
         try? FileManager.default.removeItem(at: u)
         writer = nil; input = nil; started = false; url = u
+        Self.pruneOldRecordings(in: docs, keeping: 8)
+    }
+
+    // Every stream writes a recording and nothing ever removed one, so a day of
+    // demo runs quietly filled the phone. The newest few are plenty: they are a
+    // backup, and they get pulled to the laptop over USB.
+    private static func pruneOldRecordings(in docs: URL, keeping keep: Int) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let recordings = files
+            .filter { $0.pathExtension == "mp4" && $0.lastPathComponent.hasPrefix("reloop_") }
+            .sorted {
+                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return a > b
+            }
+        for old in recordings.dropFirst(keep) { try? fm.removeItem(at: old) }
     }
 
     // The glasses deliver already-encoded HEVC (hvc1) samples, so we write them

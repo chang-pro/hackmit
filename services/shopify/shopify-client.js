@@ -318,6 +318,15 @@ mutation StagedUpload($input: [StagedUploadInput!]!) {
 // For a photo Shopify cannot reach: read the bytes here, push them to Shopify's
 // staged-upload storage, and hand back the URL Shopify gave us for them.
 export async function stageLocalImage(imageUrl, customFetch = fetch) {
+  // photo_url can arrive in a request body. Fetching whatever it names and
+  // publishing the bytes to a public bucket would let a caller read anything
+  // this machine can reach (a router page, a cloud metadata address) and get a
+  // public link to it. Only our own stored photos are ever re-hosted.
+  let path;
+  try { path = new URL(imageUrl).pathname; } catch { path = ""; }
+  if (!/^\/api\/photos\/(pho|demo)_[A-Za-z0-9_-]{1,64}$/.test(path)) {
+    throw new ShopifyError(`refusing to re-host ${imageUrl}: not one of this server's photos`);
+  }
   const local = await customFetch(imageUrl);
   if (!local.ok) throw new ShopifyError(`could not read the photo at ${imageUrl} (${local.status})`);
   const mime = (local.headers.get("content-type") || "image/jpeg").split(";")[0].trim();

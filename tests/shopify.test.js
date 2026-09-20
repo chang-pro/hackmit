@@ -200,3 +200,22 @@ test("only addresses Shopify's servers can reach are handed over by URL", async 
     assert.equal(isPubliclyFetchable(url), true, `${url} is public`);
   }
 });
+
+test("the re-hoster only reads this server's own photos", async () => {
+  // photo_url can arrive in a request body. Fetching whatever it names and
+  // publishing the bytes publicly would hand out a public link to anything
+  // this machine can reach.
+  const { stageLocalImage } = await import("../services/shopify/shopify-client.js");
+  let fetched = 0;
+  const spy = async () => { fetched += 1; return new Response("x", { status: 200 }); };
+  for (const url of [
+    "http://169.254.169.254/latest/meta-data/",
+    "http://192.168.1.1/admin",
+    "http://localhost:3000/api/health",
+    "http://localhost:3000/api/photos/../../.env",
+    "file:///etc/passwd",
+  ]) {
+    await assert.rejects(() => stageLocalImage(url, spy), /refusing to re-host/, url);
+  }
+  assert.equal(fetched, 0, "nothing was even requested");
+});

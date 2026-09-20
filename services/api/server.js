@@ -41,7 +41,7 @@
 //   GET  /dashboard             — the event-log dashboard (goal, recovered $, listing cards)
 
 import { createServer } from "node:http";
-import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -67,6 +67,7 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 // to become a substitute media relay even if a client is modified.
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
 const MAX_PHOTOS = 200;
+const MAX_DISK_PHOTOS = 400;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 const TINY_JPEG = Buffer.from(
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
@@ -76,6 +77,22 @@ const TINY_JPEG = Buffer.from(
 
 function isIceServerList(value) {
   return Array.isArray(value) && value.length > 0 && value.every((server) => server && server.urls);
+}
+
+// True when the request did not come from another website. Compared against
+// both Host and X-Forwarded-Host, because behind `tailscale serve` the page's
+// origin is the ts.net name while Host may be the local address.
+function sameOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin || origin === "null") return origin !== "null";
+  if (process.env.CORS_ORIGIN && origin === process.env.CORS_ORIGIN) return true;
+  let originHost;
+  try { originHost = new URL(origin).host.toLowerCase(); } catch { return false; }
+  const ours = [req.headers.host, req.headers["x-forwarded-host"]]
+    .filter(Boolean)
+    .flatMap((h) => String(h).split(","))
+    .map((h) => h.trim().toLowerCase());
+  return ours.includes(originHost);
 }
 
 function readJsonBody(req) {
@@ -115,7 +132,10 @@ async function readOptionalJsonBody(req) {
 function responseHeaders(contentType = "application/json") {
   return {
     "Content-Type": contentType,
-    "Access-Control-Allow-Origin": process.env.CORS_ORIGIN ?? "*",
+    // No wildcard. Every page is served by this server, so the browser needs no
+    // CORS grant, and a "*" let any website the operator visited read plans
+    // and drive the API. Set CORS_ORIGIN to open it to one known origin.
+    ...(process.env.CORS_ORIGIN ? { "Access-Control-Allow-Origin": process.env.CORS_ORIGIN } : {}),
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Cache-Control": "no-store",
@@ -250,7 +270,8 @@ export function createReLoopServer({
     intervalMs: Number(process.env.REPRICING_INTERVAL_MS ?? 60_000),
     enabled: enableRepricing,
   });
-  const photosDir = join(ROOT, "data", "photos");
+  // Overridable so the test suite keeps its fake photos out of the real folder.
+  const photosDir = process.env.RELOOP_PHOTOS_DIR || join(ROOT, "data", "photos");
   const photos = new Map();
   // frame_id -> photo id, for deliberate stills. The frame ring holds ~30
   // frames, a few seconds of stream, so a still has to be copied out the moment
@@ -308,7 +329,11 @@ export function createReLoopServer({
       return;
     }
 
-    if (!analysisEnabled) {
+    // The gate stops STREAM frames reaching a model before anyone asked for
+    // pricing. A still is someone pressing Take Picture, which is asking. It
+    // used to fall through this gate: not priced, not copied out of the frame
+    // ring, while the app reported "Photo sent".
+    if (!analysisEnabled && body.source !== "glasses_photo") {
       sendJson(res, 202, {
         frame: meta,
         analysis_status: "disabled",
@@ -487,8 +512,22 @@ export function createReLoopServer({
       if (!existsSync(photosDir)) mkdirSync(photosDir, { recursive: true });
       writeFileSync(join(photosDir, `${id}.bin`), bytes);
       writeFileSync(join(photosDir, `${id}.meta`), JSON.stringify({ mime }));
+      pruneStoredPhotos();
     } catch {}
     return id;
+  }
+
+  // Every still and every plan writes a photo and nothing removed one. The
+  // newest few hundred cover every listing anyone could still be looking at.
+  function pruneStoredPhotos(keep = MAX_DISK_PHOTOS) {
+    const bins = readdirSync(photosDir)
+      .filter((name) => name.endsWith(".bin"))
+      .map((name) => ({ name, at: statSync(join(photosDir, name)).mtimeMs }))
+      .sort((a, b) => b.at - a.at);
+    for (const { name } of bins.slice(keep)) {
+      rmSync(join(photosDir, name), { force: true });
+      rmSync(join(photosDir, name.replace(/\.bin$/, ".meta")), { force: true });
+    }
   }
 
   function publicBaseUrl(req) {
@@ -613,6 +652,10 @@ export function createReLoopServer({
       }
       if (req.method === "GET" && parts[1] === "photos" && parts[2]) {
         const photoId = parts[2];
+        if (!/^(pho|demo)_[A-Za-z0-9_-]{1,64}$/.test(photoId)) {
+          sendJson(res, 404, { error: "no such photo" });
+          return;
+        }
         let photo = photos.get(photoId);
         if (!photo) {
           const diskBin = join(photosDir, `${photoId}.bin`);
@@ -872,6 +915,14 @@ export function createReLoopServer({
       // address. This is the difference between "the phone cannot reach the
       // Mac" and "the phone reaches it and the request fails" — without it
       // both look identical from the client side.
+      // A browser always sends Origin on a cross-site POST. If it names some
+      // other site, refuse: approve needs no body, so without this a plain form
+      // on any web page could publish listings to the live store, no preflight
+      // involved. The iOS app, curl and agents send no Origin and are untouched.
+      if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !sameOrigin(req)) {
+        sendJson(res, 403, { error: "cross-site request refused" });
+        return;
+      }
       if (process.env.RELOOP_LOG_REQUESTS) {
         const from = req.socket.remoteAddress ?? "?";
         const size = req.headers["content-length"] ?? "0";
