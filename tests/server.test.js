@@ -423,3 +423,40 @@ test("the model is given the sharpest recent stream frame, not the one that happ
   // ...but the model was shown the sharp one from a moment earlier.
   assert.deepEqual(seen, [16000, 16000]);
 });
+
+test('robot snapshot enters durable photo selection with analysis disabled', async (t) => {
+  const base = startServer(t);
+  const result = await postFrame(base, framePayload({ source: 'robot_snapshot' }));
+  assert.equal(result.body.selection.accepted, true);
+  assert.ok(result.body.photo_id);
+  let data;
+  for (let i = 0; i < 30; i++) {
+    data = await (await fetch(base + '/api/items/latest')).json();
+    if (data.photo) break;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  assert.equal(data.photo.frame_source, 'robot_snapshot');
+  assert.equal(data.photo.photo_id, result.body.photo_id);
+  assert.equal(data.photo.items.length, 2);
+  assert.equal((await fetch(base + data.photo.photo_url)).status, 200);
+});
+
+test('dashboard robot routes hand saved destinations to the mission controller', async (t) => {
+  const calls=[];
+  const controller={job:{state:'idle'},waypoints:async()=>['table'],
+    start:async(name,backend)=>{calls.push({name,backend});return {state:'running'};},
+    cancel:()=>({state:'stopping'})};
+  const server=createReLoopServer({robotController:controller});
+  server.listen(0);t.after(()=>server.close());
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const status=await (await fetch(base+'/api/robot/status')).json();
+  assert.deepEqual(status.waypoints,['table']);
+  const expired=await fetch(base+'/api/robot/go',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destination:'table',issued_at:Date.now()-30000})});
+  assert.equal(expired.status,408);assert.equal(calls.length,0);
+  const result=await fetch(base+'/api/robot/go',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destination:'table',issued_at:Date.now()})});
+  assert.equal(result.status,202);assert.deepEqual(calls,[{name:'table',backend:base}]);
+  const stop=await fetch(base+'/api/robot/stop',{method:'POST'});
+  assert.equal((await stop.json()).state,'stopping');
+  const rejected=await fetch(base+'/api/robot/go',{method:'POST',headers:{Origin:'https://unrelated.example'},body:'{}'});
+  assert.equal(rejected.status,403);
+});

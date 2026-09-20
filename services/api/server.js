@@ -53,6 +53,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { networkInterfaces } from "node:os";
 import { randomUUID } from "node:crypto";
+import { RobotController } from "../robot/controller.js";
 import { ItemAnalyzer } from "./item-analyzer.js";
 import { selectedItemsBackend } from "../vision/backends/items-provider.js";
 import { cropItem } from "./crop.js";
@@ -249,6 +250,7 @@ function parseByteRange(header, size) {
 // ── Server factory ───────────────────────────────────────────────────────────
 
 export function createReLoopServer({
+  robotController = new RobotController({ root: ROOT }),
   gateway = new CaptureGateway(),
   selector = new FrameSelector({ minIntervalMs: 750 }),
   itemAnalyzer = new ItemAnalyzer(),
@@ -371,7 +373,8 @@ export function createReLoopServer({
     // pricing. A still is someone pressing Take Picture, which is asking. It
     // used to fall through this gate: not priced, not copied out of the frame
     // ring, while the app reported "Photo sent".
-    if (!analysisEnabled && body.source !== "glasses_photo") {
+    const isStill = ["glasses_photo", "robot_snapshot"].includes(body.source);
+    if (!analysisEnabled && !isStill) {
       sendJson(res, 202, {
         frame: meta,
         analysis_status: "disabled",
@@ -387,8 +390,8 @@ export function createReLoopServer({
     // as rate-limited. It is not consulted, so its state is not disturbed.
     // Only the glasses still: the phone-photo page keeps its existing
     // contract, where an identical second photo is dropped as a duplicate.
-    const force = body.force_analysis === true || body.source === "phone_photo";
-    const selection = body.source === "glasses_photo"
+    const force = isStill || body.force_analysis === true || body.source === "phone_photo";
+    const selection = isStill
       ? { accepted: true, reason: "deliberate" }
       : selector.consider(body.image_base64);
     if (!selection.accepted) {
@@ -421,10 +424,10 @@ export function createReLoopServer({
     try {
       // Stream frames: hand the model the sharpest of the last moment, not
       // whichever one happened to land now. A deliberate photo is what it is.
-      const isStream = body.source !== "glasses_photo" && body.source !== "phone_photo";
+      const isStream = !isStill && body.source !== "phone_photo";
       const frame = (isStream ? gateway.sharpest(meta) : null) ?? gateway.frame(meta.frame_id);
       let photoId = null;
-      if (body.source === "glasses_photo") {
+      if (isStill) {
         photoId = storePhoto(meta.frame_id);
         if (photoId) {
           photoByFrame.set(meta.frame_id, photoId);
@@ -988,6 +991,29 @@ export function createReLoopServer({
         const from = req.socket.remoteAddress ?? "?";
         const size = req.headers["content-length"] ?? "0";
         console.log(`[req] ${req.method} ${url.pathname} from ${from}:${req.socket.remotePort} (${size}B)`);
+      }
+      if (url.pathname.startsWith("/api/robot/")) {
+        const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress);
+        if (!local) { sendJson(res, 403, {error:"Robot controls are available on this Mac only."}); return; }
+        if (req.method === "GET" && url.pathname === "/api/robot/status") {
+          sendJson(res, 200, { ...robotController.job, waypoints: await robotController.waypoints() });
+        } else if (req.method === "POST" && url.pathname === "/api/robot/go") {
+          const body = await readJsonBody(req);
+          if (!Number.isFinite(body.issued_at) || Math.abs(Date.now() - body.issued_at) > 10000) {
+            sendJson(res, 408, {error:"Mission request expired. Refresh and try again."}); return;
+          }
+          try {
+            const backend = `http://127.0.0.1:${httpServer.address().port}`;
+            sendJson(res, 202, await robotController.start(body.destination, backend));
+          } catch (error) { sendJson(res, error.status || 500, {error:error.message}); }
+        } else if (req.method === "POST" && url.pathname === "/api/robot/stop") {
+          sendJson(res, 200, robotController.cancel());
+        } else sendJson(res, 404, {error:"not found"});
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/robot-controls.js") {
+        const script = await readFile(join(ROOT, "apps/demo-web/robot-controls.js"));
+        res.writeHead(200, {"Content-Type":"text/javascript; charset=utf-8"}); res.end(script); return;
       }
       if (req.method === "OPTIONS") {
         res.writeHead(204, responseHeaders());

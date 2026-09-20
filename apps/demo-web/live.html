@@ -294,7 +294,8 @@ async function pollItems() {
   const still = data.photo;
   if (still && still.generated_at !== lastPhotoStamp) {
     lastPhotoStamp = still.generated_at;
-    if (Date.parse(still.generated_at) > pageLoadedAt) enterPicture(still);
+    if (Date.parse(still.generated_at) > pageLoadedAt ||
+        new URLSearchParams(location.search).get("photo") === still.photo_id) enterPicture(still);
   }
   if (picture) return;   // the picture owns the list, the total and the boxes
 
@@ -729,17 +730,22 @@ setInterval(pollItems, ITEM_POLL_MS);
         `${latest.text}.${d.goal.targetUsd ? ` ${d.goalGapUsd} dollars to go.` : ""}`));
     }
   }
-  const source = new EventSource("/api/events/stream");
-  source.addEventListener("snapshot", (msg) => {
-    events = JSON.parse(msg.data);
-    show([...events].reverse().find((e) => e.text));
-  });
-  source.onmessage = (msg) => {
-    const event = JSON.parse(msg.data);
-    events = event.kind === "RESET" ? [] : [...events, event];
-    if (event.kind === "RESET") box.classList.remove("show");
-    show(event);
-  };
+  let lastShownEvent = null;
+  async function pollAgentEvents() {
+    try {
+      if (!document.hidden) {
+        const response = await fetch('/api/events', {cache:'no-store', signal:AbortSignal.timeout(5000)});
+        if (!response.ok) throw Error('Events unavailable');
+        events = (await response.json()).events;
+        const latest = [...events].reverse().find(e => e.text);
+        if (!latest) { box.classList.remove('show'); lastShownEvent = null; }
+        else if (latest.id !== lastShownEvent) { lastShownEvent = latest.id; show(latest); }
+      }
+    } catch {} finally { setTimeout(pollAgentEvents, 1500); }
+  }
+  pollAgentEvents();
+
 </script>
+<script type="module" src="/robot-controls.js?v=3"></script>
 </body>
 </html>
