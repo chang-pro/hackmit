@@ -348,3 +348,27 @@ test("the status page's one read: listings, conversations, what needs a tap, and
   assert.equal(page.status, 200);
   assert.match(await page.text(), /Check Facebook now/);
 });
+
+test("\"I published it\": a draft the owner has published becomes live and gets followed", async (t) => {
+  const { base } = setupTestServer(t, { tracker: {
+    watch: () => true, setAutoReply: (on) => on, sync: async () => ({}), sendReply: async () => ({}),
+    status: () => ({ autoReply: false, watching: false, checking: false, last: {} }),
+  } });
+  const post = (path, body) => fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) }).then((r) => r.json());
+  const plan = await post("/api/plans", { items: [{ id: "a", label: "Herman Miller Chair", condition: "good", price_usd: 420, price_basis: "comps" }], goal: { mode: "CASH" } });
+  const listing = (await post(`/api/plans/${plan.id}/approve`, { channels: ["marketplace"] })).listings[0];
+  await new Promise((done) => setTimeout(done, 50));
+
+  let status = await (await fetch(`${base}/api/status`)).json();
+  assert.equal(status.listings[0].marketplace.status, "drafted");
+  assert.equal(status.totals.waiting_on_you, 1);
+
+  // The button on /status. No link needed: the draft's own link is kept.
+  const draftUrl = status.listings[0].marketplace.url;
+  await post(`/api/listings/${listing.id}/marketplace`, {});
+  status = await (await fetch(`${base}/api/status`)).json();
+  assert.equal(status.listings[0].marketplace.status, "live");
+  assert.equal(status.listings[0].marketplace.url, draftUrl);
+  assert.equal(status.totals.waiting_on_you, 0);
+  assert.equal(status.totals.live, 1);
+});
