@@ -321,7 +321,10 @@ export function createReLoopServer({
   // scored for resellable objects and a price, which the capture page draws
   // over the feed.
   const datasetWriter = new DatasetWriter(); // enabled only via DATASET_DIR (§16)
-  let analysisEnabled = false;
+  // Off by default so no frame reaches a model unasked. RELOOP_PRICING_ON=1 arms
+  // it at start: on stage, a restart that silently leaves pricing off looks
+  // exactly like a dead API key, and it has already been mistaken for one.
+  let analysisEnabled = process.env.RELOOP_PRICING_ON === "1";
   const webrtcSessions = new Map();
   let activeWebRtcSessionId = null;
 
