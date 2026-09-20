@@ -7,7 +7,7 @@ import { createReLoopServer } from "../services/api/server.js";
 import { DraftQueue } from "../services/market/draft-queue.js";
 import { EventLog } from "../services/events/event-log.js";
 
-function setupTestServer(t, { marketFile = null, mockDraft = null, publish = null, marketplaceDrafts = true } = {}) {
+function setupTestServer(t, { marketFile = null, mockDraft = null, publish = null, marketplaceDrafts = true, tracker = undefined } = {}) {
   const eventLog = new EventLog();
   const draftQueue = new DraftQueue({
     eventLog,
@@ -27,6 +27,7 @@ function setupTestServer(t, { marketFile = null, mockDraft = null, publish = nul
     // so it turns them on. The Shopify publisher is stubbed so no test can
     // reach the live store even if a token is present in the environment.
     marketplaceDrafts,
+    ...(tracker ? { tracker } : {}),
     publish: publish || (async (item) => ({
       success: true,
       dry_run: true,
@@ -301,4 +302,47 @@ test("only a real Facebook link is stored when a draft is marked published", asy
   assert.equal((await post(`/api/listings/${id}/marketplace`, { url: "javascript:alert(1)" })).status, 400);
   assert.equal((await post(`/api/listings/${id}/marketplace`, { url: "https://evil.example/facebook.com/" })).status, 400);
   assert.equal((await post(`/api/listings/${id}/marketplace`, { url: "https://www.facebook.com/marketplace/item/1" })).status, 200);
+});
+
+test("the status page's one read: listings, conversations, what needs a tap, and no floor", async (t) => {
+  // Nothing covered this route: it was deleted by accident once and every test
+  // still passed while the page showed "statusView is not defined".
+  const sentThreads = [];
+  const tracker = {
+    watch: () => false,
+    status: () => ({ autoReply: false, watching: false, checking: false, last: { at: null, error: null, report: null, found: null } }),
+    setAutoReply: (on) => on,
+    sync: async () => ({ checked: 1, wentLive: [], sold: [], removed: [], newMessages: [], replies: [], errors: [] }),
+    sendReply: async (threadId) => { sentThreads.push(threadId); return { threadId, sent: true, note: "sent" }; },
+  };
+  const { base } = setupTestServer(t, { tracker });
+  const post = (path, body) => fetch(base + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) }).then((r) => r.json());
+
+  const plan = await post("/api/plans", { items: [{ id: "it_dog", label: "Ceramic Dog Statue", condition: "good", price_usd: 704, price_basis: "comps" }], goal: { mode: "CASH" } });
+  const listing = (await post(`/api/plans/${plan.id}/approve`, { channels: ["marketplace"] })).listings[0];
+  await new Promise((done) => setTimeout(done, 50)); // the stubbed draft settles
+  const reply = await post(`/api/listings/${listing.id}/messages`, { buyer: "Marcus T.", price_usd: Math.floor(listing.listUsd * 0.7), text: "cash today?" });
+  assert.match(reply.text, /firm/i);
+
+  const status = await (await fetch(`${base}/api/status`)).json();
+  const row = status.listings.find((l) => l.id === listing.id);
+  assert.equal(row.goalMode, "CASH");
+  assert.equal(row.marketplace.status, "drafted");
+  assert.equal(row.threads.length, 1);
+  assert.equal(row.threads[0].messages.length, 2);
+  assert.equal(status.totals.waiting_on_you, 1);
+  assert.equal(status.totals.conversations, 1);
+  assert.equal(status.totals.recovered_usd, 0);
+  assert.equal(status.tracker.autoReply, false);
+  assert.ok(status.drafts);
+  assert.doesNotMatch(JSON.stringify(status), /floor|autoAccept|maxRounds/i);
+
+  // The page's buttons reach the tracker, and the page itself is served.
+  assert.equal((await post(`/api/status/threads/${row.threads[0].id}/send`)).sent, true);
+  assert.deepEqual(sentThreads, [row.threads[0].id]);
+  assert.equal((await post("/api/status/sync")).found.checked, 1);
+  assert.equal((await post("/api/status/auto-reply", { on: true })).auto_reply, true);
+  const page = await fetch(`${base}/status`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Check Facebook now/);
 });

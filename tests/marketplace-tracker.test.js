@@ -159,3 +159,20 @@ test("a draft's link is kept for the owner to publish, and a removed listing sto
   assert.equal(market.getListing(listing.id).marketplace.status, "removed");
   assert.equal((await tracker.sync()).checked, 0, "muse is not asked about it again");
 });
+
+test("pressing Send twice delivers the reply once", async () => {
+  const { market, listing } = listed("CASH");
+  const r = market.message(listing.id, { buyer: "Jake", priceUsd: 10, text: "10 bucks?", channel: "facebook" });
+  let deliveries = 0;
+  const tracker = new MarketplaceTracker({
+    market,
+    ask: async () => { deliveries += 1; await new Promise((done) => setTimeout(done, 30)); return { reply: "Sent." }; },
+    read: async () => ({ listings: [], messages: [] }),
+  });
+  const [a, b] = await Promise.all([tracker.sendReply(r.threadId), tracker.sendReply(r.threadId)]);
+  assert.equal(deliveries, 1);
+  assert.equal(a.sent, true);
+  assert.equal(b.sent, true);
+  assert.equal((await tracker.sendReply(r.threadId)).note, "already sent");
+  assert.equal(deliveries, 1);
+});

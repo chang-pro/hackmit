@@ -792,6 +792,8 @@ export function createReLoopServer({
     if (!latest) {
       sendJson(res, 404, {
         error: "no analyzed items yet",
+        // Lets the page tell "pricing is off" from "looking, nothing back yet".
+        analysis_enabled: analysisEnabled,
         queue: itemAnalyzer.status(),
       });
       return;
@@ -805,6 +807,7 @@ export function createReLoopServer({
       photo: still && stillPhotoId
         ? { ...still, photo_id: stillPhotoId, photo_url: `/api/photos/${stillPhotoId}` }
         : null,
+      analysis_enabled: analysisEnabled,
       queue: itemAnalyzer.status(),
     });
   }
