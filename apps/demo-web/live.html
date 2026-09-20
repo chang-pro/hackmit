@@ -29,15 +29,8 @@
   #boxes.pick .box.off { opacity: .35; border-style: dashed; background: none; }
   #boxes.pick .box.off .tag { opacity: .6; text-decoration: line-through; }
   /* Scanning: the first price takes about five seconds, and a still picture
-     with "$0" under it for five seconds reads as broken. A sweep over the feed
-     and placeholder rows say "working on it" instead. */
-  #scan { position: absolute; inset: 0; border-radius: 12px; pointer-events: none; overflow: hidden; opacity: 0; transition: opacity .4s; }
-  #scan::before { content: ""; position: absolute; left: 0; right: 0; height: 22%; top: -22%;
-    background: linear-gradient(to bottom, transparent, rgba(85,227,155,.16) 70%, rgba(85,227,155,.55));
-    border-bottom: 2px solid #55e39b; animation: sweep 2.2s cubic-bezier(.45,0,.55,1) infinite; }
-  #stage.scanning #scan { opacity: 1; }
-  #stage.relooking #scan { opacity: .35; }
-  @keyframes sweep { to { top: 100%; } }
+     with "$0" under it for five seconds reads as broken. Placeholder rows and
+     a caption say "working on it" instead; nothing is drawn over the feed. */
   .row.ghost { pointer-events: none; }
   .row.ghost span { display: block; height: .8em; border-radius: 4px; color: transparent;
     background: linear-gradient(90deg, #1a2030 25%, #2a3348 50%, #1a2030 75%); background-size: 200% 100%;
@@ -47,7 +40,7 @@
   @keyframes shimmer { to { background-position: -200% 0; } }
   #cap.busy::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: dots 1.2s steps(4, end) infinite; }
   @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
-  @media (prefers-reduced-motion: reduce) { #scan::before, .row.ghost span, #cap.busy::after { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .row.ghost span, #cap.busy::after { animation: none; } }
   #picBar { margin-top: .6rem; display: flex; gap: .7rem; align-items: center; line-height: 1.3; font-size: .78rem; color: #ffcf6b; }
   #picBar[hidden] { display: none; }
   #picBar button { padding: .3rem .7rem; border-radius: 8px; border: 1px solid #39425a; background: #161b27; color: #e7ecf5; font: inherit; cursor: pointer; }
@@ -132,7 +125,6 @@
   <div id="stage">
     <img id="shot" alt="Newest frame from the glasses" hidden />
     <div id="boxes"></div>
-    <div id="scan" aria-hidden="true"></div>
     <div id="picBar" hidden>
       <span>Picture · tap an item to leave it out</span>
       <button id="backToLive" type="button">Back to live</button>
@@ -316,8 +308,6 @@ window.reloopPicture = () => picture
 //   "relooking" there is a result on screen and the model is looking again
 //   "off"/"idle" nothing is being looked at, and the panel says why
 function setScanState(state) {
-  $("stage").classList.toggle("scanning", state === "scanning");
-  $("stage").classList.toggle("relooking", state === "relooking");
   const cap = $("cap");
   cap.classList.toggle("busy", state === "scanning");
   if (state === "scanning") {
