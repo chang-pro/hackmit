@@ -60,3 +60,7 @@ data/market_state.json
 # Stills and frames saved for listings. Real camera images of real rooms and
 # people: never commit them, this repo is public.
 data/photos/
+
+# Local presentation and submission drafts
+/docs/launch/loop-os-presentation.md
+/docs/launch/loop-os-plume.md

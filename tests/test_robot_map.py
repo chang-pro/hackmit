@@ -77,6 +77,25 @@ def test_wrong_viewpoint_rejected():
         module.navigate(a, goal)
     assert a.GO2Connection.stopped
 
+def test_clearance_adjusted_endpoint_within_half_meter_accepted():
+    a = app(x=1.36)
+    module.navigate(a, goal)
+    assert a.GO2Connection.stopped
+
+def test_endpoint_beyond_half_meter_rejected_with_measurement():
+    a = app(x=1.51)
+    with pytest.raises(RuntimeError, match='0.51 m away'):
+        module.navigate(a, goal)
+    assert a.GO2Connection.stopped
+
+def test_heading_limit_preserved_at_nearby_endpoint():
+    a = app()
+    a.GO2Connection.peek_stream = lambda *args: SimpleNamespace(
+        x=1.35, y=2, z=0, yaw=module.math.radians(21), frame_id='world', ts=time.time())
+    with pytest.raises(RuntimeError, match='21.0 degrees off'):
+        module.navigate(a, goal)
+    assert a.GO2Connection.stopped
+
 def test_old_map_rejected():
     with pytest.raises(RuntimeError, match='earlier'):
         module.validate_waypoint({'run_id':'old', 'frame_id':'world'}, 'new', 'world')

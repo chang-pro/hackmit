@@ -9,6 +9,9 @@ import sys
 import time
 
 WAYPOINTS = Path(__file__).resolve().parents[1] / '.reloop' / 'robot-waypoints.json'
+# Scan acceptance only; these do not change the planner's obstacle clearance.
+SCAN_POSITION_TOLERANCE = 0.5
+SCAN_HEADING_TOLERANCE = math.radians(20)
 
 
 def active_run():
@@ -88,8 +91,15 @@ def navigate(app, goal, timeout=120, clock=time.monotonic, sleep=time.sleep):
                 pose = read_pose(robot)
                 distance = math.hypot(pose.x - goal.x, pose.y - goal.y)
                 angle = abs(math.atan2(math.sin(pose.yaw - goal.yaw), math.cos(pose.yaw - goal.yaw)))
-                if pose.frame_id != goal.frame_id or distance > 0.3 or angle > math.radians(20):
-                    raise RuntimeError('Arrival reported but viewpoint does not match; scan cancelled.')
+                if pose.frame_id != goal.frame_id:
+                    raise RuntimeError('Arrival reference frame changed; save the viewpoint again. Scan cancelled.')
+                if distance > SCAN_POSITION_TOLERANCE or angle > SCAN_HEADING_TOLERANCE:
+                    raise RuntimeError(
+                        'Arrival reported but viewpoint does not match: '
+                        f'{distance:.2f} m away (limit {SCAN_POSITION_TOLERANCE:.2f} m), '
+                        f'{math.degrees(angle):.1f} degrees off (limit 20). '
+                        'Save a clear viewpoint facing the objects and retry; scan cancelled.'
+                    )
                 return
             if planner.get_state().value == 'idle':
                 # DimOS exposes local "arrived" as IDLE before its global
