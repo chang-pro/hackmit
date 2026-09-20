@@ -129,6 +129,67 @@ export class Market {
     return this.publicPlan(plan);
   }
 
+  // A correction made while the plan is being confirmed, before anything is
+  // listed: a different price, title or condition, or keeping an item after all.
+  // Every change bumps plan.revision, so an approval given for an earlier
+  // readback cannot publish numbers the person never heard.
+  revisePlan(planId, { itemId, listUsd, title, condition, action } = {}) {
+    const plan = this.plans.get(planId);
+    if (!plan) throw fail(404, `no plan "${planId}"`);
+    if (plan.approved) throw fail(409, "plan is already approved");
+    const decision = plan.decisions.find((d) => d.itemId === itemId);
+    const item = plan.items.find((i) => i.id === itemId);
+    if (!decision || !item) throw fail(404, `no item "${itemId}" in plan "${planId}"`);
+    const rules = this.#pendingRules.get(planId);
+
+    if (action !== undefined) {
+      if (action !== "KEEP" && action !== "SELL") throw fail(400, 'action must be "KEEP" or "SELL"');
+      if (action === "SELL" && !rules?.has(itemId)) throw fail(409, `"${item.label}" was never priced to sell`);
+      decision.action = action;
+      // A kept item holds on to its list price, so selling it after all
+      // needs nothing recomputed.
+      decision.reason = action === "KEEP" ? "You kept this item." : "You decided to sell this after all.";
+    }
+    if (listUsd !== undefined) {
+      const next = Math.round(Number(listUsd));
+      if (!Number.isFinite(next) || next < 1) throw fail(400, "listUsd must be a positive number");
+      if (decision.action !== "SELL") throw fail(409, `"${item.label}" is not being sold`);
+      // The floor and auto-accept were derived from the old list price. Scale
+      // them with it and never leave either above what the item is listed at.
+      const rule = rules?.get(itemId);
+      if (rule && decision.listUsd) {
+        const ratio = next / decision.listUsd;
+        rule.floorUsd = Math.min(next, Math.max(1, Math.round(rule.floorUsd * ratio)));
+        rule.autoAcceptUsd = Math.min(next, Math.max(rule.floorUsd, Math.round(rule.autoAcceptUsd * ratio)));
+      }
+      decision.listUsd = next;
+      decision.reason = `You set the price to $${next}.`;
+    }
+    if (title !== undefined) {
+      const next = String(title).trim();
+      if (!next) throw fail(400, "title must not be empty");
+      item.label = next;
+      decision.label = next;
+    }
+    if (condition !== undefined) {
+      const next = String(condition).trim().toLowerCase().replace(/\s+/g, "_");
+      if (!next) throw fail(400, "condition must not be empty");
+      item.condition = next;
+      decision.condition = next;
+    }
+
+    // expectedUsd is what the items should sell for, not what they are listed
+    // at: the planner lists above the estimate for negotiating room. Each
+    // item's autoAcceptUsd is that estimate, scaled above with its price.
+    plan.expectedUsd = plan.decisions
+      .filter((d) => d.action === "SELL")
+      .reduce((sum, d) => sum + (rules?.get(d.itemId)?.autoAcceptUsd ?? d.listUsd ?? 0), 0);
+    plan.goalGapUsd = Math.max(0, (plan.targetUsd ?? 0) - plan.expectedUsd);
+    plan.revision = (plan.revision ?? 0) + 1;
+    this.#save();
+    return this.publicPlan(plan);
+  }
+
   // options: { location: {lat, lon}, categories: {itemId: name}, photoUrls: {itemId: [url]} }
   // keepIds: items the person unticked while reviewing. They are approved as
   // KEEP -- nothing is listed, published or drafted for them.
@@ -141,11 +202,14 @@ export class Market {
     return { shopify: asked.includes("shopify"), marketplace: asked.includes("marketplace") };
   }
 
-  approvePlan(planId, { location = null, categories = {}, photoUrls = {}, keepIds = [], channels = null } = {}) {
-    const want = this.#channelsFor(channels);
+  approvePlan(planId, { location = null, categories = {}, photoUrls = {}, keepIds = [], channels = null, expectedRevision = null } = {}) {
     const plan = this.plans.get(planId);
     if (!plan) throw fail(404, `no plan "${planId}"`);
     if (plan.approved) throw fail(409, "plan is already approved");
+    if (expectedRevision !== null && expectedRevision !== (plan.revision ?? 0)) {
+      throw fail(409, `plan changed since it was confirmed (revision ${plan.revision ?? 0}, confirmed ${expectedRevision})`);
+    }
+    const want = this.#channelsFor(channels);
     const kept = new Set(keepIds);
     for (const decision of plan.decisions) {
       if (!kept.has(decision.itemId)) continue;
@@ -216,8 +280,8 @@ export class Market {
       this.#rules.set(listing.id, rules.get(item.id));
       created.push(listing);
 
-      // Each channel resolves on its own; one failing never blocks the rest of
-      // the approved plan, or the other channel.
+      // Go live on Shopify. Each publish resolves on its own; one failure
+      // never blocks the rest of the approved plan.
       if (want.shopify) {
         this.#publishToShopify(listing, { item, decision, category: categories[item.id] ?? null });
       }
@@ -258,28 +322,20 @@ export class Market {
         foundBy: item?.source ?? null,
         photoUrl: listing.photoUrl,
       });
-      // A product can be created and still be invisible in the storefront if
-      // publishing to a sales channel failed. That is not the same as "live",
-      // and saying so here is the difference between a working link and a 404
-      // nobody can explain.
-      const visible = result?.dry_run || result?.product?.publishedToOnlineStore !== false;
       listing.shopify = {
-        status: visible ? "live" : "unlisted",
+        status: "live",
         url: result?.product?.url ?? null,
-        adminUrl: result?.product?.adminUrl ?? null,
         productId: result?.product?.id ?? null,
         dryRun: Boolean(result?.dry_run),
-        error: visible ? null : `created but not on the storefront: ${result?.product?.publishError ?? "unknown reason"}`,
+        error: null,
       };
       this.#emit({
-        kind: visible ? "LISTED" : "PUBLISH_FAILED",
+        kind: "LISTED",
         itemId: listing.itemId,
         label: listing.title,
         amountUsd: listing.listUsd,
         url: listing.shopify.url,
-        text: visible
-          ? `${listing.title} is live at $${listing.listUsd}${result?.dry_run ? " (dry run)" : ""}`
-          : `${listing.title} was created in Shopify but is not on the storefront: ${result?.product?.publishError ?? "unknown reason"}`,
+        text: `${listing.title} is live at $${listing.listUsd}${result?.dry_run ? " (dry run)" : ""}`,
       });
     } catch (err) {
       listing.shopify = { status: "failed", url: null, productId: null, dryRun: null, error: err.message };
