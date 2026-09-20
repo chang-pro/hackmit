@@ -11,6 +11,9 @@ function setupTestServer(t, { marketFile = null, mockDraft = null, publish = nul
   const eventLog = new EventLog();
   const draftQueue = new DraftQueue({
     eventLog,
+    // Photos are re-hosted publicly before a draft is sent, because muse.ai
+    // fetches them on its own VM. Stubbed so no test reaches Shopify.
+    host: async (url) => url,
     draft: mockDraft || (async (item) => ({
       reply: `Created draft for ${item.label} at https://www.facebook.com/marketplace/item/99887766`,
     })),
@@ -204,4 +207,64 @@ test("photo endpoint serves demo fallbacks without 404", async (t) => {
   assert.equal(res1.headers.get("content-type"), "image/jpeg");
   const bytes = Buffer.from(await res1.arrayBuffer());
   assert.ok(bytes.length > 0);
+});
+
+test("a slow draft is not retried into a duplicate listing", async (t) => {
+  // muse.ai builds the listing on its own VM and can take minutes. A timeout
+  // means it is probably still working, so asking again creates a SECOND
+  // listing for the same item. Observed for real: the reply landed after the
+  // old 150s limit, and the listing existed the whole time.
+  let attempts = 0;
+  const queue = new DraftQueue({
+    eventLog: new EventLog(),
+    host: async (url) => url,
+    draft: async () => {
+      attempts += 1;
+      throw new Error("muse.ai did not reply within 300000ms");
+    },
+    retries: 3,
+  });
+  const { done } = queue.enqueue({ item: { id: "i1", label: "Slow Item", price_usd: 20 }, photoUrls: [] });
+  await done;
+  const job = queue.status().jobs.at(-1);
+  assert.equal(attempts, 1, "a timeout is never retried");
+  assert.equal(job.status, "failed");
+  assert.match(job.error, /check Marketplace before trying again/);
+});
+
+test("a photo muse.ai cannot reach is re-hosted, and losing it does not stop the draft", async (t) => {
+  // Verified against the real service: muse.ai downloads photos on its own VM,
+  // where our localhost address is refused and the tailnet one is unreachable.
+  // Listings created before this went out with no picture.
+  const hostedWith = [];
+  const sentWith = [];
+  const queue = new DraftQueue({
+    eventLog: new EventLog(),
+    host: async (url) => { hostedWith.push(url); return url.includes("unhostable") ? null : "https://cdn.example.com/hosted.jpg"; },
+    draft: async (item, opts) => { sentWith.push(opts.photoUrls); return { reply: "Draft at https://www.facebook.com/marketplace/item/1" }; },
+  });
+
+  await queue.enqueue({ item: { id: "i1", label: "A", price_usd: 5 }, photoUrls: ["http://localhost:3000/api/photos/pho_1"] }).done;
+  assert.deepEqual(hostedWith, ["http://localhost:3000/api/photos/pho_1"]);
+  assert.deepEqual(sentWith[0], ["https://cdn.example.com/hosted.jpg"], "muse.ai is given the public URL");
+
+  await queue.enqueue({ item: { id: "i2", label: "B", price_usd: 5 }, photoUrls: ["http://localhost:3000/unhostable.jpg"] }).done;
+  const job = queue.status().jobs.at(-1);
+  assert.equal(job.status, "done", "a listing without its photo beats no listing");
+  assert.deepEqual(sentWith[1], []);
+  assert.match(job.photoError, /could not be hosted/);
+});
+
+test("the draft link is the listing, even when muse.ai ends on a question", async () => {
+  // Its real reply was: "<link> ... Want me to change anything on it, or add
+  // the location and publish?" — the link is not in the last sentence.
+  const queue = new DraftQueue({
+    eventLog: new EventLog(),
+    host: async (u) => u,
+    draft: async () => ({
+      reply: "Built it: https://www.facebook.com/marketplace/item/2843490642681154\n\nWant me to change anything on it, or add the location and publish?",
+    }),
+  });
+  await queue.enqueue({ item: { id: "i1", label: "Nike Blazer Sneakers", price_usd: 30 }, photoUrls: [] }).done;
+  assert.equal(queue.status().jobs.at(-1).url, "https://www.facebook.com/marketplace/item/2843490642681154");
 });

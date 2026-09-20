@@ -317,7 +317,7 @@ mutation StagedUpload($input: [StagedUploadInput!]!) {
 
 // For a photo Shopify cannot reach: read the bytes here, push them to Shopify's
 // staged-upload storage, and hand back the URL Shopify gave us for them.
-async function stageLocalImage(imageUrl, customFetch) {
+export async function stageLocalImage(imageUrl, customFetch = fetch) {
   const local = await customFetch(imageUrl);
   if (!local.ok) throw new ShopifyError(`could not read the photo at ${imageUrl} (${local.status})`);
   const mime = (local.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
@@ -508,3 +508,21 @@ export async function createProduct({
   };
 }
 
+// A URL anyone on the internet can fetch, for a photo that currently lives on
+// this machine. muse.ai downloads Marketplace photos on ITS OWN VM — verified:
+// localhost is refused and the tailnet address is unreachable from there — so a
+// local path means a listing with no picture. Shopify's staged-upload bucket is
+// already available to us and serves the file publicly, so it doubles as
+// hosting. Returns the original URL when it is already public, and null when it
+// cannot be hosted, so callers can carry on without a photo.
+export async function publicPhotoUrl(imageUrl, customFetch = fetch) {
+  if (!imageUrl) return null;
+  if (isPubliclyFetchable(imageUrl)) return imageUrl;
+  const { isDryRun } = getShopifyConfig();
+  if (isDryRun) return null;
+  try {
+    return await stageLocalImage(imageUrl, customFetch);
+  } catch {
+    return null;
+  }
+}
