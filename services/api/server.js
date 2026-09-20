@@ -39,7 +39,7 @@
 //   GET  /api/analysis/status    — whether analysis is armed, plus the queue
 //   GET  /, /live               — the glasses feed with prices on it
 //   GET  /dashboard             — the event-log dashboard (goal, recovered $, listing cards)
-//   GET  /status                — placeholder: active listings + agent conversations
+//   GET  /status                — listings, where each one stands, and the haggling
 //   GET  /api/status            — data for that page: listings, channel state, conversations, totals
 //   POST /api/status/sync       — ask muse where the Facebook listings stand and who wrote in
 //   POST /api/status/auto-reply — { on } let the seller agent answer Facebook buyers unattended
@@ -1096,11 +1096,8 @@ export function createReLoopServer({
         sendJson(res, 200, { watching: tracker.watch(body.on === false ? 0 : Math.max(30, Number(body.every_s) || 120) * 1000) });
       } else if (req.method === "POST" && /^\/api\/status\/threads\/[A-Za-z0-9_-]+\/send$/.test(url.pathname)) {
         sendJson(res, 200, await tracker.sendReply(url.pathname.split("/")[4]));
-      } else if (req.method === "GET" && url.pathname === "/status") {
-        // Placeholder: a page to show active listings and the seller agent's
-        // conversation with a buyer. Empty for now so the route exists and can
-        // be linked to while it is being built.
-        sendJson(res, 200, {});
+      } else if (req.method === "GET" && (url.pathname === "/status" || url.pathname === "/status.html")) {
+        await sendHtml(res, "status.html");
       } else if (req.method === "GET" && url.pathname === "/api/dashboard") {
         sendJson(res, 200, foldDashboard(eventLog.list()));
       } else if (
