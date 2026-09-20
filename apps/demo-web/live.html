@@ -62,8 +62,17 @@
   button.go:hover:not(:disabled) { background: #6cf0ab; }
   #panel { margin-top: 1.1rem; border-top: 1px solid #222838; padding-top: .9rem; }
   .eyebrow { color: #7d8aa3; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .5rem; }
-  #goals, #channels { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; }
-  #goals button.on, #channels button.on { background: #2b3550; border-color: #55e39b; }
+  #goals, #channels { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; align-items: stretch; }
+  #goals button.on, #channels button.on, .goal-amount.on { background: #2b3550; border-color: #55e39b; }
+  /* The cash goal is a chip you can type in: same shape as the others, with
+     the amount editable in place instead of fixed at one number. */
+  .goal-amount { display: flex; align-items: baseline; gap: .1rem; cursor: text;
+                 background: #1a1f2c; border: 1px solid #2c3446; border-radius: 8px; padding: .45rem .7rem; }
+  .goal-amount:hover { border-color: #3d4761; }
+  .goal-amount input { width: 3.6rem; font: inherit; color: inherit; background: none; border: 0;
+                       border-bottom: 1px dashed #55e39b88; padding: 0 .1rem; text-align: right; }
+  .goal-amount input:focus { outline: none; border-bottom-color: #55e39b; }
+  .goal-amount input::-webkit-outer-spin-button, .goal-amount input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .chan { margin-top: .25rem; font-size: .7rem; color: #9aa6bd; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
   .chan .name { color: #7d8aa3; }
   .chan button { padding: .2rem .45rem; font-size: .68rem; }
@@ -363,10 +372,12 @@ setInterval(pollItems, ITEM_POLL_MS);
   const usd = (n) => `$${Math.round(Number(n) || 0).toLocaleString("en-US")}`;
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const ACTION_COLOR = { SELL: "#55e39b", DONATE: "#79c8ff", RECYCLE: "#ffcf6b", KEEP: "#9fb0d5" };
+  // The cash target is typed, not fixed: "$300" was only ever a placeholder,
+  // and the amount someone actually needs is the whole point of the goal.
   const GOALS = [
-    { id: "cash", label: "$300 cash", goal: { mode: "CASH", targetUsd: 300 } },
-    { id: "zero", label: "Waste nothing", goal: { mode: "ZERO_WASTE", targetUsd: 300 } },
-    { id: "clear", label: "Clear out fast", goal: { mode: "CLEAR_OUT" } },
+    { id: "cash", mode: "CASH", amount: true },
+    { id: "zero", label: "Waste nothing", mode: "ZERO_WASTE", amount: true },
+    { id: "clear", label: "Clear out fast", mode: "CLEAR_OUT" },
   ];
   // Where an approved item is listed. Shopify goes live by itself; Marketplace
   // can only be taken as far as a draft, and Facebook needs a human tap to
@@ -381,15 +392,48 @@ setInterval(pollItems, ITEM_POLL_MS);
   let plan = null;
   let pricingOn = false;
 
-  el("goals").innerHTML = GOALS.map((g) => `<button type="button" data-goal="${g.id}">${esc(g.label)}</button>`).join("");
+  el("goals").innerHTML = `
+    <label class="goal-amount" data-goal="cash">$<input id="cashTarget" type="number" inputmode="numeric"
+           min="1" max="1000000" step="5" value="300" aria-label="Cash goal in dollars" /> cash</label>
+    ${GOALS.filter((g) => g.label).map((g) => `<button type="button" data-goal="${g.id}">${esc(g.label)}</button>`).join("")}`;
+
+  function targetUsd() {
+    const raw = Math.round(Number(el("cashTarget").value));
+    return Number.isFinite(raw) && raw > 0 ? Math.min(1_000_000, raw) : null;
+  }
+
+  // The goal sent to the server, built fresh so the typed amount is always
+  // the current one rather than whatever it was when the chip was clicked.
+  function currentGoal() {
+    return chosen.amount ? { mode: chosen.mode, targetUsd: targetUsd() } : { mode: chosen.mode };
+  }
+
   function paintGoals() {
     for (const b of el("goals").children) b.classList.toggle("on", b.dataset.goal === chosen.id);
   }
   el("goals").addEventListener("click", (e) => {
-    const id = e.target.closest("button")?.dataset.goal;
+    const id = e.target.closest("[data-goal]")?.dataset.goal;
     if (!id) return;
     chosen = GOALS.find((g) => g.id === id);
     paintGoals();
+  });
+  // Typing an amount means you want a cash goal, so selecting it is implied.
+  el("cashTarget").addEventListener("focus", () => {
+    if (!chosen.amount) {
+      chosen = GOALS[0];
+      paintGoals();
+    }
+  });
+  el("cashTarget").addEventListener("input", () => {
+    if (plan && !plan.approved) renderConfirm();
+  });
+  // Enter in the amount field goes straight to the review, which is what the
+  // next click would have been anyway.
+  el("cashTarget").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      el("makePlan").click();
+    }
   });
   paintGoals();
 
@@ -476,8 +520,23 @@ setInterval(pollItems, ITEM_POLL_MS);
       : channel.id === "marketplace" ? "on Facebook Marketplace" : "on Shopify";
     const bits = [`put <b>${sell.length} item${sell.length === 1 ? "" : "s"}</b> up for sale ${where}, asking <b>${usd(total)}</b>`];
     if (other.length) bits.push(`and set ${other.length} aside to donate or recycle`);
+
+    // The plan was built for the amount that was typed at the time, so if it
+    // has changed since, say so rather than quietly listing against the old one.
+    const planned = plan.targetUsd ?? null;
+    const typed = chosen.amount ? targetUsd() : null;
+    let goalLine = "";
+    if (planned && typed !== null && typed !== planned) {
+      goalLine = ` <b style="color:#ffcf6b">Goal changed to ${usd(typed)} — press Review these items again.</b>`;
+    } else if (planned) {
+      const short = Math.max(0, planned - total);
+      goalLine = short
+        ? ` That is ${usd(short)} short of your ${usd(planned)} goal.`
+        : ` That covers your ${usd(planned)} goal.`;
+    }
+
     el("confirmText").innerHTML = sell.length || other.length
-      ? `This will ${bits.join(" ")}. Untick anything you want to keep.`
+      ? `This will ${bits.join(" ")}.${goalLine} Untick anything you want to keep.`
       : `Nothing is selected. Tick at least one item, or come back later.`;
     el("approve").disabled = sell.length === 0 && other.length === 0;
     el("approve").textContent = sell.length ? `Yes, list ${sell.length}` : "Yes, go ahead";
@@ -505,8 +564,8 @@ setInterval(pollItems, ITEM_POLL_MS);
       const pic = window.reloopPicture?.();
       if (pic && pic.items.length === 0) throw new Error("Choose at least one item in the picture.");
       plan = await api("/api/plans", pic
-        ? { goal: chosen.goal, items: pic.items, photo_id: pic.photo_id }
-        : { goal: chosen.goal });
+        ? { goal: currentGoal(), items: pic.items, photo_id: pic.photo_id }
+        : { goal: currentGoal() });
       kept.clear();
       renderPlan();
     } catch (err) {
