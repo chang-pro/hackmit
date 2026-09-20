@@ -47,6 +47,7 @@
 //   POST /api/status/threads/:id/send — deliver the agent's pending reply to that buyer
 
 import { createServer } from "node:http";
+import net from "node:net";
 import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -75,6 +76,14 @@ const MAX_WEBRTC_SIGNALS_PER_PEER = 128;
 // SDP and ICE are compact setup metadata. This bound makes the tunnel unable
 // to become a substitute media relay even if a client is modified.
 const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
+// Node tries IPv4 and IPv6 in turn and gives each connection attempt 250ms. On
+// a busy wifi a connect to Shopify sometimes takes longer than that, so Node
+// abandoned the working IPv4 attempt, fell through to IPv6 -- which this kind
+// of network does not route -- and every publish died as "fetch failed" while
+// curl, which has no such limit, worked fine. Five seconds is still quick to
+// give up on a dead address and no longer gives up on a slow one.
+net.setDefaultAutoSelectFamilyAttemptTimeout(5_000);
+
 const MAX_PHOTOS = 200;
 const MAX_DISK_PHOTOS = 400;
 const DEFAULT_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
