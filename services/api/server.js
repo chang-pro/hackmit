@@ -39,6 +39,7 @@
 //   GET  /api/analysis/status    — whether analysis is armed, plus the queue
 //   GET  /, /live               — the glasses feed with prices on it
 //   GET  /dashboard             — the event-log dashboard (goal, recovered $, listing cards)
+//   GET  /status                — placeholder: active listings + agent conversations
 
 import { createServer } from "node:http";
 import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "node:fs";
@@ -1019,6 +1020,11 @@ export function createReLoopServer({
         url.pathname.startsWith("/api/photos/")
       ) {
         if ((await routeMarket(req, res, url)) === false) sendJson(res, 404, { error: "not found" });
+      } else if (req.method === "GET" && url.pathname === "/status") {
+        // Placeholder: a page to show active listings and the seller agent's
+        // conversation with a buyer. Empty for now so the route exists and can
+        // be linked to while it is being built.
+        sendJson(res, 200, {});
       } else if (req.method === "GET" && url.pathname === "/api/dashboard") {
         sendJson(res, 200, foldDashboard(eventLog.list()));
       } else if (
