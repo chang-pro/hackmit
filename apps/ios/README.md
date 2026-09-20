@@ -27,6 +27,18 @@ don't. There is a comment block at the top of `project.yml` saying the same.
 
 ---
 
+## 0. Before you start
+
+Do these in this order. Each one has cost somebody an hour when skipped.
+
+- **Xcode 16+ and the command line tools.** On a fresh install also run
+  `sudo xcodebuild -license accept`, or every `xcodebuild` call fails.
+- **Free disk.** Run `df -h /System/Volumes/Data`. You want 15 GB or more free:
+  the first build, two Swift packages and the iOS device-support download all
+  land at once. See *Running out of disk* below if you are short.
+- **Network.** The first package resolve downloads two dependencies and cannot
+  be done offline.
+
 ## 1. Generate the Xcode project
 
 The `.xcodeproj` is generated from `project.yml` by XcodeGen. **Never hand-edit
@@ -40,6 +52,14 @@ xcodegen
 
 This pulls in the `meta-wearables-dat-ios` package, the `bloomknights://` URL
 scheme, background modes and the MWDAT config.
+
+**Run `xcodegen` before you open Xcode, not after.** Opening a stale project
+first is how you end up resolving the wrong package versions.
+
+There are two Swift package dependencies: Meta's Wearables DAT and
+`stasel/WebRTC` (from 120.0.0). WebRTC is a large binary. The first resolve on
+a fresh machine can sit on "Resolving package graph" for several minutes with
+no progress bar. It has not hung; leave it.
 
 ## 2. Signing
 
@@ -99,6 +119,10 @@ xcrun devicectl device install app --device $DEV \
 xcrun devicectl device process launch --device $DEV com.bloomknights.app
 ```
 
+A remote launch also fails on a **locked phone** (*"the device was not, or could
+not be, unlocked"*). Every install kills the running app, so after each one
+unlock the phone and either re-run the launch command or just tap the icon.
+
 If the launch is refused with *"invalid code signature, inadequate entitlements
 or its profile has not been explicitly trusted by the user"*, the app is
 installed fine and you just have not trusted the certificate yet: **iOS
@@ -125,37 +149,59 @@ Two account traps:
 
 ## 6. Point the app at the backend — read this one
 
-**`ApiClient.swift` used to default to `http://localhost:3000`.** On a real
-iPhone, `localhost` is the phone itself, so every frame was POSTed into the
-void.
+There is no server-address field in the app any more. `ApiClient.swift` has a
+`BackendLocator` that probes a fixed list of addresses **in parallel** and
+sticks to the highest-priority one that answers `/api/health`:
 
-The symptom is the part worth memorising, because it does not look like a
-networking problem: **the glasses stream appears fine in the app, counters may
-even tick up, and the server has received nothing.** Confirm with:
+```swift
+static let candidates: [String] = [
+    "http://192.168.234.1:3000",    // USB cable via the Mac's sharing bridge
+    "http://172.20.10.2:3000",      // Mac tethered to this phone's hotspot
+    "http://10.189.45.199:3000",    // venue LAN
+    "http://100.104.109.111:3000",  // Tailscale
+]
+```
+
+**Every one of those is Dante's Mac.** On your machine none of them is right,
+and the app will find nothing. Before you build, add the address of the Mac
+running *your* server to that list, earlier entries winning:
+
+```bash
+ipconfig getifaddr en0     # your LAN address — phone must be on the same wifi
+tailscale ip -4            # your Tailscale address, if both devices are on the tailnet
+```
+
+Prefer Tailscale when you have it: it survives a wifi/cell switch, which
+matters on venue wifi. Then rebuild and reinstall — the list is compiled in.
+
+If you are all sharing **one** server on Dante's Mac instead of running your
+own, leave the list alone; you just need to be on the same network or tailnet
+as that Mac.
+
+The symptom of getting this wrong is worth memorising, because it does not look
+like a networking problem: **the glasses stream appears fine in the app, and
+the server has received nothing.** Confirm from the Mac running the server:
 
 ```bash
 curl http://localhost:3000/api/live-frame
-# {"error": "no live camera frame received yet"}  <- app is talking to itself
+# {"error": "no live camera frame received yet"}  <- the app is not reaching you
 ```
 
-The fix is to set the server URL in the app's **Settings** screen to an address
-the phone can actually reach. Prefer the Mac's **Tailscale** address over a LAN
-IP — it survives a wifi/cell switch, which matters on venue wifi:
+`localhost` is never a valid entry for a real phone: on the phone it means the
+phone. The app ships an App Transport Security exception, so plain `http://`
+to an IP works from the native app.
 
-```
-http://100.104.109.111:3000
-```
+> **Upgrading from an old build?** Earlier builds had a Settings screen that
+> saved a URL in `UserDefaults` under `backendBaseURL`. A saved value still
+> overrides the locator and survives reinstalling, and there is no longer any
+> screen to clear it. If the app ignores your list, delete the app from the
+> phone and install again.
 
-Find yours with `tailscale ip -4`. A LAN IP (`ipconfig getifaddr en0`) also
-works while both devices are on the same network and the firewall allows
-inbound 3000.
+### Take Picture
 
-> **A saved value beats the default.** The URL is stored in `UserDefaults`, and
-> that survives reinstalling the app. If you ever saved `localhost`, a new
-> build will *not* fix it — you have to change it in Settings.
-
-The app ships an App Transport Security exception, so plain `http://` to an IP
-works from the native app.
+While the stream is live the app shows a **Take Picture** button. It captures a
+full-resolution still from the glasses (`capturePhoto`), downscales it to
+2048 px and uploads it, which prices far better than a 360x640 stream frame.
 
 ## 7. The browser phone page needs HTTPS, the app does not
 
