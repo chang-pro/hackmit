@@ -347,6 +347,12 @@ final class FrameUplink: @unchecked Sendable {
     private func encodeAndPost(_ imageBuffer: CVImageBuffer, completion: @escaping () -> Void) {
         var ciImage = CIImage(cvImageBuffer: imageBuffer)
         let longest = max(ciImage.extent.width, ciImage.extent.height)
+        // On the cable the pricing model gets a frame with over twice the
+        // pixels: small labels become readable and the per-item listing photos
+        // cut from it stop looking like thumbnails. Anywhere else, stay small.
+        let cable = BackendLocator.shared.onCable
+        let maxUploadEdge: CGFloat = cable ? 960 : self.maxUploadEdge
+        let jpegQuality: CGFloat = cable ? 0.55 : self.jpegQuality
         if longest > maxUploadEdge {
             let scale = maxUploadEdge / longest
             ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))

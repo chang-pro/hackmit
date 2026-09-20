@@ -382,7 +382,10 @@ export function createReLoopServer({
     }
 
     try {
-      const frame = gateway.frame(meta.frame_id);
+      // Stream frames: hand the model the sharpest of the last moment, not
+      // whichever one happened to land now. A deliberate photo is what it is.
+      const isStream = body.source !== "glasses_photo" && body.source !== "phone_photo";
+      const frame = (isStream ? gateway.sharpest(meta) : null) ?? gateway.frame(meta.frame_id);
       let photoId = null;
       if (body.source === "glasses_photo") {
         photoId = storePhoto(meta.frame_id);

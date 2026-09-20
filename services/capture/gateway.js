@@ -47,7 +47,7 @@ export class CaptureGateway {
       height,
     };
 
-    this.frames.push({ meta, image_base64, mime_type });
+    this.frames.push({ meta, image_base64, mime_type, receivedAt: Date.now() });
     if (this.frames.length > this.maxFrames) this.frames.shift();
     return meta;
   }
@@ -58,6 +58,22 @@ export class CaptureGateway {
 
   get(frameId) {
     return this.frames.find((f) => f.meta.frame_id === frameId) ?? null;
+  }
+
+  // The sharpest recent frame from one source. Every stream frame is encoded
+  // at the same size and quality, so the bytes it took are a direct measure of
+  // detail: motion blur smears detail away and the JPEG shrinks. Glasses move
+  // with the head, so the frame that happens to arrive when the model is free
+  // is often a smeared one, and it then misreads labels and draws loose boxes.
+  // Looking BACK over the window costs no latency.
+  sharpest({ source, width, height, withinMs = 1500, now = Date.now() } = {}) {
+    let best = null;
+    for (const f of this.frames) {
+      if (now - f.receivedAt > withinMs) continue;
+      if (f.meta.source !== source || f.meta.width !== width || f.meta.height !== height) continue;
+      if (!best || f.image_base64.length >= best.image_base64.length) best = f;
+    }
+    return best ? { ...best.meta, image_base64: best.image_base64, mime_type: best.mime_type } : null;
   }
 
   frame(frameId) {

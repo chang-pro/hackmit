@@ -387,3 +387,39 @@ test("a listing made long after the frame left the ring still gets its photo", a
   assert.equal(photo.status, 200);
   assert.equal(Buffer.from(await photo.arrayBuffer()).toString("base64"), analyzedImage, "and it is the frame the items were found in, not a later one");
 });
+
+test("the model is given the sharpest recent stream frame, not the one that happened to arrive", async (t) => {
+  const { CaptureGateway } = await import("../services/capture/gateway.js");
+  const gateway = new CaptureGateway();
+  const frame = (bytes) => ({ source: "rayban_sdk", image_base64: "A".repeat(bytes), width: 640, height: 480 });
+  gateway.ingest(frame(9000));                       // sharp
+  const sharp = gateway.ingest(frame(16000));        // sharpest: head was still
+  const blurred = gateway.ingest(frame(6000));       // head turning: detail smeared, JPEG shrinks
+  assert.equal(gateway.sharpest(blurred).frame_id, sharp.frame_id);
+
+  // Other cameras and other sizes are not comparable, so they are ignored.
+  gateway.ingest({ ...frame(50000), source: "phone_photo" });
+  gateway.ingest({ ...frame(50000), width: 1280, height: 960 });
+  assert.equal(gateway.sharpest(blurred).frame_id, sharp.frame_id);
+
+  // An old sharp frame shows a scene the wearer has looked away from.
+  assert.equal(gateway.sharpest({ ...blurred, now: Date.now() + 5000 }), null);
+
+  // End to end: the analyzer sees the sharp one.
+  const seen = [];
+  const backend = { name: "spy", async identifyItems(f) { seen.push(f.image_base64.length); return { items: [], item_count: 0, total_value_usd: 0 }; } };
+  const server = createReLoopServer({ itemAnalyzer: new ItemAnalyzer({ backend, intervalMs: 150 }), selector: { consider: () => ({ accepted: true }) } });
+  server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+  await postFrame(base, framePayload({ source: "rayban_sdk", image_base64: "B".repeat(16000) }));
+  await until(() => seen.length === 1);
+  await postFrame(base, framePayload({ source: "rayban_sdk", image_base64: "B".repeat(4000) })); // inside the interval: skipped
+  await new Promise((done) => setTimeout(done, 200));
+  // The frame that triggers the next analysis is a blurred one...
+  await postFrame(base, framePayload({ source: "rayban_sdk", image_base64: "B".repeat(5000) }));
+  await until(() => seen.length === 2);
+  // ...but the model was shown the sharp one from a moment earlier.
+  assert.deepEqual(seen, [16000, 16000]);
+});
