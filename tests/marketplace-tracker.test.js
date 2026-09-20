@@ -144,3 +144,18 @@ test("the reader's output is not trusted: unknown listings, bad links and wild p
   ]);
   assert.deepEqual(out.messages, [{ listingId: "lst_real", buyer: "Jake", text: "take 1e12?", intent: "offer", offerUsd: null }]);
 });
+
+test("a draft's link is kept for the owner to publish, and a removed listing stops being waited on", async () => {
+  const { market, listing } = listed("CASH");
+  let report = { listings: [{ listing_id: listing.id, status: "draft", url: "https://www.facebook.com/marketplace/item/77" }], messages: [] };
+  const { tracker } = trackerFor(market, () => sanitizeReading(report, [{ id: listing.id }]));
+  await tracker.sync();
+  assert.equal(market.getListing(listing.id).marketplace.url, "https://www.facebook.com/marketplace/item/77");
+  assert.notEqual(market.getListing(listing.id).marketplace.status, "live");
+
+  report = { listings: [{ listing_id: listing.id, status: "removed", url: "" }], messages: [] };
+  const found = await tracker.sync();
+  assert.deepEqual(found.removed, ["Ceramic Dog Statue"]);
+  assert.equal(market.getListing(listing.id).marketplace.status, "removed");
+  assert.equal((await tracker.sync()).checked, 0, "muse is not asked about it again");
+});

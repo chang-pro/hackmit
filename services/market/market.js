@@ -526,8 +526,23 @@ export class Market {
 
   listingsOnMarketplace() {
     return [...this.listings.values()]
-      .filter((l) => l.marketplace && l.marketplace.status !== "off" && l.status !== "SOLD")
+      .filter((l) => l.marketplace && !["off", "removed"].includes(l.marketplace.status) && l.status !== "SOLD")
       .map((l) => this.publicListing(l));
+  }
+
+  // What a check of the Facebook account found for a listing that is not live:
+  // the draft's link (so the owner can jump straight to it and press Publish),
+  // or that it is gone from Facebook and nobody should wait on it.
+  noteMarketplace(listingId, { status = null, url = null } = {}) {
+    const listing = this.#listing(listingId);
+    if (url && /^https:\/\/(www\.|m\.)?facebook\.com\//i.test(String(url))) listing.marketplace.url = String(url);
+    if (status === "removed" && listing.marketplace.status !== "removed") {
+      listing.marketplace.status = "removed";
+    } else if (status === "draft" && ["queued", "failed", "removed"].includes(listing.marketplace.status)) {
+      listing.marketplace.status = "drafted";
+    }
+    this.#save();
+    return this.publicListing(listing);
   }
 
   // The Facebook listing sold (the buyer paid in person, outside this app).
