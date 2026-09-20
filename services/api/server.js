@@ -678,6 +678,11 @@ export function createReLoopServer({
       buyer: body.buyer ?? "buyer",
       priceUsd: body.price_usd ?? null,
       text: body.text ?? "",
+      // Whoever relays a Facebook buyer's message says so, and the reply then
+      // shows on /status with a Send button. Dropping this made every relayed
+      // message look like it came from our own API, where a reply is already
+      // in the response and nobody ever delivers it to the buyer.
+      channel: body.channel ?? "agent",
     }));
   }
 

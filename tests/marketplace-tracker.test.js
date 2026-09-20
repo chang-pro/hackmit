@@ -207,3 +207,15 @@ test("asking for no channel lists nowhere; saying nothing uses the default", asy
   market.approvePlan(plan.id, {});
   assert.deepEqual(published, ["Ceramic Dog Statue"]);
 });
+
+test("a relayed Facebook message is tagged as one, so its reply gets a Send button", async () => {
+  // The route dropped `channel`, so every relayed buyer looked like our own
+  // API: the agent's answer was never offered for delivery to the buyer.
+  const { market, listing } = listed("CASH");
+  for (const spelling of ["facebook", "marketplace", "FACEBOOK"]) {
+    const r = market.message(listing.id, { buyer: `B-${spelling}`, priceUsd: 1, text: "lowball", channel: spelling });
+    assert.equal(market.publicThreads().find((t) => t.id === r.threadId).channel, "facebook", spelling);
+  }
+  const own = market.message(listing.id, { buyer: "our own api", priceUsd: 1, text: "lowball" });
+  assert.equal(market.publicThreads().find((t) => t.id === own.threadId).channel, "agent");
+});
