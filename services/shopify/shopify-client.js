@@ -56,7 +56,7 @@ export async function getOrExchangeAccessToken(customFetch = fetch) {
   if (config.clientId && config.clientSecret) {
     const cleanDomain = config.domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
     const tokenUrl = `https://${cleanDomain}/admin/oauth/access_token`;
-    const res = await customFetch(tokenUrl, {
+    const res = await fetchRetryingConnect(customFetch, tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -96,6 +96,28 @@ export async function getOrExchangeAccessToken(customFetch = fetch) {
 /**
  * Execute a GraphQL query or mutation against Shopify Admin API.
  */
+// Failures where the connection never opened, so Shopify never saw the request
+// and sending it again cannot create a second product. A timeout AFTER the
+// request went out is not in this list on purpose.
+const NEVER_CONNECTED = new Set(["ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"]);
+
+function neverConnected(err) {
+  const causes = [err?.cause, ...(err?.cause?.errors ?? [])].filter(Boolean);
+  return causes.length > 0 && causes.every((c) => NEVER_CONNECTED.has(c.code));
+}
+
+// One flaky connect on venue wifi failed the whole listing. Try again, briefly.
+export async function fetchRetryingConnect(fetchImpl, url, init, { tries = 3, waitMs = 400 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetchImpl(url, init);
+    } catch (err) {
+      if (attempt >= tries || !neverConnected(err)) throw err;
+      await new Promise((done) => setTimeout(done, waitMs * attempt));
+    }
+  }
+}
+
 export async function shopifyGraphql(query, variables = {}, customFetch = fetch) {
   const { domain, isDryRun, apiVersion } = getShopifyConfig();
 
@@ -111,7 +133,7 @@ export async function shopifyGraphql(query, variables = {}, customFetch = fetch)
   const cleanDomain = domain.replace(/^https?:\/\//, "").replace(/\/+$/, "");
   const endpoint = `https://${cleanDomain}/admin/api/${apiVersion}/graphql.json`;
 
-  const response = await customFetch(endpoint, {
+  const response = await fetchRetryingConnect(customFetch, endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

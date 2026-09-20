@@ -241,3 +241,26 @@ test("a second product with the same name is retried under its own handle", asyn
   assert.equal(inputs[0].handle, undefined);
   assert.match(inputs[1].handle, /^apple-iphone-[a-z0-9]+$/);
 });
+
+test("a connection that never opened is retried; anything after the request went out is not", async () => {
+  const { fetchRetryingConnect } = await import("../services/shopify/shopify-client.js");
+  const connectFail = () => Object.assign(new TypeError("fetch failed"), {
+    cause: Object.assign(new AggregateError([], ""), { code: "ETIMEDOUT", errors: [{ code: "ETIMEDOUT" }, { code: "EHOSTUNREACH" }] }),
+  });
+  let calls = 0;
+  const flaky = async () => { calls += 1; if (calls < 3) throw connectFail(); return { ok: true }; };
+  assert.deepEqual(await fetchRetryingConnect(flaky, "u", {}, { waitMs: 1 }), { ok: true });
+  assert.equal(calls, 3);
+
+  // The request reached Shopify and the reply was lost: a second send could
+  // create the product twice, so this one is NOT retried.
+  calls = 0;
+  const midFlight = async () => { calls += 1; throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } }); };
+  await assert.rejects(fetchRetryingConnect(midFlight, "u", {}, { waitMs: 1 }), /fetch failed/);
+  assert.equal(calls, 1);
+
+  calls = 0;
+  const dead = async () => { calls += 1; throw connectFail(); };
+  await assert.rejects(fetchRetryingConnect(dead, "u", {}, { waitMs: 1 }), /fetch failed/);
+  assert.equal(calls, 3, "gives up after three");
+});

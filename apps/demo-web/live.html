@@ -52,6 +52,16 @@
   #picBar[hidden] { display: none; }
   #picBar button { padding: .3rem .7rem; border-radius: 8px; border: 1px solid #39425a; background: #161b27; color: #e7ecf5; font: inherit; cursor: pointer; }
   .box { position: absolute; border: 2px solid var(--c); border-radius: 6px; background: color-mix(in srgb, var(--c) 12%, transparent); }
+  /* Boxes belong to the frame the model looked at. Seconds later the wearer
+     has moved on and the same boxes sit on the wrong things, so they fade as
+     the result ages and are gone once it is stale or the feed has stopped. The
+     prices in the list stay: those are still what was seen. */
+  #boxes { transition: opacity .6s ease; }
+  #boxes.aging { opacity: .45; }
+  #boxes.stale { opacity: 0; }
+  /* A box near the right edge hangs its label leftwards, so the label stays on
+     the picture instead of running over the price list beside it. */
+  .box.rightish .tag { left: auto; right: -2px; }
   .tag {
     position: absolute; left: -2px; top: -1.45rem; padding: .1rem .4rem;
     border-radius: 5px; background: var(--c); color: #06080c;
@@ -258,6 +268,7 @@ function paintPicture() {
     b.style.top = (it.bbox.y / 10) + "%";
     b.style.width = (it.bbox.width / 10) + "%";
     b.style.height = (it.bbox.height / 10) + "%";
+    if (it.bbox.x + it.bbox.width / 2 > 500) b.classList.add("rightish");
     const tag = document.createElement("span");
     tag.className = "tag";
     tag.textContent = it.label.toUpperCase() + "  $" + it.price_usd;
@@ -275,6 +286,7 @@ function togglePick(id) {
 
 function enterPicture(photo) {
   picture = { photoId: photo.photo_id, items: photo.items, selected: new Set(photo.items.map((it) => it.id)) };
+  $("boxes").classList.remove("aging", "stale");   // a picture's boxes never age: the frame under them is frozen
   $("shot").src = photo.photo_url;
   $("shot").hidden = false;
   $("picBar").hidden = false;
@@ -387,6 +399,9 @@ async function pollItems() {
   $("total").textContent = "$" + (data.total_value_usd ?? 0);
   const generatedMs = Date.now() - (Date.parse(data.generated_at) || Date.now());
   $("pAge").textContent = Math.round(generatedMs / 1000) + "s ago";
+  // A look takes 5-8s, so under ~9s the boxes are as fresh as they get.
+  $("boxes").classList.toggle("aging", feedLive && generatedMs > 9000 && generatedMs <= 15000);
+  $("boxes").classList.toggle("stale", !feedLive || generatedMs > 15000);
 
   $("list").replaceChildren(...items.map((it) => {
     const row = document.createElement("div");
@@ -413,6 +428,7 @@ async function pollItems() {
     b.style.top = (it.bbox.y / 10) + "%";
     b.style.width = (it.bbox.width / 10) + "%";
     b.style.height = (it.bbox.height / 10) + "%";
+    if (it.bbox.x + it.bbox.width / 2 > 500) b.classList.add("rightish");
     const tag = document.createElement("span");
     tag.className = "tag";
     tag.textContent = it.label.toUpperCase() + "  $" + it.price_usd;
