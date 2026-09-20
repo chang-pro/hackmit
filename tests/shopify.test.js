@@ -219,3 +219,25 @@ test("the re-hoster only reads this server's own photos", async () => {
   }
   assert.equal(fetched, 0, "nothing was even requested");
 });
+
+test("a second product with the same name is retried under its own handle", async () => {
+  const inputs = [];
+  const fakeFetch = async (_url, init) => {
+    const { query, variables } = JSON.parse(init.body);
+    if (!/productCreate/.test(query)) return { ok: true, status: 200, json: async () => ({ data: {} }) };
+    inputs.push(variables.input);
+    const clash = inputs.length === 1;
+    return {
+      ok: true, status: 200,
+      json: async () => ({ data: { productCreate: clash
+        ? { product: null, userErrors: [{ field: ["handle"], message: "Handle has already been taken" }] }
+        : { product: { id: "gid://shopify/Product/2", handle: variables.input.handle, title: "Apple iPhone", status: "ACTIVE", variants: { nodes: [] } }, userErrors: [] } } }),
+    };
+  };
+  process.env.SHOPIFY_STORE_DOMAIN = "test-store.myshopify.com";
+  process.env.SHOPIFY_ADMIN_ACCESS_TOKEN = "test-token";
+  await createProduct({ title: "Apple iPhone", description: "x", price: 100, customFetch: fakeFetch, dryRun: false });
+  assert.equal(inputs.length, 2, "it asked again instead of failing the listing");
+  assert.equal(inputs[0].handle, undefined);
+  assert.match(inputs[1].handle, /^apple-iphone-[a-z0-9]+$/);
+});

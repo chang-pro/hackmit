@@ -49,6 +49,7 @@ import { networkInterfaces } from "node:os";
 import { randomUUID } from "node:crypto";
 import { ItemAnalyzer } from "./item-analyzer.js";
 import { selectedItemsBackend } from "../vision/backends/items-provider.js";
+import { cropItem } from "./crop.js";
 import { DraftQueue } from "../market/draft-queue.js";
 import { Market } from "../market/market.js";
 import { LIVE_WS_URL, buildSetup, isAffirmative, mintLiveToken } from "../voice/confirm-session.js";
@@ -501,11 +502,18 @@ export function createReLoopServer({
   // Keeps a copy of the frame the plan was built from; the gateway's ring
   // buffer would otherwise evict it long before Marketplace fetches it.
   function storePhoto(frameId) {
-    const stored = frameId ? gateway.get(frameId) : null;
+    // The ring first (a still is copied the moment it lands); otherwise the
+    // frame the current items were identified in, which the analyzer holds on
+    // to precisely because the ring has long since dropped it.
+    const analyzed = itemAnalyzer.latestFrame?.();
+    const stored = (frameId ? gateway.get(frameId) : null)
+      ?? (analyzed?.image_base64 && (!frameId || analyzed.frame_id === frameId) ? analyzed : null);
     if (!stored) return null;
+    return savePhoto(imageBytes(stored.image_base64), stored.mime_type || "image/jpeg");
+  }
+
+  function savePhoto(bytes, mime) {
     const id = `pho_${randomUUID().slice(0, 12)}`;
-    const bytes = imageBytes(stored.image_base64);
-    const mime = stored.mime_type || "image/jpeg";
     photos.set(id, { bytes, mime });
     while (photos.size > MAX_PHOTOS) photos.delete(photos.keys().next().value);
     try {
@@ -536,6 +544,16 @@ export function createReLoopServer({
     return (process.env.PUBLIC_BASE_URL || `http://${req.headers.host || "localhost"}`).replace(/\/$/, "");
   }
 
+  async function withItemPhotos(items, framePhotoId, baseUrl) {
+    const frame = photos.get(framePhotoId);
+    if (!frame) return items;
+    return Promise.all(items.map(async (item) => {
+      const cropped = item?.bbox ? await cropItem(frame.bytes, item.bbox) : null;
+      if (!cropped) return item;
+      return { ...item, photo_url: `${baseUrl}/api/photos/${savePhoto(cropped, "image/jpeg")}` };
+    }));
+  }
+
   async function handleCreatePlan(req, res) {
     const body = await readOptionalJsonBody(req);
     const latest = itemAnalyzer.latest();
@@ -545,8 +563,11 @@ export function createReLoopServer({
       return;
     }
     const photoId = Array.isArray(body.items) ? null : storePhoto(latest?.frame_id);
+    // Each item gets a picture of ITSELF, cut out of the frame it was found in.
+    // Without this every listing from one room carried the same wide shot.
+    const itemsWithPhotos = photoId ? await withItemPhotos(items, photoId, publicBaseUrl(req)) : items;
     const plan = market.createPlan({
-      items,
+      items: itemsWithPhotos,
       goal: body.goal ?? {},
       keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
       photoUrl: body.photo_url ??

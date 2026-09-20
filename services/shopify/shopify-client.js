@@ -412,11 +412,25 @@ export async function createProduct({
     };
   }
 
-  const data = await shopifyGraphql(
+  let data = await shopifyGraphql(
     PRODUCT_CREATE_MUTATION,
     { input: productInput, media },
     customFetch
   );
+
+  // Two items with the same name ("Apple iPhone" twice in one room) are created
+  // moments apart, and Shopify hands both the same generated handle: the second
+  // fails with "Handle has already been taken". Ask again with a handle nobody
+  // else can have.
+  if ((data?.productCreate?.userErrors ?? []).some((e) => /handle/i.test(`${e.field} ${e.message}`))) {
+    const slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "item";
+    const unique = `${slug}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    data = await shopifyGraphql(
+      PRODUCT_CREATE_MUTATION,
+      { input: { ...productInput, handle: unique }, media },
+      customFetch
+    );
+  }
 
   const payload = data?.productCreate;
   if (payload?.userErrors && payload.userErrors.length > 0) {

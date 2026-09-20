@@ -364,3 +364,26 @@ test("the photo route serves only ids this server mints", async (t) => {
     assert.equal(res.status, 404, id);
   }
 });
+
+test("a listing made long after the frame left the ring still gets its photo", async (t) => {
+  // The ring holds about four seconds of stream. A person reads the prices,
+  // then clicks List: by then the analyzed frame was gone and every listing
+  // reached Shopify and Facebook with no picture.
+  const base = startServer(t, { intervalMs: 60_000 });
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+
+  const analyzedImage = PHOTO;
+  await postFrame(base, framePayload({ source: "phone_photo", image_base64: analyzedImage }));
+
+  // The stream keeps running and pushes that frame out of the ring.
+  for (let i = 0; i < 45; i += 1) {
+    await postFrame(base, framePayload({ source: "rayban_sdk", image_base64: Buffer.from(`later-${i}`).toString("base64") }));
+  }
+
+  const plan = await (await fetch(`${base}/api/plans`, { method: "POST" })).json();
+  assert.match(String(plan.photoUrl), /\/api\/photos\/pho_/, "the plan carries a photo");
+
+  const photo = await fetch(base + new URL(plan.photoUrl).pathname);
+  assert.equal(photo.status, 200);
+  assert.equal(Buffer.from(await photo.arrayBuffer()).toString("base64"), analyzedImage, "and it is the frame the items were found in, not a later one");
+});
