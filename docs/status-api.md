@@ -41,6 +41,7 @@ of seconds; it never talks to muse or Facebook by itself, so it is cheap.
 
 | Button | Call | What it does |
 | --- | --- | --- |
+| I published it (on a drafted item) | `POST /api/listings/:id/marketplace` `{}` | The owner reviewed the draft and pressed Publish in Facebook. Marks it live; the page then turns Keep checking on so buyers show up. |
 | Check Facebook now | `POST /api/status/sync` | Asks muse where the listings stand and who wrote in (30-90 s). Returns `{ found, …status }`. Show a spinner while `tracker.checking`. |
 | Send (on an unsent reply) | `POST /api/status/threads/:threadId/send` | muse delivers the agent's exact words to that buyer. `{ sent: true|false, note }`. Takes about a minute; a second request for the same thread joins the first, so the buyer is never messaged twice. |
 | Auto-reply toggle | `POST /api/status/auto-reply` `{ "on": true }` | The agent answers Facebook buyers without waiting for Send. |

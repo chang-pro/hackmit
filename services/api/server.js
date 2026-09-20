@@ -82,7 +82,9 @@ const MAX_WEBRTC_SIGNAL_PAYLOAD_BYTES = 128 * 1024;
 // of network does not route -- and every publish died as "fetch failed" while
 // curl, which has no such limit, worked fine. Five seconds is still quick to
 // give up on a dead address and no longer gives up on a slow one.
-net.setDefaultAutoSelectFamilyAttemptTimeout(5_000);
+// Optional call: the setter only exists on Node 18.18+/19.8+, and a teammate on
+// an older Node must still be able to start the server.
+net.setDefaultAutoSelectFamilyAttemptTimeout?.(5_000);
 
 const MAX_PHOTOS = 200;
 const MAX_DISK_PHOTOS = 400;
