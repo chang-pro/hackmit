@@ -20,7 +20,7 @@ of seconds; it never talks to muse or Facebook by itself, so it is cheap.
     "soldUsd": null, "photoUrl": "http://…/api/photos/pho_…",
     "goalMode": "CASH",                          // the button: CASH | CLEAR_OUT | ZERO_WASTE
     "shopify":     { "status": "live", "url": "https://…" },
-    "marketplace": { "status": "drafted", "url": null },   // off | queued | drafted | live | sold | failed
+    "marketplace": { "status": "drafted", "url": "https://www.facebook.com/marketplace/item/…" },   // off | queued | drafted | live | sold | removed | failed. url on a draft is the link to review and publish it
     "threads": [{
       "id": "thr_ab12", "buyer": "Marcus T.", "channel": "facebook",   // facebook | agent
       "agreedUsd": null, "closed": false,
@@ -42,7 +42,7 @@ of seconds; it never talks to muse or Facebook by itself, so it is cheap.
 | Button | Call | What it does |
 | --- | --- | --- |
 | Check Facebook now | `POST /api/status/sync` | Asks muse where the listings stand and who wrote in (30-90 s). Returns `{ found, …status }`. Show a spinner while `tracker.checking`. |
-| Send (on an unsent reply) | `POST /api/status/threads/:threadId/send` | muse delivers the agent's exact words to that buyer. `{ sent: true|false, note }` |
+| Send (on an unsent reply) | `POST /api/status/threads/:threadId/send` | muse delivers the agent's exact words to that buyer. `{ sent: true|false, note }`. Takes about a minute; a second request for the same thread joins the first, so the buyer is never messaged twice. |
 | Auto-reply toggle | `POST /api/status/auto-reply` `{ "on": true }` | The agent answers Facebook buyers without waiting for Send. |
 | Keep checking | `POST /api/status/watch` `{ "on": true, "every_s": 120 }` | Re-checks Facebook on a timer. |
 

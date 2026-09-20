@@ -28,6 +28,7 @@ export class MarketplaceTracker {
   #syncing = null;
   #last = { at: null, error: null, report: null, found: null };
   #timer = null;
+  #sending = new Map(); // threadId -> the delivery in progress
 
   constructor({ market, ask = museAsk, read = readMuseReport, autoReply = false } = {}) {
     this.#market = market;
@@ -124,7 +125,17 @@ export class MarketplaceTracker {
   }
 
   // Delivers the seller's latest line in a thread to the buyer, through muse.
-  async sendReply(threadId) {
+  // A delivery takes a minute, and a second request for the same thread in
+  // that minute (a double press, two tabs, auto-reply racing a person) joins
+  // the first instead of messaging the buyer twice.
+  sendReply(threadId) {
+    if (!this.#sending.has(threadId)) {
+      this.#sending.set(threadId, this.#sendOnce(threadId).finally(() => this.#sending.delete(threadId)));
+    }
+    return this.#sending.get(threadId);
+  }
+
+  async #sendOnce(threadId) {
     const thread = this.#market.publicThreads().find((t) => t.id === threadId);
     if (!thread) {
       const err = new Error(`no thread "${threadId}"`);

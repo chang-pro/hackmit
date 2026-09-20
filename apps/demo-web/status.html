@@ -31,6 +31,23 @@
   .bar .note.err { color: #ff8f8f; }
   .toggle.on { background: #2b3550; border-color: #55e39b; }
 
+  /* The number the room remembers. */
+  .hero { display: flex; align-items: flex-end; gap: 2rem; flex-wrap: wrap; margin: 0 0 1rem; }
+  .hero .big { font-size: clamp(2.6rem, 8vw, 4.2rem); font-weight: 800; line-height: 1; color: #55e39b; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .hero .big.bump { animation: bump .5s ease-out; }
+  @keyframes bump { 35% { transform: scale(1.08); } }
+  .hero .totals { margin-left: 0; }
+  .spin { display: inline-block; width: .8em; height: .8em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -.1em; margin-right: .35em; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Where one item is on its way out the door. */
+  .steps { display: flex; gap: .25rem; margin-top: .5rem; font-size: .62rem; letter-spacing: .08em; text-transform: uppercase; }
+  .steps span { flex: 1; max-width: 5.5rem; padding-top: .18rem; border-top: 3px solid #222838; color: #46506a; }
+  .steps span.done { border-color: #2c6b4f; color: #7d8aa3; }
+  .steps span.now { border-color: #55e39b; color: #55e39b; font-weight: 700; }
+  .chip.goal { color: #9fb0d5; border-color: #2c3446; }
+  @media (prefers-reduced-motion: reduce) { .hero .big.bump, .spin { animation: none; } }
+
   .rows { display: grid; gap: .8rem; }
   .card { border: 1px solid #222838; border-radius: 12px; background: #10141d; overflow: hidden; }
   .top { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) auto; gap: .9rem; padding: .8rem; align-items: center; }
@@ -47,7 +64,7 @@
   .chip.drafted { color: #ffcf6b; border-color: #6b5a2a; }
   .chip.live    { color: #55e39b; border-color: #2c6b4f; }
   .chip.failed, .chip.unlisted { color: #ff8f8f; border-color: #6b2c2c; }
-  .chip.gone    { color: #6b7689; border-color: #2c3446; }
+  .chip.gone, .chip.removed { color: #6b7689; border-color: #2c3446; }
   .chip.sold    { color: #06251a; background: #55e39b; border-color: #55e39b; font-weight: 700; }
 
   .talk { border-top: 1px solid #222838; padding: .7rem .8rem .8rem; display: grid; gap: .8rem; }
@@ -80,15 +97,20 @@
       <h1>Listings</h1>
       <div class="sub" id="sub">loading…</div>
     </div>
+  </header>
+  <section class="hero">
+    <div>
+      <div class="big" id="t-value">$0</div>
+      <div class="sub" style="margin-top:.35rem">recovered</div>
+    </div>
     <div class="totals">
       <span><b id="t-live">0</b>live</span>
       <span class="warn"><b id="t-waiting">0</b>waiting on you</span>
       <span><b id="t-talking">0</b>conversations</span>
       <span class="warn"><b id="t-unsent">0</b>unsent replies</span>
       <span><b id="t-sold">0</b>sold</span>
-      <span><b id="t-value">$0</b>recovered</span>
     </div>
-  </header>
+  </section>
 
   <div class="bar">
     <button id="sync" type="button">Check Facebook now</button>
@@ -122,7 +144,27 @@ const FB = {
   sold: "sold on Marketplace",
   failed: "could not build the draft",
   gone: "no longer on Facebook",
+  removed: "no longer on Facebook",
 };
+const GOAL = { CASH: "max cash", CLEAR_OUT: "clear out fast", ZERO_WASTE: "waste nothing", UPGRADE: "upgrade", YARD_SALE: "yard sale" };
+
+// Draft -> Live -> Offer -> Sold. An item only ever moves right.
+function stepsHtml(l) {
+  const fb = l.marketplace?.status, shop = l.shopify?.status;
+  const sold = l.status === "SOLD";
+  const live = fb === "live" || shop === "live";
+  const onItsWay = live || ["queued", "drafted"].includes(fb) || shop === "publishing";
+  if (!sold && !onItsWay) return "";
+  const offered = (l.threads ?? []).some((t) => t.messages.some((m) => m.frm === "BUYER"));
+  const at = sold ? 3 : offered ? 2 : live ? 1 : 0;
+  return `<div class="steps">${["Draft", "Live", "Offer", "Sold"].map((name, i) =>
+    `<span class="${i < at ? "done" : i === at ? "now" : ""}">${name}</span>`).join("")}</div>`;
+}
+
+// Replies muse is delivering right now. The cards are rebuilt every few
+// seconds, which re-armed the Send button mid-delivery: a second press would
+// have messaged the same buyer twice from the owner's real account.
+const sending = new Set();
 const SHOP = { publishing: "publishing…", live: "live", unlisted: "created but not on the storefront", failed: "not listed" };
 
 let data = null;
@@ -130,7 +172,10 @@ let busy = false;
 
 function channelLine(name, state, words) {
   if (!state || state.status === "off") return "";
-  const link = state.url ? ` · <a href="${esc(state.url)}" target="_blank" rel="noopener">open</a>` : "";
+  // A draft's link goes straight to the one thing only the owner can do.
+  const link = !state.url ? "" : state.status === "drafted"
+    ? ` · <a href="${esc(state.url)}" target="_blank" rel="noopener"><b>Review &amp; publish →</b></a>`
+    : ` · <a href="${esc(state.url)}" target="_blank" rel="noopener">open</a>`;
   const detail = words[state.status] ?? state.status;
   return `<span class="chip ${esc(state.status)}">${esc(name)}</span><span>${esc(detail)}${link}</span>`;
 }
@@ -139,12 +184,14 @@ function channelLine(name, state, words) {
 // came through our own API was already answered in that API's response, so it
 // is not "waiting to be sent" and must not offer a Send button.
 function messageHtml(m, threadId, deliverable) {
-  const pending = deliverable && m.frm === "SELLER" && m.sent === null;
-  const failed = deliverable && m.frm === "SELLER" && m.sent === false;
+  const inFlight = deliverable && m.frm === "SELLER" && !m.sent && sending.has(threadId);
+  const pending = !inFlight && deliverable && m.frm === "SELLER" && m.sent === null;
+  const failed = !inFlight && deliverable && m.frm === "SELLER" && m.sent === false;
   return `<div class="msg ${m.frm === "SELLER" ? "seller" : "buyer"}${pending || failed ? " unsent" : ""}">
       <span class="frm">${m.frm === "SELLER" ? "agent" : "buyer"}</span>
       <span class="txt">${esc(m.text)}${
-        pending ? `<span class="send"><button type="button" data-send="${esc(threadId)}">Send to buyer</button><span class="why">written, not sent</span></span>`
+        inFlight ? `<span class="send"><span class="why"><span class="spin"></span>muse is sending it to the buyer…</span></span>`
+        : pending ? `<span class="send"><button type="button" data-send="${esc(threadId)}">Send to buyer</button><span class="why">written, not sent</span></span>`
         : failed ? `<span class="send"><button type="button" data-send="${esc(threadId)}">Try again</button><span class="why">could not be delivered</span></span>` : ""
       }</span>
       <span class="amt">${m.priceUsd === null || m.priceUsd === undefined ? "" : usd(m.priceUsd)}</span>
@@ -175,7 +222,9 @@ function cardHtml(l) {
           ${sold ? `<span class="chip sold">sold</span>` : ""}
           ${channelLine("Marketplace", l.marketplace, FB)}
           ${channelLine("Shopify", l.shopify, SHOP)}
+          <span class="chip goal">${esc(GOAL[l.goalMode] ?? "max cash")}</span>
         </div>
+        ${stepsHtml(l)}
       </div>
       <div class="price">
         ${sold ? `<span class="sold">${usd(l.soldUsd)}</span><s>asked ${usd(l.listUsd)}</s>` : usd(l.listUsd)}
@@ -187,7 +236,25 @@ function cardHtml(l) {
   </article>`;
 }
 
+// The recovered total counts up to its new value instead of snapping to it.
+let shown = 0, counting = null;
+function countTo(target) {
+  const el = $("t-value");
+  if (target === shown) { if (!counting) el.textContent = usd(shown); return; }
+  if (counting) cancelAnimationFrame(counting);
+  if (target > shown) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+  const from = shown, start = performance.now();
+  const tick = (now) => {
+    const k = Math.min(1, (now - start) / 900);
+    shown = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
+    el.textContent = usd(shown);
+    counting = k < 1 ? requestAnimationFrame(tick) : null;
+  };
+  counting = requestAnimationFrame(tick);
+}
+
 function render() {
+  if (!data) return;   // a button pressed before the first read
   const t = data.totals ?? {};
   const rows = data.listings ?? [];
   $("t-live").textContent = t.live ?? 0;
@@ -195,23 +262,35 @@ function render() {
   $("t-talking").textContent = t.conversations ?? 0;
   $("t-unsent").textContent = t.unsent_replies ?? 0;
   $("t-sold").textContent = t.sold ?? 0;
-  $("t-value").textContent = usd(t.recovered_usd ?? 0);
+  countTo(t.recovered_usd ?? 0);
   $("sub").textContent = `${rows.length} listing${rows.length === 1 ? "" : "s"} · ${clock(new Date().toISOString())}`;
 
   const tr = data.tracker ?? {};
   $("watch").classList.toggle("on", Boolean(tr.watching));
   $("auto").classList.toggle("on", Boolean(tr.autoReply));
   $("sync").disabled = Boolean(tr.checking) || busy;
-  $("sync").textContent = tr.checking ? "Checking Facebook…" : "Check Facebook now";
+  $("sync").innerHTML = tr.checking ? `<span class="spin"></span>muse is checking Facebook…` : "Check Facebook now";
   const last = tr.last ?? {};
   $("tracker").className = "note" + (last.error ? " err" : "");
   $("tracker").textContent = last.error
     ? `last check failed: ${last.error}`
-    : last.at ? `last checked ${clock(last.at)}` : "not checked yet";
+    : tr.checking ? "takes a minute or two: muse opens the account and reads it"
+    : last.at ? `last checked ${clock(last.at)} · ${foundWords(last.found)}` : "not checked yet";
 
   $("rows").innerHTML = rows.length
     ? rows.map(cardHtml).join("")
     : `<div class="empty">No listings yet.<br />Approve a plan on the <a href="/">live feed</a> — they show up here with whatever buyers say about them.</div>`;
+}
+
+// What the last look at the account turned up, in a few words.
+function foundWords(f) {
+  if (!f) return "nothing new";
+  const parts = [];
+  if (f.wentLive?.length) parts.push(`${f.wentLive.length} went live`);
+  if (f.sold?.length) parts.push(`${f.sold.length} sold`);
+  if (f.newMessages?.length) parts.push(`${f.newMessages.length} new message${f.newMessages.length === 1 ? "" : "s"}`);
+  if (f.removed?.length) parts.push(`${f.removed.length} gone from Facebook`);
+  return parts.length ? parts.join(" · ") : "nothing new";
 }
 
 async function refresh() {
@@ -246,15 +325,21 @@ async function post(path, body) {
 // locks and the page keeps polling while it runs.
 $("sync").addEventListener("click", () => post("/api/status/sync"));
 $("watch").addEventListener("click", () => post("/api/status/watch", { on: !data?.tracker?.watching, every_s: 120 }));
-$("auto").addEventListener("click", () => post("/api/status/auto-reply", { on: !data?.tracker?.autoReply }));
+$("auto").addEventListener("click", () => {
+  const on = !data?.tracker?.autoReply;
+  // Turning it on lets the agent message real people from the owner's account
+  // with nobody reading it first. Worth one question.
+  if (on && !confirm("The agent will answer buyers on your real Facebook account without asking you first. Turn it on?")) return;
+  post("/api/status/auto-reply", { on });
+});
 
 // Sending is the one thing here that reaches a real person from the owner's
 // own account, so it is always a deliberate press.
 $("rows").addEventListener("click", (e) => {
   const threadId = e.target.closest("[data-send]")?.dataset.send;
-  if (!threadId) return;
-  e.target.disabled = true;
-  post(`/api/status/threads/${encodeURIComponent(threadId)}/send`);
+  if (!threadId || sending.has(threadId)) return;
+  sending.add(threadId);
+  post(`/api/status/threads/${encodeURIComponent(threadId)}/send`).finally(() => { sending.delete(threadId); render(); });
 });
 
 refresh();
