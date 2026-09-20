@@ -15,7 +15,7 @@ function setup(t, { mintVoiceToken } = {}) {
   const published = [];
   const server = createReLoopServer({
     eventLog,
-    draftQueue: new DraftQueue({ eventLog, draft: async () => ({ reply: "drafted" }) }),
+    draftQueue: new DraftQueue({ eventLog, draft: async () => ({ reply: "drafted" }), host: async (url) => url }),
     marketFile: null,
     marketplaceDrafts: false,
     // Stubbed so no test can reach the live store or Google.
