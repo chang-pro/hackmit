@@ -102,10 +102,7 @@ export class MarketplaceTracker {
           // muse reports whoever is still waiting, so the same message comes
           // back on every check until it is answered. Once is enough.
           if (threads.some((t) => t.messages.some((m) => m.frm === "BUYER" && same(m.text, msg.text)))) continue;
-          // The same person is the same conversation, even after a "no": a
-          // fresh thread would restart the haggling from round one and let a
-          // persistent buyer grind the price down a second time.
-          const open = threads.find((t) => !t.closed) ?? threads.at(-1);
+          const open = threads.find((t) => !t.closed);
           const result = this.#market.message(msg.listingId, {
             threadId: open?.id ?? null,
             buyer: msg.buyer,
@@ -154,12 +151,7 @@ export class MarketplaceTracker {
     if (!line) return { threadId, sent: false, note: "nothing to send" };
     if (line.sent) return { threadId, sent: true, note: "already sent" };
     const listing = this.#market.getListing(thread.listingId);
-    // muse narrates while it works ("Opening the conversation..."), and a
-    // narration that sat still for a second and a half was read as its answer:
-    // a delivered reply was marked undelivered, inviting a second send. Wait
-    // for the text to hold still much longer before believing it.
-    const { reply } = await this.#ask(replyInstruction({ title: listing.title, buyer: thread.buyer, text: line.text }), { timeoutMs: 240_000, settleMs: 8_000 });
-    console.log(`[tracker] reply to ${thread.buyer}: ${String(reply).slice(0, 160)}`);
+    const { reply } = await this.#ask(replyInstruction({ title: listing.title, buyer: thread.buyer, text: line.text }), { timeoutMs: 240_000 });
     const sent = SENT.test(reply) && !NOT_SENT.test(reply);
     this.#market.markReplySent(threadId, sent);
     return { threadId, sent, note: String(reply).slice(0, 300) };
