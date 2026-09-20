@@ -54,8 +54,11 @@
   button.go:hover:not(:disabled) { background: #6cf0ab; }
   #panel { margin-top: 1.1rem; border-top: 1px solid #222838; padding-top: .9rem; }
   .eyebrow { color: #7d8aa3; font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; margin-bottom: .5rem; }
-  #goals { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; }
-  #goals button.on { background: #2b3550; border-color: #55e39b; }
+  #goals, #channels { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .6rem; }
+  #goals button.on, #channels button.on { background: #2b3550; border-color: #55e39b; }
+  .chan { margin-top: .25rem; font-size: .7rem; color: #9aa6bd; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+  .chan .name { color: #7d8aa3; }
+  .chan button { padding: .2rem .45rem; font-size: .68rem; }
   .acts { display: flex; gap: .4rem; flex-wrap: wrap; }
   #plan { margin-top: .8rem; display: flex; flex-direction: column; gap: .5rem; max-height: 40vh; overflow: auto; }
   .d { border-left: 3px solid var(--c, #3d4761); padding: .3rem 0 .3rem .5rem; }
@@ -100,6 +103,8 @@
     <section id="panel">
       <div class="eyebrow">Goal</div>
       <div id="goals"></div>
+      <div class="eyebrow">List on</div>
+      <div id="channels"></div>
       <div class="acts">
         <button id="analyze" type="button">Start pricing</button>
         <button id="makePlan" type="button">Review these items</button>
@@ -266,7 +271,16 @@ setInterval(pollItems, ITEM_POLL_MS);
     { id: "zero", label: "Waste nothing", goal: { mode: "ZERO_WASTE", targetUsd: 300 } },
     { id: "clear", label: "Clear out fast", goal: { mode: "CLEAR_OUT" } },
   ];
+  // Where an approved item is listed. Shopify goes live by itself; Marketplace
+  // can only be taken as far as a draft, and Facebook needs a human tap to
+  // publish it, so that last step is handed back to the person here.
+  const CHANNELS = [
+    { id: "shopify", label: "Shopify", channels: ["shopify"] },
+    { id: "marketplace", label: "Marketplace", channels: ["marketplace"] },
+    { id: "both", label: "Both", channels: ["shopify", "marketplace"] },
+  ];
   let chosen = GOALS[0];
+  let channel = CHANNELS[0];
   let plan = null;
   let pricingOn = false;
 
@@ -281,6 +295,19 @@ setInterval(pollItems, ITEM_POLL_MS);
     paintGoals();
   });
   paintGoals();
+
+  el("channels").innerHTML = CHANNELS.map((c) => `<button type="button" data-chan="${c.id}">${esc(c.label)}</button>`).join("");
+  function paintChannels() {
+    for (const b of el("channels").children) b.classList.toggle("on", b.dataset.chan === channel.id);
+  }
+  el("channels").addEventListener("click", (e) => {
+    const id = e.target.closest("button")?.dataset.chan;
+    if (!id) return;
+    channel = CHANNELS.find((c) => c.id === id);
+    paintChannels();
+    if (plan && !plan.approved) renderConfirm();
+  });
+  paintChannels();
 
   async function api(path, body) {
     const res = await fetch(path, body
@@ -348,7 +375,9 @@ setInterval(pollItems, ITEM_POLL_MS);
     const sell = live.filter((d) => d.action === "SELL");
     const other = live.filter((d) => ["DONATE", "RECYCLE"].includes(d.action));
     const total = sell.reduce((sum, d) => sum + (d.listUsd ?? 0), 0);
-    const bits = [`put <b>${sell.length} item${sell.length === 1 ? "" : "s"}</b> up for sale, asking <b>${usd(total)}</b>`];
+    const where = channel.id === "both" ? "on Shopify and Facebook Marketplace"
+      : channel.id === "marketplace" ? "on Facebook Marketplace" : "on Shopify";
+    const bits = [`put <b>${sell.length} item${sell.length === 1 ? "" : "s"}</b> up for sale ${where}, asking <b>${usd(total)}</b>`];
     if (other.length) bits.push(`and set ${other.length} aside to donate or recycle`);
     el("confirmText").innerHTML = sell.length || other.length
       ? `This will ${bits.join(" ")}. Untick anything you want to keep.`
@@ -407,6 +436,7 @@ setInterval(pollItems, ITEM_POLL_MS);
       const result = await api(`/api/plans/${encodeURIComponent(plan.id)}/approve`, {
         location,
         keep_item_ids: [...kept],
+        channels: channel.channels,
       });
       plan.approved = true;
       el("confirm").hidden = true;
@@ -430,30 +460,61 @@ setInterval(pollItems, ITEM_POLL_MS);
     } catch { return; }
     const card = el("plan").querySelector(`[data-item="${CSS.escape(listing.itemId ?? "")}"] .st`);
     const shop = listing.shopify ?? {};
+    const fb = listing.marketplace ?? {};
     if (card) {
-      if (shop.status === "live") {
-        card.innerHTML = shop.url
-          ? `live · <a href="${esc(shop.url)}" target="_blank" rel="noopener">open listing</a>${shop.dryRun ? " (dry run)" : ""}`
-          : `live${shop.dryRun ? " (dry run)" : ""}`;
-      } else if (shop.status === "unlisted") {
-        // Created, but the storefront link would 404. Offer the admin page,
-        // which does work, rather than a link that looks broken on stage.
-        card.innerHTML = `created but not on the storefront${shop.adminUrl ? ` · <a href="${esc(shop.adminUrl)}" target="_blank" rel="noopener">open in admin</a>` : ""}<br><span style="color:#ffcf6b">${esc(shop.error ?? "")}</span>`;
-      } else if (shop.status === "failed") {
-        card.textContent = `not listed: ${shop.error ?? "unknown error"}`;
-      } else {
-        card.textContent = "listing…";
+      const lines = [];
+      if (shop.status !== "off") {
+        const shopLine =
+          shop.status === "live"
+            ? (shop.url
+                ? `live · <a href="${esc(shop.url)}" target="_blank" rel="noopener">open listing</a>${shop.dryRun ? " (dry run)" : ""}`
+                : `live${shop.dryRun ? " (dry run)" : ""}`)
+            : shop.status === "unlisted"
+              // Created, but the storefront link would 404. Offer the admin
+              // page, which does work, rather than a link that looks broken.
+              ? `created but not on the storefront${shop.adminUrl ? ` · <a href="${esc(shop.adminUrl)}" target="_blank" rel="noopener">open in admin</a>` : ""} <span style="color:#ffcf6b">${esc(shop.error ?? "")}</span>`
+              : shop.status === "failed"
+                ? `not listed: ${esc(shop.error ?? "unknown error")}`
+                : "listing…";
+        lines.push(`<div class="chan"><span class="name">Shopify</span> ${shopLine}</div>`);
       }
-      if (listing.marketplace?.status === "drafted") {
-        card.innerHTML += listing.marketplace.url
-          ? ` · <a href="${esc(listing.marketplace.url)}" target="_blank" rel="noopener">Marketplace draft</a>`
-          : " · Marketplace draft ready";
+      if (fb.status !== "off") {
+        // Facebook will not let an agent publish, so the draft is handed back:
+        // open it, tap Publish there, then tell us it is up.
+        const fbLine =
+          fb.status === "live"
+            ? (fb.url ? `posted · <a href="${esc(fb.url)}" target="_blank" rel="noopener">open</a>` : "posted")
+            : fb.status === "drafted"
+              ? `${fb.url ? `<a href="${esc(fb.url)}" target="_blank" rel="noopener">open draft in Facebook</a>` : "draft ready in Facebook"}
+                 <button type="button" data-posted="${esc(listing.id)}">I published it</button>`
+              : fb.status === "failed"
+                ? `draft failed: ${esc(fb.error ?? "unknown error")}`
+                : "preparing draft… (up to 2 min)";
+        lines.push(`<div class="chan"><span class="name">Marketplace</span> ${fbLine}</div>`);
       }
+      card.innerHTML = lines.join("");
     }
-    const settled = ["live", "unlisted", "failed"].includes(shop.status) &&
-      ["off", "drafted", "failed"].includes(listing.marketplace?.status);
-    if (!settled && attempt < 60) setTimeout(() => pollListing(id, attempt + 1), 2000);
+    // "unlisted" is settled too: the product exists and is not coming back.
+    const shopSettled = ["off", "live", "unlisted", "failed"].includes(shop.status);
+    // "drafted" is not settled: it waits for the person to publish in Facebook.
+    const fbSettled = ["off", "live", "failed"].includes(fb.status);
+    if (!(shopSettled && fbSettled) && attempt < 90) setTimeout(() => pollListing(id, attempt + 1), 2000);
   }
+
+  // "I published it" -> the listing is live on Marketplace, which is what the
+  // dashboard and the event log record.
+  el("plan").addEventListener("click", async (e) => {
+    const listingId = e.target.closest("[data-posted]")?.dataset.posted;
+    if (!listingId) return;
+    e.target.disabled = true;
+    try {
+      await api(`/api/listings/${encodeURIComponent(listingId)}/marketplace`, {});
+      pollListing(listingId, 0);
+    } catch (err) {
+      el("msg").textContent = err.message;
+      e.target.disabled = false;
+    }
+  });
 })();
 </script>
 
