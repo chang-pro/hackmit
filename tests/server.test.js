@@ -258,3 +258,50 @@ test("a live stream frame never waits for the model", async (t) => {
   const latest = await fetch(`${base}/api/items/latest`);
   assert.equal(latest.status, 200, "the background analysis completed");
 });
+
+test("a deliberate still is never dropped, is kept, and does not hold the phone's request", async (t) => {
+  // Three ways a Take Picture press used to be lost:
+  //  - the stream selector rejected it as rate-limited (frames arrive every 200ms)
+  //  - an analysis already in flight made the analyzer skip it
+  //  - the frame ring (about 30 stream frames, a few seconds) aged it out
+  const MODEL_MS = 600;
+  const seen = [];
+  const slow = {
+    name: "slow-items",
+    async identifyItems(frame) {
+      seen.push(frame.source);
+      await new Promise((done) => setTimeout(done, MODEL_MS));
+      return { items: [], item_count: 0, total_value_usd: 0, model: "slow", generated_at: new Date().toISOString() };
+    },
+  };
+  const server = createReLoopServer({ itemAnalyzer: new ItemAnalyzer({ backend: slow, intervalMs: 0 }) });
+  server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  await fetch(`${base}/api/analysis/start`, { method: "POST" });
+
+  // A stream frame starts an analysis...
+  await postFrame(base, framePayload({ source: "rayban_sdk" }));
+  // ...and the still lands 50ms later: inside the selector's window AND while
+  // the analyzer is busy.
+  await new Promise((done) => setTimeout(done, 50));
+  const started = Date.now();
+  const still = await postFrame(base, framePayload({
+    source: "glasses_photo", force_analysis: true, image_base64: "c3RpbGwtcGhvdG8=",
+  }));
+  assert.ok(Date.now() - started < MODEL_MS / 2, "the phone is answered at once, not after the model");
+  assert.equal(still.body.selection.accepted, true, "the stream selector does not thin a still");
+  assert.match(still.body.photo_url, /^\/api\/photos\/pho_/, "the still is copied out of the frame ring immediately");
+
+  // Its durable copy is servable, independent of the ring.
+  const photo = await fetch(base + still.body.photo_url);
+  assert.equal(photo.status, 200);
+
+  // Once the first analysis finishes, the queued still runs by itself.
+  await new Promise((done) => setTimeout(done, MODEL_MS * 2 + 400));
+  assert.deepEqual(seen, ["rayban_sdk", "glasses_photo"], "the still was analyzed, not skipped");
+
+  const latest = await (await fetch(`${base}/api/items/latest`)).json();
+  assert.equal(latest.photo?.frame_source, "glasses_photo");
+  assert.equal(latest.photo?.photo_url, still.body.photo_url, "the viewer can find the still's result and its image");
+});

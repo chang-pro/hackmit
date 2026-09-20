@@ -283,6 +283,69 @@ export async function publishToSalesChannels(productGid, customFetch = fetch) {
  * @param {string} [params.imageUrl]
  * @param {Function} [params.customFetch]
  */
+// Shopify attaches an image by fetching its URL from Shopify's own servers, so
+// an address only this machine or this tailnet can reach never loads: the
+// product is created and its photo silently fails to attach.
+export function isPubliclyFetchable(url) {
+  let host;
+  try {
+    const parsed = new URL(url);
+    if (!/^https?:$/.test(parsed.protocol)) return false;
+    host = parsed.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".ts.net")) return false;
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!v4) return !host.includes(":"); // a bare IPv6 literal is not worth guessing at
+  const [a, b] = [Number(v4[1]), Number(v4[2])];
+  if (a === 10 || a === 127 || a === 0) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false; // CGNAT range, which is where Tailscale lives
+  return true;
+}
+
+const STAGED_UPLOAD_MUTATION = `
+mutation StagedUpload($input: [StagedUploadInput!]!) {
+  stagedUploadsCreate(input: $input) {
+    stagedTargets { url resourceUrl parameters { name value } }
+    userErrors { field message }
+  }
+}`;
+
+// For a photo Shopify cannot reach: read the bytes here, push them to Shopify's
+// staged-upload storage, and hand back the URL Shopify gave us for them.
+async function stageLocalImage(imageUrl, customFetch) {
+  const local = await customFetch(imageUrl);
+  if (!local.ok) throw new ShopifyError(`could not read the photo at ${imageUrl} (${local.status})`);
+  const mime = (local.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+  const bytes = await local.arrayBuffer();
+  const filename = `reloop-${Date.now()}.${mime === "image/png" ? "png" : "jpg"}`;
+
+  const staged = await shopifyGraphql(
+    STAGED_UPLOAD_MUTATION,
+    { input: [{ resource: "IMAGE", filename, mimeType: mime, httpMethod: "POST" }] },
+    customFetch
+  );
+  const result = staged?.stagedUploadsCreate ?? staged?.data?.stagedUploadsCreate;
+  const target = result?.stagedTargets?.[0];
+  if (!target?.url || !target?.resourceUrl) {
+    const why = (result?.userErrors ?? []).map((e) => e.message).join("; ") || "no upload target returned";
+    throw new ShopifyError(`Shopify would not stage the photo: ${why}`);
+  }
+
+  // The signed fields first and the file LAST: the storage backend rejects a
+  // form where the file precedes its policy fields.
+  const form = new FormData();
+  for (const { name, value } of target.parameters) form.append(name, value);
+  form.append("file", new Blob([bytes], { type: mime }), filename);
+  const uploaded = await customFetch(target.url, { method: "POST", body: form });
+  if (!uploaded.ok) throw new ShopifyError(`staged photo upload failed (${uploaded.status})`);
+  return target.resourceUrl;
+}
+
 export async function createProduct({
   title,
   descriptionHtml,
@@ -302,10 +365,22 @@ export async function createProduct({
     status,
   };
 
-  const media = imageUrl
+  let imageSource = imageUrl || null;
+  let imageError = null;
+  if (imageSource && !isDryRun && !isPubliclyFetchable(imageSource)) {
+    try {
+      imageSource = await stageLocalImage(imageSource, customFetch);
+    } catch (err) {
+      // A listing without its photo beats no listing. The reason is reported.
+      imageError = err.message;
+      imageSource = null;
+    }
+  }
+
+  const media = imageSource
     ? [
         {
-          originalSource: imageUrl,
+          originalSource: imageSource,
           mediaContentType: "IMAGE",
         },
       ]
@@ -411,10 +486,22 @@ export async function createProduct({
       price: formattedPrice,
       url: productUrl,
       previewUrl,
-      // False means the product exists in the admin but its storefront link
-      // will 404. publishError says why.
-      publishedToOnlineStore: Boolean(onlineStoreUrl),
+      // True when the product is actually reachable on the storefront.
+      //
+      // onlineStoreUrl alone is NOT a reliable signal: reading it needs the
+      // read_publications scope, which this app is not granted, so it comes
+      // back null even for products that are live and purchasable. Verified by
+      // hand — a product reporting null here was browsable, added to a cart,
+      // had its quantity changed and reached checkout. Trusting it alone
+      // reported every successful publish as a failure.
+      //
+      // So a confirmed publish to the Online Store channel counts too.
+      publishedToOnlineStore:
+        Boolean(onlineStoreUrl) ||
+        publication.channels.some((c) => /online store/i.test(c)),
       publishedChannels: publication.channels,
+      imageAttached: Boolean(media),
+      imageError,
       publishError: publication.error,
       adminUrl: `https://${cleanDomain}/admin/products/${numId}`,
     },

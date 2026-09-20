@@ -44,6 +44,7 @@ struct GlassesSDKSection: View {
                               failed: streamer.failed,
                               footnote: "video \(streamer.frameSize) · time \(streamer.elapsed)")
             startStopButton
+            takePictureButton
             if !streamer.lastError.isEmpty {
                 Text(streamer.lastError)
                     .font(BK.caption(11))
@@ -110,6 +111,42 @@ struct GlassesSDKSection: View {
                 Text("Registration: \(streamer.regState)")
                     .font(BK.caption(10))
                     .foregroundStyle(BK.textFaint)
+            }
+        }
+    }
+
+    // Only meaningful while the stream is live: capturePhoto() needs an active
+    // camera. Hidden rather than disabled when idle, so the idle screen stays
+    // a single obvious action.
+    @ViewBuilder private var takePictureButton: some View {
+        if streamer.isStreaming {
+            VStack(spacing: 6) {
+                Button {
+                    streamer.takePicture()
+                } label: {
+                    HStack {
+                        Image(systemName: "camera.fill")
+                        Text("Take Picture").font(BK.title(16))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(BK.surface)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(BK.accent.opacity(0.6), lineWidth: 1)
+                    )
+                    .foregroundStyle(BK.accent)
+                }
+                .buttonStyle(.plain)
+
+                if !streamer.photoStatus.isEmpty {
+                    Text(streamer.photoStatus)
+                        .font(BK.body(12))
+                        .foregroundStyle(BK.textFaint)
+                }
             }
         }
     }
