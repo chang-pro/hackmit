@@ -40,6 +40,11 @@
 //   GET  /, /live               — the glasses feed with prices on it
 //   GET  /dashboard             — the event-log dashboard (goal, recovered $, listing cards)
 //   GET  /status                — placeholder: active listings + agent conversations
+//   GET  /api/status            — data for that page: listings, channel state, conversations, totals
+//   POST /api/status/sync       — ask muse where the Facebook listings stand and who wrote in
+//   POST /api/status/auto-reply — { on } let the seller agent answer Facebook buyers unattended
+//   POST /api/status/watch      — { on, every_s } re-check Facebook on a timer
+//   POST /api/status/threads/:id/send — deliver the agent's pending reply to that buyer
 
 import { createServer } from "node:http";
 import { createReadStream, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, rmSync } from "node:fs";
@@ -51,6 +56,7 @@ import { randomUUID } from "node:crypto";
 import { ItemAnalyzer } from "./item-analyzer.js";
 import { selectedItemsBackend } from "../vision/backends/items-provider.js";
 import { cropItem } from "./crop.js";
+import { MarketplaceTracker } from "../market/marketplace-tracker.js";
 import { DraftQueue } from "../market/draft-queue.js";
 import { Market } from "../market/market.js";
 import { LIVE_WS_URL, buildSetup, isAffirmative, mintLiveToken } from "../voice/confirm-session.js";
@@ -257,6 +263,8 @@ export function createReLoopServer({
   mintVoiceToken = mintLiveToken,
   marketplaceDrafts = undefined,
   enableRepricing = process.env.ENABLE_REPRICING === "1",
+  // Follows Facebook listings through muse (injectable so tests never drive a browser).
+  tracker: customTracker = null,
 } = {}) {
   const market =
     customMarket ??
@@ -273,6 +281,34 @@ export function createReLoopServer({
     enabled: enableRepricing,
   });
   // Overridable so the test suite keeps its fake photos out of the real folder.
+  const tracker = customTracker ?? new MarketplaceTracker({ market, autoReply: process.env.MARKETPLACE_AUTO_REPLY === "1" });
+  tracker.watch?.(Number(process.env.MARKETPLACE_WATCH_MS ?? 0));
+
+  // Everything the status page draws, in one read: each listing, where it
+  // stands on each channel, and every conversation about it.
+  function statusView() {
+    const threads = market.publicThreads();
+    const listings = market.allListings().map((listing) => ({
+      ...listing,
+      threads: threads.filter((t) => t.listingId === listing.id),
+    }));
+    const sold = listings.filter((l) => l.status === "SOLD");
+    return {
+      listings,
+      totals: {
+        listed: listings.length,
+        live: listings.filter((l) => l.status !== "SOLD" && (l.marketplace?.status === "live" || l.shopify?.status === "live")).length,
+        waiting_on_you: listings.filter((l) => l.status !== "SOLD" && l.marketplace?.status === "drafted").length,
+        conversations: threads.length,
+        unsent_replies: threads.filter((t) => t.channel === "facebook" && t.messages.some((m) => m.frm === "SELLER" && !m.sent)).length,
+        sold: sold.length,
+        recovered_usd: sold.reduce((sum, l) => sum + (l.soldUsd ?? 0), 0),
+      },
+      tracker: tracker.status(),
+      drafts: draftQueue.status(),
+    };
+  }
+
   const photosDir = process.env.RELOOP_PHOTOS_DIR || join(ROOT, "data", "photos");
   const photos = new Map();
   // frame_id -> photo id, for deliberate stills. The frame ring holds ~30
@@ -1020,6 +1056,20 @@ export function createReLoopServer({
         url.pathname.startsWith("/api/photos/")
       ) {
         if ((await routeMarket(req, res, url)) === false) sendJson(res, 404, { error: "not found" });
+      } else if (req.method === "GET" && url.pathname === "/api/status") {
+        sendJson(res, 200, statusView());
+      } else if (req.method === "POST" && url.pathname === "/api/status/sync") {
+        // Asks muse where the Facebook listings stand and who has written in.
+        const found = await tracker.sync();
+        sendJson(res, 200, { found, ...statusView() });
+      } else if (req.method === "POST" && url.pathname === "/api/status/auto-reply") {
+        const body = await readOptionalJsonBody(req);
+        sendJson(res, 200, { auto_reply: tracker.setAutoReply(body.on === true) });
+      } else if (req.method === "POST" && url.pathname === "/api/status/watch") {
+        const body = await readOptionalJsonBody(req);
+        sendJson(res, 200, { watching: tracker.watch(body.on === false ? 0 : Math.max(30, Number(body.every_s) || 120) * 1000) });
+      } else if (req.method === "POST" && /^\/api\/status\/threads\/[A-Za-z0-9_-]+\/send$/.test(url.pathname)) {
+        sendJson(res, 200, await tracker.sendReply(url.pathname.split("/")[4]));
       } else if (req.method === "GET" && url.pathname === "/status") {
         // Placeholder: a page to show active listings and the seller agent's
         // conversation with a buyer. Empty for now so the route exists and can

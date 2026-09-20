@@ -304,6 +304,7 @@ export class Market {
         condition: item.condition,
         description: decision.description ?? describeItem(item),
         photoUrl: photoUrls[item.id]?.[0] ?? item.photo_url ?? plan.photoUrl ?? null,
+        goalMode: plan.goal?.mode ?? "CASH",
         listUsd: decision.listUsd,
         basis: decision.band.basis,
         status: "ACTIVE",
@@ -390,9 +391,9 @@ export class Market {
 
   publicListing(listing) {
     // Explicit allowlist: nothing from #rules can ride along by accident.
-    const { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, shopify, marketplace } = listing;
+    const { id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, shopify, marketplace, goalMode } = listing;
     return {
-      id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd,
+      id, itemId, title, condition, description, photoUrl, listUsd, basis, status, soldUsd, goalMode: goalMode ?? "CASH",
       shopify: { ...(shopify ?? { status: "off", url: null }) },
       marketplace: { ...marketplace },
     };
@@ -448,7 +449,7 @@ export class Market {
   }
 
   // One buyer message. body: { threadId?, buyer?, priceUsd?, text? }.
-  message(listingId, { threadId = null, buyer = "buyer", priceUsd = null, text = "" } = {}) {
+  message(listingId, { threadId = null, buyer = "buyer", priceUsd = null, text = "", channel = "agent" } = {}) {
     const listing = this.#listing(listingId);
     if (listing.status === "SOLD") throw fail(409, "listing is sold");
     const rules = this.#rules.get(listingId);
@@ -458,7 +459,7 @@ export class Market {
     if (!thread) {
       const open = [...this.threads.values()].filter((t) => t.listingId === listingId).length;
       if (open >= MAX_THREADS_PER_LISTING) throw fail(429, "too many threads on this listing");
-      thread = { id: shortId("thr"), listingId, buyer: String(buyer).slice(0, 60), round: 0, lastCounterUsd: null, agreedUsd: null, closed: false, messages: [] };
+      thread = { id: shortId("thr"), listingId, channel: channel === "facebook" ? "facebook" : "agent", buyer: String(buyer).slice(0, 60), round: 0, lastCounterUsd: null, agreedUsd: null, closed: false, messages: [] };
       this.threads.set(thread.id, thread);
     }
     if (thread.closed) throw fail(409, "this negotiation is closed");
@@ -490,6 +491,55 @@ export class Market {
     thread.messages.push({ frm: "SELLER", priceUsd: reply.priceUsd, text: reply.text, ts: now });
     this.#save();
     return { threadId: thread.id, move: reply.move, priceUsd: reply.priceUsd, text: reply.text, listing: this.publicListing(listing) };
+  }
+
+  // The seller's latest line in a thread was delivered to the buyer (or not).
+  markReplySent(threadId, sent) {
+    const thread = this.threads.get(threadId);
+    if (!thread) throw fail(404, `no thread "${threadId}"`);
+    const last = [...thread.messages].reverse().find((m) => m.frm === "SELLER");
+    if (last) last.sent = sent ? new Date().toISOString() : false;
+    this.#save();
+    return last ?? null;
+  }
+
+  // Conversations on a listing, as the status page shows them. Only what was
+  // actually said: the rules that produced the seller's side stay private.
+  publicThreads(listingId = null) {
+    return [...this.threads.values()]
+      .filter((t) => !listingId || t.listingId === listingId)
+      .map((t) => ({
+        id: t.id, listingId: t.listingId, buyer: t.buyer, round: t.round,
+        agreedUsd: t.agreedUsd, closed: t.closed, channel: t.channel ?? "agent",
+        messages: t.messages.map((m) => ({ frm: m.frm, priceUsd: m.priceUsd, text: m.text, ts: m.ts, sent: m.sent ?? null })),
+      }));
+  }
+
+  // Every listing, sold ones included: the status page counts what was
+  // recovered, and the public catalog (what buyers see) hides sold items.
+  allListings() {
+    return [...this.listings.values()].map((listing) => {
+      this.#expireHold(listing);
+      return this.publicListing(listing);
+    });
+  }
+
+  listingsOnMarketplace() {
+    return [...this.listings.values()]
+      .filter((l) => l.marketplace && l.marketplace.status !== "off" && l.status !== "SOLD")
+      .map((l) => this.publicListing(l));
+  }
+
+  // The Facebook listing sold (the buyer paid in person, outside this app).
+  markSoldOnMarketplace(listingId, soldUsd = null) {
+    const listing = this.#listing(listingId);
+    if (listing.status === "SOLD") return this.publicListing(listing);
+    listing.status = "SOLD";
+    listing.soldUsd = Number.isFinite(Number(soldUsd)) && Number(soldUsd) > 0 ? Math.round(Number(soldUsd)) : listing.listUsd;
+    listing.marketplace.status = "sold";
+    this.#emit({ kind: "SOLD", itemId: listing.itemId, label: listing.title, amountUsd: listing.soldUsd, text: `${listing.title} sold on Marketplace for $${listing.soldUsd}` });
+    this.#save();
+    return this.publicListing(listing);
   }
 
   // Mock checkout: completes the held sale at the agreed price. No payment is taken.

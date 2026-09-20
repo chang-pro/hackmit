@@ -34,7 +34,7 @@ export function respond(m, listing, rules, round, lastCounterUsd = null) {
   if (round + 1 >= rules.maxRounds) {
     return p >= rules.floorUsd
       ? { move: "ACCEPT", priceUsd: p, text: "Alright, deal." }
-      : { move: "REJECT", priceUsd: null, text: "Can't go that low, sorry." };
+      : { move: "REJECT", priceUsd: null, text: rules.firm ? "Sorry, the price is firm. I can't go that low." : "Can't go that low, sorry." };
   }
 
   const gap = list - rules.floorUsd;
@@ -53,6 +53,8 @@ export function respond(m, listing, rules, round, lastCounterUsd = null) {
   return {
     move: "COUNTER",
     priceUsd: counter,
-    text: p < rules.floorUsd ? `That's too low for me. I could do $${counter}.` : `I can do $${counter}.`,
+    text: p < rules.floorUsd
+      ? (rules.firm ? `Sorry, I'm firm on this one. The best I can do is $${counter}.` : `That's too low for me. I could do $${counter}.`)
+      : `I can do $${counter}.`,
   };
 }
