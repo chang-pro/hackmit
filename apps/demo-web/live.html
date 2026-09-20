@@ -52,9 +52,9 @@
   #boxes { transition: opacity .6s ease; }
   #boxes.aging { opacity: .45; }
   #boxes.stale { opacity: 0; }
-  /* A box near the right edge hangs its label leftwards, so the label stays on
-     the picture instead of running over the price list beside it. */
-  .box.rightish .tag { left: auto; right: -2px; }
+  /* Labels are kept on the picture (see keepTagsOnPicture): one that ran past
+     the edge covered the price list beside it. */
+  .tag { max-width: var(--stage-w, 100vw); overflow: hidden; text-overflow: ellipsis; }
   .tag {
     position: absolute; left: -2px; top: -1.45rem; padding: .1rem .4rem;
     border-radius: 5px; background: var(--c); color: #06080c;
@@ -260,7 +260,6 @@ function paintPicture() {
     b.style.top = (it.bbox.y / 10) + "%";
     b.style.width = (it.bbox.width / 10) + "%";
     b.style.height = (it.bbox.height / 10) + "%";
-    if (it.bbox.x + it.bbox.width / 2 > 500) b.classList.add("rightish");
     const tag = document.createElement("span");
     tag.className = "tag";
     tag.textContent = it.label.toUpperCase() + "  $" + it.price_usd;
@@ -268,6 +267,7 @@ function paintPicture() {
     b.addEventListener("click", () => togglePick(it.id));
     return b;
   }));
+  keepTagsOnPicture();
 }
 
 function togglePick(id) {
@@ -418,14 +418,33 @@ async function pollItems() {
     b.style.top = (it.bbox.y / 10) + "%";
     b.style.width = (it.bbox.width / 10) + "%";
     b.style.height = (it.bbox.height / 10) + "%";
-    if (it.bbox.x + it.bbox.width / 2 > 500) b.classList.add("rightish");
     const tag = document.createElement("span");
     tag.className = "tag";
     tag.textContent = it.label.toUpperCase() + "  $" + it.price_usd;
     b.append(tag);
     return b;
   }));
+  keepTagsOnPicture();
 }
+
+// A label starts at its box's left edge and is as wide as its text, so a box
+// near the right edge pushed its label off the picture and over the price
+// list. Measured rather than guessed: each label is slid back just far enough
+// to fit, and one longer than the whole picture is cut with an ellipsis.
+function keepTagsOnPicture() {
+  const stage = $("shot").getBoundingClientRect();
+  if (!stage.width) return;
+  $("boxes").style.setProperty("--stage-w", stage.width + "px");
+  for (const tag of $("boxes").querySelectorAll(".tag")) {
+    tag.style.transform = "";
+    const r = tag.getBoundingClientRect();
+    let shift = 0;
+    if (r.right > stage.right) shift = stage.right - r.right;
+    if (r.left + shift < stage.left) shift = stage.left - r.left;
+    if (shift) tag.style.transform = `translateX(${Math.round(shift)}px)`;
+  }
+}
+window.addEventListener("resize", keepTagsOnPicture);
 
 pollFrame(); pollItems();
 setInterval(pollFrame, POLL_MS);
