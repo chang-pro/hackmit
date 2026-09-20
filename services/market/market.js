@@ -303,7 +303,7 @@ export class Market {
         title: item.label,
         condition: item.condition,
         description: decision.description ?? describeItem(item),
-        photoUrl: photoUrls[item.id]?.[0] ?? plan.photoUrl ?? null,
+        photoUrl: photoUrls[item.id]?.[0] ?? item.photo_url ?? plan.photoUrl ?? null,
         listUsd: decision.listUsd,
         basis: decision.band.basis,
         status: "ACTIVE",
@@ -325,7 +325,7 @@ export class Market {
       }
 
       if (!want.marketplace) continue;
-      const photos = photoUrls[item.id] ?? (plan.photoUrl ? [plan.photoUrl] : []);
+      const photos = photoUrls[item.id] ?? (item.photo_url ? [item.photo_url] : plan.photoUrl ? [plan.photoUrl] : []);
       const { job } = this.#draftQueue.enqueue({
         item: { id: item.id, label: item.label, condition: item.condition, price_usd: decision.listUsd },
         photoUrls: photos,

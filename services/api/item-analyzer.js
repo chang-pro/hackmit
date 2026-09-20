@@ -32,6 +32,10 @@ export class ItemAnalyzer {
   // The last result that came from a deliberate still, kept apart from
   // #latest because stream analyses overwrite that every few seconds.
   #latestPhoto = null;
+  // The frame #latest was identified in, image included. The capture ring keeps
+  // about four seconds of stream, and a listing is made long after that, so the
+  // ring could never supply the listing photo: every listing went out bare.
+  #latestFrame = null;
 
   constructor({ backend = selectedItemsBackend(), intervalMs = DEFAULT_INTERVAL_MS } = {}) {
     this.#backend = backend;
@@ -48,6 +52,7 @@ export class ItemAnalyzer {
     this.#analyzedCount = 0;
     this.#pendingForced = null;
     this.#latestPhoto = null;
+    this.#latestFrame = null;
   }
 
   status() {
@@ -63,6 +68,10 @@ export class ItemAnalyzer {
 
   latest() {
     return this.#latest;
+  }
+
+  latestFrame() {
+    return this.#latestFrame;
   }
 
   latestPhoto() {
@@ -100,6 +109,7 @@ export class ItemAnalyzer {
         frame_id: frame?.frame_id ?? null,
         frame_source: frame?.source ?? null,
       };
+      this.#latestFrame = frame ?? null;
       this.#latestAt = Date.now();
       this.#lastError = null;
       this.#analyzedCount += 1;

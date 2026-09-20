@@ -541,7 +541,6 @@ final class GlassesStreamer: ObservableObject {
     private let uplink = FrameUplink()
     private let recorder = RecorderBox()
     @Published var isRecording = false
-    @Published var photoStatus = ""
     @Published var savedFile = ""
     private let keepAlive = KeepAlive()   // keeps Meta AI + glasses alive past ~85s
     let preview = PreviewSink()
@@ -793,14 +792,6 @@ final class GlassesStreamer: ObservableObject {
                 }
                 tokens.append(errTok)
 
-                // Full-resolution stills. capturePhoto() is fire-and-forget;
-                // the image arrives here, on the SDK's thread, so it is handed
-                // straight off and nothing heavy happens in this callback.
-                let photoTok = stream.photoDataPublisher.listen { [weak self] photo in
-                    Task { @MainActor in self?.handleCapturedPhoto(photo) }
-                }
-                tokens.append(photoTok)
-
                 // Arm the uplink BEFORE starting the stream so the very first
                 // frame/keyframe is never dropped (ingest() no-ops until armed,
                 // and gates on the first keyframe anyway).
@@ -830,78 +821,6 @@ final class GlassesStreamer: ObservableObject {
                 } else {
                     self.status = "Failed to start"
                 }
-            }
-        }
-    }
-
-    // FrameUplink has its own private copy; this type needs one too.
-    private static let photoIsoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    // THE TAKE PICTURE BUTTON. Full sensor resolution, not a frame off the
-    // video: the stream is downscaled for bandwidth, a still is not. The video
-    // keeps running underneath, so this does not interrupt the live feed.
-    func takePicture() {
-        guard let stream else { photoStatus = "Start the stream first"; return }
-        photoStatus = "Capturing…"
-        if !stream.capturePhoto(format: .jpeg) {
-            photoStatus = "Camera refused the capture"
-        }
-    }
-
-    // A 12MP still is ~4MB as base64: close to the server's body cap, slow over
-    // a bad link, and far more than the pricing model needs. 2048px on the long
-    // edge is still ~3x the stream frame and a fraction of the bytes.
-    private static let maxPhotoEdge: CGFloat = 2048
-
-    private nonisolated static func preparedJPEG(from data: Data) -> (jpeg: Data, width: Int, height: Int)? {
-        guard let image = UIImage(data: data) else { return nil }
-        let w = image.size.width * image.scale, h = image.size.height * image.scale
-        let longest = max(w, h)
-        guard longest > 0 else { return nil }
-        let scale = min(1, maxPhotoEdge / longest)
-        let target = CGSize(width: (w * scale).rounded(), height: (h * scale).rounded())
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1            // pixels, not points
-        format.opaque = true
-        let scaled = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: target))   // also bakes in EXIF orientation
-        }
-        guard let jpeg = scaled.jpegData(compressionQuality: 0.85) else { return nil }
-        return (jpeg, Int(target.width), Int(target.height))
-    }
-
-    private func handleCapturedPhoto(_ photo: PhotoData) {
-        photoStatus = "Uploading…"
-        let raw = photo.data
-        // Detached: decoding and re-encoding a 12MP image must not run on the
-        // main actor, and it never touches the SDK's delivery thread.
-        Task.detached(priority: .userInitiated) { [weak self] in
-            guard let prepared = Self.preparedJPEG(from: raw) else {
-                await MainActor.run { self?.photoStatus = "Could not read the photo" }
-                return
-            }
-            do {
-                let api = try await ApiClient.fromSettings()
-                // force_analysis: a still is an explicit act, so it is priced
-                // next rather than waiting out the streaming interval.
-                _ = try await api.submitFrame(FrameSubmission(
-                    source: "glasses_photo",
-                    capturedAt: Self.photoIsoFormatter.string(from: Date()),
-                    imageBase64: prepared.jpeg.base64EncodedString(),
-                    width: prepared.width,
-                    height: prepared.height,
-                    forceAnalysis: true
-                ))
-                await MainActor.run {
-                    self?.photoStatus = "Photo sent (\(prepared.width)x\(prepared.height))"
-                }
-            } catch {
-                await MainActor.run { self?.photoStatus = "Upload failed: \(error.localizedDescription)" }
-                await BackendLocator.shared.reselect()
             }
         }
     }
