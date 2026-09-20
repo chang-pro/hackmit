@@ -460,3 +460,22 @@ test('dashboard robot routes hand saved destinations to the mission controller',
   const rejected=await fetch(base+'/api/robot/go',{method:'POST',headers:{Origin:'https://unrelated.example'},body:'{}'});
   assert.equal(rejected.status,403);
 });
+
+test("robot controls refuse a request that came through a proxy, even from this machine", async (t) => {
+  // `tailscale serve` forwards from 127.0.0.1, so the socket address said
+  // "local" for anyone on the tailnet and they could send the robot walking.
+  let started = 0;
+  const controller = { job: { state: "idle" }, waypoints: async () => ["kitchen"], start: async () => { started += 1; return { state: "running" }; }, cancel: () => ({ state: "idle" }) };
+  const server = createReLoopServer({ robotController: controller });
+  server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const go = (headers) => fetch(`${base}/api/robot/go`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ destination: "kitchen", issued_at: Date.now() }) });
+
+  assert.equal((await go({ "X-Forwarded-For": "100.103.43.88" })).status, 403);
+  assert.equal((await go({ "X-Forwarded-Host": "dantes-laptop.tailb2bea0.ts.net" })).status, 403);
+  assert.equal((await fetch(`${base}/api/robot/status`, { headers: { "Tailscale-User-Login": "someone@example.com" } })).status, 403);
+  assert.equal(started, 0);
+  assert.equal((await go({})).status, 202, "the page on this Mac still works");
+  assert.equal(started, 1);
+});

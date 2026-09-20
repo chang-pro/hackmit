@@ -327,13 +327,19 @@ export async function draftListing(item, options = {}) {
   };
 }
 
+// Titles and names are data inside an instruction. Kept to one line with no
+// quotes, so neither can close the sentence and start another.
+function oneLine(text) {
+  return String(text ?? "").replace(/["\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
 // Asks muse where our listings stand and who has written in. Titles are what
 // muse knows them by; it never sees our ids or any price rule.
 export function statusInstruction(listings) {
   return [
     "Check my Facebook Marketplace account and report back. Do not change, publish, delete or reply to anything.",
     "For each of these listings, tell me whether it is still a draft, live (published and visible to buyers), sold, or removed, and give its facebook.com link if it has one:",
-    ...listings.map((l) => `- ${l.title} ($${l.listUsd})`),
+    ...listings.map((l) => `- ${oneLine(l.title)} ($${l.listUsd})`),
     "Then open Marketplace messages. For each of those listings, list every buyer who is waiting on a reply: the buyer's name, which listing, and their latest message word for word.",
     "If there are no messages, say so. Keep it factual and short.",
   ].join("\n");
@@ -343,7 +349,7 @@ export function statusInstruction(listings) {
 // policy; muse is only the hands.
 export function replyInstruction({ title, buyer, text }) {
   return [
-    `On Facebook Marketplace, open the conversation with ${buyer} about my listing "${title}".`,
+    `On Facebook Marketplace, open the conversation with ${oneLine(buyer)} about my listing "${oneLine(title)}".`,
     `Reply with exactly this message and nothing else: "${String(text).replace(/"/g, "'")}"`,
     "Do not negotiate, do not add anything, and do not message anyone else. Then tell me whether it was sent.",
   ].join("\n");

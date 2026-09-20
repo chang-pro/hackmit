@@ -234,7 +234,10 @@ export class Market {
   // channels: which storefronts this approval publishes to. Defaults to
   // Shopify plus Marketplace when the muse.ai bridge is switched on.
   #channelsFor(requested) {
-    const asked = Array.isArray(requested) && requested.length
+    // Nothing said (null) means the default. An explicit empty list means
+    // "nowhere": it used to fall through to the default too, so a caller who
+    // asked for no channel had real products published to the live store.
+    const asked = Array.isArray(requested)
       ? requested.map((c) => String(c).toLowerCase())
       : ["shopify", ...(this.#marketplaceDrafts ? ["marketplace"] : [])];
     return { shopify: asked.includes("shopify"), marketplace: asked.includes("marketplace") };

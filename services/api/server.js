@@ -996,7 +996,12 @@ export function createReLoopServer({
         console.log(`[req] ${req.method} ${url.pathname} from ${from}:${req.socket.remotePort} (${size}B)`);
       }
       if (url.pathname.startsWith("/api/robot/")) {
-        const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress);
+        // The socket address alone is not enough: `tailscale serve` (and any
+        // other local proxy) connects FROM this machine, so a request from
+        // anywhere on the tailnet arrived looking local and could walk the
+        // robot. A proxied request always carries a forwarding header.
+        const proxied = ["x-forwarded-for", "x-forwarded-host", "forwarded", "tailscale-user-login"].some((h) => req.headers[h]);
+        const local = !proxied && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress);
         if (!local) { sendJson(res, 403, {error:"Robot controls are available on this Mac only."}); return; }
         if (req.method === "GET" && url.pathname === "/api/robot/status") {
           sendJson(res, 200, { ...robotController.job, waypoints: await robotController.waypoints() });
