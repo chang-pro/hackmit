@@ -60,6 +60,14 @@ final class BackendLocator: @unchecked Sendable {
     }()
 
     /// The sticky choice, probing first if nothing has been chosen yet.
+    // True only while frames are going over the USB cable. That link is ~2 ms
+    // with room to spare, so the streamer can afford sharper frames there; on
+    // every other path the small frame is what keeps the feed from lagging.
+    var onCable: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return active?.absoluteString == Self.candidates[0]
+    }
+
     func current() async -> URL {
         lock.lock()
         let chosen = active
