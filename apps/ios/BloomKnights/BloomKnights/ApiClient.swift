@@ -47,6 +47,9 @@ final class BackendLocator: @unchecked Sendable {
     private let lock = NSLock()
     private var active: URL?
     private var probing = false
+    private var lastProbeAt = Date.distantPast
+    // How often to look for a better path while settled on a slower one.
+    private static let upgradeEvery: TimeInterval = 30
 
     private static let probeSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -60,8 +63,19 @@ final class BackendLocator: @unchecked Sendable {
     func current() async -> URL {
         lock.lock()
         let chosen = active
+        let stale = Date().timeIntervalSince(lastProbeAt) > Self.upgradeEvery
         lock.unlock()
-        if let chosen { return chosen }
+        if let chosen {
+            // The choice only changed on FAILURE, so an app that started on
+            // Tailscale stayed there after the cable was plugged in: the slow
+            // path kept working, so nothing ever looked for the fast one. While
+            // settled on anything but the best candidate, re-probe in the
+            // background. Frames keep flowing on the current path meanwhile.
+            if stale, chosen.absoluteString != Self.candidates[0] {
+                Task.detached(priority: .utility) { await BackendLocator.shared.reselect() }
+            }
+            return chosen
+        }
         await reselect()
         lock.lock()
         defer { lock.unlock() }
@@ -97,6 +111,7 @@ final class BackendLocator: @unchecked Sendable {
 
         lock.lock()
         active = winner?.1   // nil when nothing answered: probe again next time
+        lastProbeAt = Date()
         lock.unlock()
     }
 

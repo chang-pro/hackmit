@@ -129,6 +129,40 @@ export async function selectChat(cdp, wanted = MUSE_CHAT) {
   return matches(await currentChat(cdp), wanted);
 }
 
+// Every bubble, ours and the agent's, to tell whose turn it is.
+const ANY_BUBBLE = process.env.MUSE_ANY_BUBBLE_SELECTOR ?? ".hatch-chat-groupable-bubble";
+const USER_BUBBLE_CLASS = process.env.MUSE_USER_BUBBLE_CLASS ?? "bg-chat-user-bubble";
+
+// Do not type while the agent still owes an answer. A reply that lands after a
+// timeout would otherwise be counted as the answer to the NEXT instruction, and
+// that listing would be stored with the previous item's Facebook link. The chat
+// is idle when its last bubble is the agent's and has stopped changing.
+async function awaitIdle(cdp, { timeoutMs = 180_000, settleMs = 1_500 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastText = null;
+  let stableSince = null;
+  while (Date.now() < deadline) {
+    const state = await cdp.evaluate(`(() => {
+      const all = document.querySelectorAll(${JSON.stringify(ANY_BUBBLE)});
+      const last = all[all.length - 1];
+      if (!last) return { empty: true };
+      return { mine: last.classList.contains(${JSON.stringify(USER_BUBBLE_CLASS)}), text: (last.innerText || "").trim() };
+    })()`);
+    if (state.empty) return;                       // a fresh chat owes nothing
+    if (!state.mine && state.text === lastText) {
+      if (stableSince && Date.now() - stableSince >= settleMs) return;
+      stableSince ??= Date.now();
+    } else {
+      lastText = state.mine ? null : state.text;
+      stableSince = null;
+    }
+    await new Promise((done) => setTimeout(done, 400));
+  }
+  throw new CdpError(
+    "muse.ai is still working on the previous request; not sending another on top of it",
+  );
+}
+
 function messageCountExpression() {
   return `document.querySelectorAll(${JSON.stringify(selectors.message)}).length`;
 }
@@ -141,22 +175,42 @@ function lastMessageExpression() {
   })()`;
 }
 
-// Waits for the reply to stop growing rather than for the first token, so a
-// streaming answer is not truncated mid-sentence.
-async function awaitReply(cdp, priorCount, { timeoutMs, settleMs }) {
+function lastBubbleExpression() {
+  return `(() => {
+    const all = document.querySelectorAll(${JSON.stringify(ANY_BUBBLE)});
+    const last = all[all.length - 1];
+    if (!last) return null;
+    return { mine: last.classList.contains(${JSON.stringify(USER_BUBBLE_CLASS)}), text: (last.innerText || "").trim() };
+  })()`;
+}
+
+// A reply is the agent's bubble that comes AFTER ours, once it stops changing.
+//
+// This used to count agent bubbles and wait for the count to grow. muse.ai only
+// keeps the most recent dozen or so bubbles in the page, so in a long thread
+// the count never grows: old bubbles drop off the top as new ones arrive. Every
+// request was answered and every request "timed out", which also fed the draft
+// queue's retry. Position is what matters, not count: first our message shows
+// up as the last bubble, then the agent's does.
+async function awaitReply(cdp, before, { timeoutMs, settleMs }) {
   const deadline = Date.now() + timeoutMs;
+  let sawOurs = false;
   let text = null;
   let stableSince = null;
 
   while (Date.now() < deadline) {
-    const count = await cdp.evaluate(messageCountExpression());
-    if (count > priorCount) {
-      const current = await cdp.evaluate(lastMessageExpression());
-      if (current && current === text) {
+    const last = await cdp.evaluate(lastBubbleExpression());
+    if (last?.mine) {
+      sawOurs = true;
+      text = null;
+      stableSince = null;
+    } else if (last && (sawOurs || last.text !== before)) {
+      // Streaming: wait for it to stop growing, so an answer is not cut short.
+      if (last.text && last.text === text) {
         if (stableSince && Date.now() - stableSince >= settleMs) return text;
         stableSince ??= Date.now();
       } else {
-        text = current;
+        text = last.text;
         stableSince = null;
       }
     }
@@ -185,11 +239,12 @@ export async function ask(
         );
       }
     }
-    const priorCount = await cdp.evaluate(messageCountExpression());
+    await awaitIdle(cdp);
+    const before = (await cdp.evaluate(lastBubbleExpression()))?.text ?? null;
     await cdp.typeInto(selectors.input, instruction);
     if (selectors.send) await cdp.click(selectors.send);
     else await cdp.pressEnter();
-    const reply = await awaitReply(cdp, priorCount, { timeoutMs, settleMs });
+    const reply = await awaitReply(cdp, before, { timeoutMs, settleMs });
     return { instruction, reply, asked_at: new Date().toISOString() };
   } finally {
     cdp.close();
@@ -245,6 +300,11 @@ export function listingInstruction(item, { photoUrls = [], location = null, cate
 // Named draftListing, not publishListing: the agent builds a draft and the
 // publish needs a human tap. Calling it "publish" would misdescribe what
 // happens and set the wrong expectation on stage.
+//
+// The result deliberately carries NO floor. It used to echo floor_usd back, the
+// draft queue stored the whole result on the job, and GET /api/drafts served
+// the job to anyone — so a buyer's agent could read the seller's real bottom
+// price the moment a draft finished.
 export async function draftListing(item, options = {}) {
   const result = await ask(listingInstruction(item, options), options);
   return {
@@ -252,7 +312,6 @@ export async function draftListing(item, options = {}) {
     item_id: item.id ?? null,
     label: item.label,
     price_usd: Number(item?.price_usd) || 0,
-    floor_usd: options.floorUsd ?? Math.max(1, Math.round((Number(item?.price_usd) || 0) * 0.85)),
     status: "draft_requested",
   };
 }

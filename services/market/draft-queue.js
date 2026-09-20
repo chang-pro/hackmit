@@ -57,7 +57,14 @@ export class DraftQueue {
   status() {
     return {
       running: this.#running,
-      jobs: this.#jobs.map(({ job }) => ({ ...job })),
+      // A public view, field by field. Spreading the job leaked whatever was
+      // stored on it, which included the full draft result.
+      jobs: this.#jobs.map(({ job }) => ({
+        id: job.id, itemId: job.itemId, label: job.label, status: job.status,
+        attempts: job.attempts, url: job.url ?? null, reply: job.reply ?? null,
+        error: job.error ?? null, photoError: job.photoError ?? null,
+        queuedAt: job.queuedAt ?? null, finishedAt: job.finishedAt ?? null,
+      })),
     };
   }
 
