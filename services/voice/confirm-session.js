@@ -31,9 +31,26 @@ export const CONFIRM_TOOLS = [
         list_usd: { type: "NUMBER", description: "New list price in whole US dollars." },
         title: { type: "STRING", description: "New listing title." },
         condition: { type: "STRING", description: "new, like_new, good, fair or poor." },
+        description: { type: "STRING", description: "New listing description, the text buyers will read. Use the person's own wording." },
         action: { type: "STRING", description: "KEEP to not sell it, SELL to sell it after all." },
       },
       required: ["item_id"],
+    },
+  },
+  {
+    name: "set_channels",
+    description:
+      "Choose where the plan is listed because the person said so: their Shopify store, Facebook Marketplace, or both. Call this whenever they name a place to sell.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        channels: {
+          type: "ARRAY",
+          items: { type: "STRING", enum: ["shopify", "marketplace"] },
+          description: 'One or both of "shopify" and "marketplace".',
+        },
+      },
+      required: ["channels"],
     },
   },
   {
@@ -49,17 +66,31 @@ export const CONFIRM_TOOLS = [
   },
 ];
 
+// Said plainly, including the part Facebook cannot do: a Marketplace listing is
+// only ever a draft until a person taps Publish in Facebook.
+export function describeChannels(plan) {
+  const chosen = Array.isArray(plan.channels) && plan.channels.length ? plan.channels : null;
+  if (!chosen) return "not chosen yet — ask them: their Shopify store, Facebook Marketplace, or both";
+  const names = [];
+  if (chosen.includes("shopify")) names.push("their Shopify store (goes live immediately)");
+  if (chosen.includes("marketplace")) names.push("Facebook Marketplace (saved as a draft they must publish in Facebook themselves)");
+  return names.join(" and ");
+}
+
 function describePlan(plan) {
   const selling = plan.decisions.filter((d) => d.action === "SELL");
   const others = plan.decisions.filter((d) => d.action !== "SELL");
   const lines = selling.map(
-    (d) => `- id ${d.itemId}: "${d.label}", ${String(d.condition ?? "good").replace(/_/g, " ")} condition, listed at $${d.listUsd}`,
+    (d) =>
+      `- id ${d.itemId}: "${d.label}", ${String(d.condition ?? "good").replace(/_/g, " ")} condition, listed at $${d.listUsd}` +
+      (d.description ? `. Description buyers will read: "${d.description}"` : ""),
   );
   const rest = others.map((d) => `- id ${d.itemId}: "${d.label}" — ${d.action.toLowerCase()}, not listed`);
   // Both totals are given so the model never adds them up itself: left to it,
   // it summed the list prices and contradicted the expected figure on screen.
   const listedUsd = selling.reduce((sum, d) => sum + (d.listUsd ?? 0), 0);
   return [
+    `Where it will be listed: ${describeChannels(plan)}.`,
     `Selling ${selling.length} item${selling.length === 1 ? "" : "s"}. Listed for $${listedUsd} in total; expected to actually sell for about $${plan.expectedUsd} after negotiation.`,
     ...lines,
     ...(rest.length ? ["Not being sold:", ...rest] : []),
@@ -68,9 +99,11 @@ function describePlan(plan) {
 
 export function buildSystemInstruction(plan) {
   return [
-    "You are ReLoop's voice assistant. The person is about to publish resale listings to their Shopify store and Facebook Marketplace. Your one job is to confirm the details with them first, out loud, briefly.",
+    "You are ReLoop's voice assistant. The person is about to publish resale listings. Your one job is to confirm the details with them first, out loud, briefly.",
     "",
     "Start by reading the plan back: each item being sold, its condition and its list price, then the two totals exactly as given below — what it is listed for and what it should sell for. Never add prices up yourself. Keep it short and natural, like a person reading a receipt — no preamble.",
+    "Say where it will be listed, exactly as given below. If no place is chosen yet, ask which they want before anything else, and call set_channels with their answer. If they name a different place at any point, call set_channels. Never say something will go live on Facebook: it is only ever a draft there.",
+    "If they ask to hear a description, read it. If they want it worded differently, call revise_item with their wording as the description.",
     "Then ask if everything is right. If they correct something, call revise_item, then say the corrected line back so they hear the new value.",
     "When they clearly say yes to publishing, call request_approval. If a tool reply says the approval was not accepted, tell them what it said and ask again. Never claim anything was published unless the tool reply says approved is true.",
     "If they want to stop, call cancel. Do not discuss anything unrelated to this plan.",

@@ -170,3 +170,33 @@ test("createProduct throws ShopifyError when userErrors present", async () => {
     }
   }
 });
+
+test("only addresses Shopify's servers can reach are handed over by URL", async () => {
+  // Shopify attaches an image by fetching it itself. Anything only this machine
+  // or this tailnet can reach must be uploaded instead, or the product is
+  // created and its photo silently never appears.
+  const { isPubliclyFetchable } = await import("../services/shopify/shopify-client.js");
+  for (const url of [
+    "http://localhost:3000/api/photos/pho_1",
+    "http://127.0.0.1:3000/x.jpg",
+    "http://10.189.45.199:3000/x.jpg",       // venue LAN
+    "http://192.168.234.1:3000/x.jpg",       // USB bridge
+    "http://172.20.10.2:3000/x.jpg",         // phone hotspot
+    "http://100.104.109.111:3000/x.jpg",     // Tailscale (CGNAT range)
+    "https://dantes-laptop.tailb2bea0.ts.net/api/photos/pho_1",
+    "http://169.254.10.10/x.jpg",
+    "file:///tmp/x.jpg",
+    "not a url",
+  ]) {
+    assert.equal(isPubliclyFetchable(url), false, `${url} is not reachable from Shopify`);
+  }
+  for (const url of [
+    "https://cdn.shopify.com/s/files/1/x.jpg",
+    "https://example.com/photo.jpg",
+    "http://8.8.8.8/x.jpg",
+    "http://100.63.0.1/x.jpg",                // just below the CGNAT range
+    "http://172.32.0.1/x.jpg",                // just above the private 172 block
+  ]) {
+    assert.equal(isPubliclyFetchable(url), true, `${url} is public`);
+  }
+});

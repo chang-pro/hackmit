@@ -14,6 +14,7 @@
 //   POST /api/plans/:id/revise  — correct one item before approval (price, title, condition, keep)
 //   POST /api/plans/:id/voice   — a one-use Gemini Live token + session setup to confirm the plan aloud
 //   POST /api/plans/:id/approve — list every SELL item in the store + queue Marketplace drafts
+//   POST /api/plans/:id/channels — choose where it lists: shopify, marketplace, or both
 //   GET  /api/drafts            — the sequential Marketplace draft queue
 //   GET  /catalog.json          — the public store catalog (what a buyer agent reads)
 //   GET  /api/listings/:id      — one public listing
@@ -251,6 +252,10 @@ export function createReLoopServer({
   });
   const photosDir = join(ROOT, "data", "photos");
   const photos = new Map();
+  // frame_id -> photo id, for deliberate stills. The frame ring holds ~30
+  // frames, a few seconds of stream, so a still has to be copied out the moment
+  // it arrives or it is gone before anyone can list it.
+  const photoByFrame = new Map();
   // Item identification is what the live camera path runs: every frame is
   // scored for resellable objects and a price, which the capture page draws
   // over the feed.
@@ -313,7 +318,16 @@ export function createReLoopServer({
       return;
     }
 
-    const selection = selector.consider(body.image_base64);
+    // A deliberate still is never thinned. The selector exists to drop
+    // near-duplicate STREAM frames and enforces a gap between accepted ones;
+    // with the stream arriving every 200ms it would reject almost every photo
+    // as rate-limited. It is not consulted, so its state is not disturbed.
+    // Only the glasses still: the phone-photo page keeps its existing
+    // contract, where an identical second photo is dropped as a duplicate.
+    const force = body.force_analysis === true || body.source === "phone_photo";
+    const selection = body.source === "glasses_photo"
+      ? { accepted: true, reason: "deliberate" }
+      : selector.consider(body.image_base64);
     if (!selection.accepted) {
       sendJson(res, 200, {
         frame: meta,
@@ -343,7 +357,14 @@ export function createReLoopServer({
 
     try {
       const frame = gateway.frame(meta.frame_id);
-      const force = body.force_analysis === true || body.source === "phone_photo";
+      let photoId = null;
+      if (body.source === "glasses_photo") {
+        photoId = storePhoto(meta.frame_id);
+        if (photoId) {
+          photoByFrame.set(meta.frame_id, photoId);
+          while (photoByFrame.size > MAX_PHOTOS) photoByFrame.delete(photoByFrame.keys().next().value);
+        }
+      }
       const pending = itemAnalyzer.submit(frame, { force });
       pending.catch(() => {}); // submit() reports its own failures; never let one escape
 
@@ -357,7 +378,8 @@ export function createReLoopServer({
       // A skip resolves without touching the network, so it settles in the
       // microtask queue and wins the race; only a real model call loses it. A
       // single photo (force) still waits, because that caller wants the answer.
-      const result = force
+      const waitForAnswer = body.source === "phone_photo";
+      const result = waitForAnswer
         ? await pending
         : await Promise.race([
             pending,
@@ -369,6 +391,7 @@ export function createReLoopServer({
           frame: meta,
           selection,
           analysis_status: "analyzing",
+          ...(photoId ? { photo_id: photoId, photo_url: `/api/photos/${photoId}` } : {}),
           items: itemAnalyzer.latest(),
           queue: itemAnalyzer.status(),
           ...(dataset ? { dataset } : {}),
@@ -380,6 +403,7 @@ export function createReLoopServer({
         frame: meta,
         selection,
         analysis_status: result.analysis_status,
+        ...(photoId ? { photo_id: photoId, photo_url: `/api/photos/${photoId}` } : {}),
         ...(result.reason ? { reason: result.reason } : {}),
         ...(result.error ? { error: result.error } : {}),
         items: result.items,
@@ -486,7 +510,10 @@ export function createReLoopServer({
       items,
       goal: body.goal ?? {},
       keepIds: Array.isArray(body.keep_item_ids) ? body.keep_item_ids : [],
-      photoUrl: body.photo_url ?? (photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null),
+      photoUrl: body.photo_url ??
+        (typeof body.photo_id === "string" && /^pho_[a-z0-9-]+$/i.test(body.photo_id)
+          ? `${publicBaseUrl(req)}/api/photos/${body.photo_id}`
+          : photoId ? `${publicBaseUrl(req)}/api/photos/${photoId}` : null),
       source: body.source ?? latest?.frame_source ?? null,
     });
     sendJson(res, 201, plan);
@@ -500,6 +527,7 @@ export function createReLoopServer({
       title: body.title,
       condition: body.condition,
       action: body.action,
+      description: body.description,
     }));
   }
 
@@ -568,6 +596,12 @@ export function createReLoopServer({
       if (parts[1] === "plans" && parts[2]) {
         if (req.method === "GET" && parts.length === 3) return sendJson(res, 200, market.getPlan(parts[2]));
         if (req.method === "POST" && parts[3] === "approve") return await handleApprovePlan(req, res, parts[2]);
+        if (req.method === "POST" && parts[3] === "channels") {
+          // Where the plan will be listed. A plan-level change, so it bumps the
+          // revision exactly like a price correction does.
+          const body = await readOptionalJsonBody(req);
+          return sendJson(res, 200, market.setPlanChannels(parts[2], body.channels));
+        }
         if (req.method === "POST" && parts[3] === "revise") return await handleRevisePlan(req, res, parts[2]);
         if (req.method === "POST" && parts[3] === "voice") return await handleVoiceSession(req, res, parts[2]);
       }
@@ -655,7 +689,17 @@ export function createReLoopServer({
       });
       return;
     }
-    sendJson(res, 200, { ...latest, queue: itemAnalyzer.status() });
+    // The last deliberate still rides along, because stream analyses replace
+    // `latest` every few seconds and the page must not miss a photo's result.
+    const still = itemAnalyzer.latestPhoto();
+    const stillPhotoId = still ? photoByFrame.get(still.frame_id) ?? null : null;
+    sendJson(res, 200, {
+      ...latest,
+      photo: still && stillPhotoId
+        ? { ...still, photo_id: stillPhotoId, photo_url: `/api/photos/${stillPhotoId}` }
+        : null,
+      queue: itemAnalyzer.status(),
+    });
   }
 
   function handleLatestFrame(res) {

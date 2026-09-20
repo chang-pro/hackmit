@@ -835,32 +835,56 @@ final class GlassesStreamer: ObservableObject {
         }
     }
 
+    // A 12MP still is ~4MB as base64: close to the server's body cap, slow over
+    // a bad link, and far more than the pricing model needs. 2048px on the long
+    // edge is still ~3x the stream frame and a fraction of the bytes.
+    private static let maxPhotoEdge: CGFloat = 2048
+
+    private nonisolated static func preparedJPEG(from data: Data) -> (jpeg: Data, width: Int, height: Int)? {
+        guard let image = UIImage(data: data) else { return nil }
+        let w = image.size.width * image.scale, h = image.size.height * image.scale
+        let longest = max(w, h)
+        guard longest > 0 else { return nil }
+        let scale = min(1, maxPhotoEdge / longest)
+        let target = CGSize(width: (w * scale).rounded(), height: (h * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1            // pixels, not points
+        format.opaque = true
+        let scaled = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))   // also bakes in EXIF orientation
+        }
+        guard let jpeg = scaled.jpegData(compressionQuality: 0.85) else { return nil }
+        return (jpeg, Int(target.width), Int(target.height))
+    }
+
     private func handleCapturedPhoto(_ photo: PhotoData) {
         photoStatus = "Uploading…"
-        let bytes = photo.data
-        let mime = photo.format == .jpeg ? "image/jpeg" : "image/heic"
-        let decoded = UIImage(data: bytes)
-        let px = decoded.map { (Int($0.size.width * $0.scale), Int($0.size.height * $0.scale)) } ?? (0, 0)
-        let size = px.0 > 0 ? "\(px.0)x\(px.1)" : "?"
-        Task { [weak self] in
+        let raw = photo.data
+        // Detached: decoding and re-encoding a 12MP image must not run on the
+        // main actor, and it never touches the SDK's delivery thread.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let prepared = Self.preparedJPEG(from: raw) else {
+                await MainActor.run { self?.photoStatus = "Could not read the photo" }
+                return
+            }
             do {
                 let api = try await ApiClient.fromSettings()
                 // force_analysis: a still is an explicit act, so it is priced
-                // immediately rather than waiting for the streaming interval.
-                let result = try await api.submitFrame(FrameSubmission(
+                // next rather than waiting out the streaming interval.
+                _ = try await api.submitFrame(FrameSubmission(
                     source: "glasses_photo",
                     capturedAt: Self.photoIsoFormatter.string(from: Date()),
-                    imageBase64: bytes.base64EncodedString(),
-                    width: px.0,
-                    height: px.1,
+                    imageBase64: prepared.jpeg.base64EncodedString(),
+                    width: prepared.width,
+                    height: prepared.height,
                     forceAnalysis: true
                 ))
                 await MainActor.run {
-                    self?.photoStatus = "Photo sent (\(size))"
-                    _ = result
+                    self?.photoStatus = "Photo sent (\(prepared.width)x\(prepared.height))"
                 }
             } catch {
                 await MainActor.run { self?.photoStatus = "Upload failed: \(error.localizedDescription)" }
+                await BackendLocator.shared.reselect()
             }
         }
     }

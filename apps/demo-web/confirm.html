@@ -129,12 +129,23 @@ function say(who, text) {
   return body;
 }
 
+// Where this plan lists. Facebook is named as what it is: a draft that a
+// person still has to publish in Facebook.
+function channelText(p) {
+  const chosen = Array.isArray(p.channels) && p.channels.length ? p.channels : null;
+  if (!chosen) return "a place not chosen yet";
+  const names = [];
+  if (chosen.includes("shopify")) names.push("Shopify");
+  if (chosen.includes("marketplace")) names.push("Facebook Marketplace (draft)");
+  return names.join(" and ");
+}
+
 function renderPlan(next, changedItemId = null) {
   plan = next;
   const selling = plan.decisions.filter((d) => d.action === "SELL");
   $("planLine").textContent = plan.approved
     ? `Plan ${plan.id} is already approved.`
-    : `Plan ${plan.id} · ${selling.length} item${selling.length === 1 ? "" : "s"} to list on Shopify and Facebook Marketplace`;
+    : `Plan ${plan.id} · ${selling.length} item${selling.length === 1 ? "" : "s"} to list on ${channelText(plan)}`;
   $("items").replaceChildren(...plan.decisions.map((d) => {
     const tr = document.createElement("tr");
     if (d.action !== "SELL") tr.className = "kept";
@@ -186,6 +197,7 @@ const tools = {
   async revise_item(args) {
     const next = await api(`/api/plans/${plan.id}/revise`, {
       item_id: args.item_id, list_usd: args.list_usd, title: args.title, condition: args.condition, action: args.action,
+      description: args.description,
     });
     renderPlan(next, args.item_id);
     // A correction resets what counts as consent: they have to hear the new
@@ -198,7 +210,7 @@ const tools = {
     const selling = next.decisions.filter((x) => x.action === "SELL");
     return {
       ok: true,
-      item: { id: d.itemId, title: d.label, condition: d.condition, action: d.action, list_usd: d.listUsd },
+      item: { id: d.itemId, title: d.label, condition: d.condition, action: d.action, list_usd: d.listUsd, description: d.description ?? null },
       plan_now: {
         revision: next.revision,
         note: "Totals for the whole plan as of this revision. They replace any totals from earlier replies.",
@@ -206,6 +218,22 @@ const tools = {
         listed_total_usd: selling.reduce((sum, x) => sum + (x.listUsd ?? 0), 0),
         expected_to_sell_for_usd: next.expectedUsd,
       },
+    };
+  },
+  async set_channels(args) {
+    const next = await api(`/api/plans/${plan.id}/channels`, { channels: args.channels });
+    renderPlan(next);
+    // Where it goes is part of what they agree to. A yes given before the
+    // place changed does not cover the new place.
+    consentFloor = utterances.length;
+    say("sys", `Will list on ${channelText(next)}.`);
+    return {
+      ok: true,
+      channels: next.channels,
+      revision: next.revision,
+      note: next.channels.includes("marketplace")
+        ? "Facebook Marketplace is saved as a draft only; the person must publish it in Facebook themselves. Say so."
+        : "Shopify listings go live immediately.",
     };
   },
   async request_approval() {
