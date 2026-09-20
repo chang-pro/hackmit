@@ -132,7 +132,17 @@ export class Market {
   // options: { location: {lat, lon}, categories: {itemId: name}, photoUrls: {itemId: [url]} }
   // keepIds: items the person unticked while reviewing. They are approved as
   // KEEP -- nothing is listed, published or drafted for them.
-  approvePlan(planId, { location = null, categories = {}, photoUrls = {}, keepIds = [] } = {}) {
+  // channels: which storefronts this approval publishes to. Defaults to
+  // Shopify plus Marketplace when the muse.ai bridge is switched on.
+  #channelsFor(requested) {
+    const asked = Array.isArray(requested) && requested.length
+      ? requested.map((c) => String(c).toLowerCase())
+      : ["shopify", ...(this.#marketplaceDrafts ? ["marketplace"] : [])];
+    return { shopify: asked.includes("shopify"), marketplace: asked.includes("marketplace") };
+  }
+
+  approvePlan(planId, { location = null, categories = {}, photoUrls = {}, keepIds = [], channels = null } = {}) {
+    const want = this.#channelsFor(channels);
     const plan = this.plans.get(planId);
     if (!plan) throw fail(404, `no plan "${planId}"`);
     if (plan.approved) throw fail(409, "plan is already approved");
@@ -196,18 +206,23 @@ export class Market {
         basis: decision.band.basis,
         status: "ACTIVE",
         soldUsd: null,
-        shopify: { status: "publishing", url: null, productId: null, dryRun: null, error: null },
-        marketplace: { status: this.#marketplaceDrafts ? "queued" : "off", url: null, draftId: null },
+        shopify: {
+          status: want.shopify ? "publishing" : "off",
+          url: null, productId: null, dryRun: null, error: null,
+        },
+        marketplace: { status: want.marketplace ? "queued" : "off", url: null, draftId: null, error: null },
       };
       this.listings.set(listing.id, listing);
       this.#rules.set(listing.id, rules.get(item.id));
       created.push(listing);
 
-      // Go live on Shopify. Each publish resolves on its own; one failure
-      // never blocks the rest of the approved plan.
-      this.#publishToShopify(listing, { item, decision, category: categories[item.id] ?? null });
+      // Each channel resolves on its own; one failing never blocks the rest of
+      // the approved plan, or the other channel.
+      if (want.shopify) {
+        this.#publishToShopify(listing, { item, decision, category: categories[item.id] ?? null });
+      }
 
-      if (!this.#marketplaceDrafts) continue;
+      if (!want.marketplace) continue;
       const photos = photoUrls[item.id] ?? (plan.photoUrl ? [plan.photoUrl] : []);
       const { job } = this.#draftQueue.enqueue({
         item: { id: item.id, label: item.label, condition: item.condition, price_usd: decision.listUsd },
@@ -218,6 +233,8 @@ export class Market {
         onDone: (done) => {
           listing.marketplace.status = done.status === "done" ? "drafted" : "failed";
           listing.marketplace.url = done.url;
+          listing.marketplace.error = done.error ?? null;
+          this.#save();
         },
       });
       listing.marketplace.draftId = job.id;
