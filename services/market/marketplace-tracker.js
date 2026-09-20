@@ -67,7 +67,7 @@ export class MarketplaceTracker {
     // Newest first, and only so many: the question is typed into a chat, and a
     // page-long list of titles makes muse slow and its answer hard to read.
     const listings = this.#market.listingsOnMarketplace().reverse().slice(0, MAX_TRACKED);
-    const summary = { checked: listings.length, wentLive: [], sold: [], newMessages: [], replies: [], errors: [] };
+    const summary = { checked: listings.length, wentLive: [], sold: [], removed: [], newMessages: [], replies: [], errors: [] };
     if (!listings.length) {
       this.#last = { at: new Date().toISOString(), error: null, report: null, found: summary };
       return summary;
@@ -86,6 +86,9 @@ export class MarketplaceTracker {
           } else if (seen.status === "sold") {
             this.#market.markSoldOnMarketplace(listing.id);
             summary.sold.push(listing.title);
+          } else if (seen.status === "draft" || seen.status === "removed") {
+            this.#market.noteMarketplace(listing.id, seen);
+            if (seen.status === "removed") summary.removed.push(listing.title);
           }
         } catch (err) {
           summary.errors.push(`${listing.title}: ${err.message}`);
