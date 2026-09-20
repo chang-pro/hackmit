@@ -46,6 +46,10 @@
   .steps span.done { border-color: #2c6b4f; color: #7d8aa3; }
   .steps span.now { border-color: #55e39b; color: #55e39b; font-weight: 700; }
   .chip.goal { color: #9fb0d5; border-color: #2c3446; }
+  /* The one step a person does by hand, and the button that says it is done. */
+  .publish { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-top: .55rem; padding: .5rem .6rem;
+             border: 1px solid #6b5a2a; border-radius: 8px; background: #1a1708; color: #ffcf6b; font-size: .74rem; }
+  .publish button { padding: .3rem .7rem; font-size: .74rem; }
   @media (prefers-reduced-motion: reduce) { .hero .big.bump, .spin { animation: none; } }
 
   .rows { display: grid; gap: .8rem; }
@@ -161,6 +165,19 @@ function stepsHtml(l) {
     `<span class="${i < at ? "done" : i === at ? "now" : ""}">${name}</span>`).join("")}</div>`;
 }
 
+// Facebook lets nobody but the account owner publish. So a draft waits here
+// until they have looked it over and pressed Publish in Facebook, and this
+// button is how they tell us they did. From then on the listing is followed:
+// who writes in, what the agent answers, whether it sold.
+function publishHtml(l) {
+  if (l.status === "SOLD" || l.marketplace?.status !== "drafted") return "";
+  const review = l.marketplace.url
+    ? `<a href="${esc(l.marketplace.url)}" target="_blank" rel="noopener">1. Review the draft in Facebook →</a>`
+    : `<span>1. Review the draft in Facebook and press Publish</span>`;
+  return `<div class="publish">${review}<span>then</span>
+    <button type="button" class="go" data-published="${esc(l.id)}">2. I published it</button></div>`;
+}
+
 // Replies muse is delivering right now. The cards are rebuilt every few
 // seconds, which re-armed the Send button mid-delivery: a second press would
 // have messaged the same buyer twice from the owner's real account.
@@ -174,7 +191,7 @@ function channelLine(name, state, words) {
   if (!state || state.status === "off") return "";
   // A draft's link goes straight to the one thing only the owner can do.
   const link = !state.url ? "" : state.status === "drafted"
-    ? ` · <a href="${esc(state.url)}" target="_blank" rel="noopener"><b>Review &amp; publish →</b></a>`
+    ? ""   // the publish box under the item carries the draft's link
     : ` · <a href="${esc(state.url)}" target="_blank" rel="noopener">open</a>`;
   const detail = words[state.status] ?? state.status;
   return `<span class="chip ${esc(state.status)}">${esc(name)}</span><span>${esc(detail)}${link}</span>`;
@@ -225,6 +242,7 @@ function cardHtml(l) {
           <span class="chip goal">${esc(GOAL[l.goalMode] ?? "max cash")}</span>
         </div>
         ${stepsHtml(l)}
+        ${publishHtml(l)}
       </div>
       <div class="price">
         ${sold ? `<span class="sold">${usd(l.soldUsd)}</span><s>asked ${usd(l.listUsd)}</s>` : usd(l.listUsd)}
@@ -331,6 +349,17 @@ $("auto").addEventListener("click", () => {
   // with nobody reading it first. Worth one question.
   if (on && !confirm("The agent will answer buyers on your real Facebook account without asking you first. Turn it on?")) return;
   post("/api/status/auto-reply", { on });
+});
+
+// "I published it": the listing is live, so start following it. Buyers only
+// show up when muse looks, so the first press also turns Keep checking on;
+// the toggle lights up and can be turned back off.
+$("rows").addEventListener("click", async (e) => {
+  const listingId = e.target.closest("[data-published]")?.dataset.published;
+  if (!listingId) return;
+  e.target.disabled = true;
+  await post(`/api/listings/${encodeURIComponent(listingId)}/marketplace`, {});
+  if (!data?.tracker?.watching) await post("/api/status/watch", { on: true, every_s: 120 });
 });
 
 // Sending is the one thing here that reaches a real person from the owner's
