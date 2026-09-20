@@ -29,3 +29,12 @@ test("boxes that cannot make a useful picture are refused", () => {
 test("an unreadable image falls back quietly instead of failing the plan", async () => {
   assert.equal(await cropItem(Buffer.from("not an image"), { x: 100, y: 100, width: 300, height: 300 }), null);
 });
+
+test("when the first pricing provider fails, the second answers the same frame", async () => {
+  const { withFallback } = await import("../services/vision/backends/items-provider.js");
+  const down = { name: "a", identifyItems: async () => { throw new Error("HTTP 429"); } };
+  const up = { name: "b", identifyItems: async (frame) => ({ items: [], from: "b", frame }) };
+  assert.equal((await withFallback(down, up).identifyItems("f")).from, "b");
+  assert.equal((await withFallback(up, down).identifyItems("f")).from, "b", "a healthy primary is not second-guessed");
+  await assert.rejects(withFallback(down, down).identifyItems("f"), /429/);
+});

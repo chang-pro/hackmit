@@ -220,7 +220,18 @@ async function awaitReply(cdp, before, { timeoutMs, settleMs }) {
   throw new CdpError(`muse.ai did not reply within ${timeoutMs}ms`);
 }
 
-export async function ask(
+// One chat, one browser: two instructions typed at once would interleave and
+// each would read the other's answer. Drafts, status checks and buyer replies
+// all come through ask(), so they queue here.
+let museBusy = Promise.resolve();
+
+export function ask(instruction, options = {}) {
+  const turn = museBusy.then(() => askNow(instruction, options));
+  museBusy = turn.catch(() => {});
+  return turn;
+}
+
+async function askNow(
   instruction,
   { timeoutMs = 120_000, settleMs = 1_500, chat = MUSE_CHAT, requireChat = true } = {}
 ) {
@@ -314,4 +325,26 @@ export async function draftListing(item, options = {}) {
     price_usd: Number(item?.price_usd) || 0,
     status: "draft_requested",
   };
+}
+
+// Asks muse where our listings stand and who has written in. Titles are what
+// muse knows them by; it never sees our ids or any price rule.
+export function statusInstruction(listings) {
+  return [
+    "Check my Facebook Marketplace account and report back. Do not change, publish, delete or reply to anything.",
+    "For each of these listings, tell me whether it is still a draft, live (published and visible to buyers), sold, or removed, and give its facebook.com link if it has one:",
+    ...listings.map((l) => `- ${l.title} ($${l.listUsd})`),
+    "Then open Marketplace messages. For each of those listings, list every buyer who is waiting on a reply: the buyer's name, which listing, and their latest message word for word.",
+    "If there are no messages, say so. Keep it factual and short.",
+  ].join("\n");
+}
+
+// Sends one reply, exactly as written. The wording was produced by the seller
+// policy; muse is only the hands.
+export function replyInstruction({ title, buyer, text }) {
+  return [
+    `On Facebook Marketplace, open the conversation with ${buyer} about my listing "${title}".`,
+    `Reply with exactly this message and nothing else: "${String(text).replace(/"/g, "'")}"`,
+    "Do not negotiate, do not add anything, and do not message anyone else. Then tell me whether it was sent.",
+  ].join("\n");
 }

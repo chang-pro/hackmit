@@ -10,6 +10,17 @@ export const SPREAD = 0.15;
 export const MIN_LISTABLE_USD = Number(process.env.RELOOP_MIN_LISTABLE_USD ?? 15);
 const HEADROOM = 1.03;
 
+// How far below the LIST price the seller will go, by what the person asked
+// for. This is the button on the page turned into a haggling rule: Max cash
+// holds the line ("anything over 10% off, we are firm"), Clear out fast trades
+// money for speed, Waste nothing would rather take a low offer than bin it.
+export const MAX_DISCOUNT = { CASH: 0.10, UPGRADE: 0.10, CLEAR_OUT: 0.25, YARD_SALE: 0.30, ZERO_WASTE: 0.50 };
+
+export function floorFor(listUsd, mode) {
+  const pct = MAX_DISCOUNT[mode] ?? MAX_DISCOUNT.CASH;
+  return Math.max(1, Math.ceil(listUsd * (1 - pct)));
+}
+
 const round5 = (n) => Math.max(0, Math.round(n / 5) * 5);
 
 export function priceBand(priceUsd, basis = "") {
@@ -102,8 +113,14 @@ export function buildPlan({ items, goal: goalInput, keepIds = [], now = new Date
     decision.reason =
       `${tierReason}; expected $${estimated}, listed at $${decision.listUsd} for negotiating room.` +
       (target ? ` About ${Math.round((estimated / target) * 100)}% of the $${target} target.` : "");
-    const floorUsd = Math.max(1, Math.min(estimated, urgent ? round5(band.quickUsd * 0.95) : band.quickUsd));
-    rules.set(item.id, { floorUsd, autoAcceptUsd: estimated, maxRounds: 4 });
+    const floorUsd = floorFor(decision.listUsd, goal.mode);
+    // firm: said out loud to a lowball, so the buyer knows not to keep trying.
+    rules.set(item.id, {
+      floorUsd,
+      autoAcceptUsd: Math.max(floorUsd, estimated),
+      maxRounds: 4,
+      firm: (MAX_DISCOUNT[goal.mode] ?? 0.1) <= 0.10,
+    });
     return decision;
   });
 
