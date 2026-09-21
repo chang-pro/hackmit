@@ -2,6 +2,8 @@
 
 > Look at your stuff. Choose what gets a second life.
 
+[Watch the project video on YouTube](https://www.youtube.com/watch?v=JUU9ym95eUg).
+
 Loop OS helps turn a view of unused belongings into resale decisions. An image from Meta glasses, a phone, or a Unitree Go2 robot reaches the same backend. The app identifies visible items, suggests **estimated** secondhand values, and lets the owner choose what to keep, sell, donate, or recycle. Approved sale items can become Shopify products; Facebook Marketplace uses a separate draft workflow that still needs a person to publish.
 
 The repository and some app identifiers still say **ReLoop** or **BloomKnights**. The presentation name is **LOS / Loop OS**. Do not rename the iOS bundle ID or URL scheme casually: they are tied to the team's Meta developer registration.
