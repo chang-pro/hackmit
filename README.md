@@ -1,313 +1,131 @@
-<<<<<<< HEAD
-# ReLoop - Lane B
+# LOS / Loop OS (ReLoop)
 
-Python implementation of the **v2** plan: photo identification, clarification,
-condition-adjusted pricing, deterministic routing/planning, and listing drafts.
-Lane C owns the main server, persistence, approval, seller policy, events, and checkout.
-Lane A owns iOS/glasses. Lane B does not publish or mark anything sold.
+> Look at your stuff. Choose what gets a second life.
 
-## Run now
+Loop OS helps turn a view of unused belongings into resale decisions. An image from Meta glasses, a phone, or a Unitree Go2 robot reaches the same backend. The app identifies visible items, suggests **estimated** secondhand values, and lets the owner choose what to keep, sell, donate, or recycle. Approved sale items can become Shopify products; Facebook Marketplace uses a separate draft workflow that still needs a person to publish.
 
-Python 3.11+ (3.12 recommended for the shared project):
+The repository and some app identifiers still say **ReLoop** or **BloomKnights**. The presentation name is **LOS / Loop OS**. Do not rename the iOS bundle ID or URL scheme casually: they are tied to the team's Meta developer registration.
 
-```sh
-python3.11 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
-.venv/bin/python -m reloop_brain.demo
-.venv/bin/python -m pytest -q
-RELOOP_ALLOW_DEMO_PRICES=1 .venv/bin/uvicorn reloop_brain.api:app --reload --port 8001
-```
+## Start the web app
 
-`requirements-dev.lock` records the exact dependency versions used for the passing
-tests. Teammates can reproduce them with
-`.venv/bin/python -m pip install -r requirements-dev.lock -e .`.
-
-Open http://127.0.0.1:8001/docs for interactive API requests. Test planning without
-credentials or photos:
-
-```sh
-curl http://127.0.0.1:8001/plan \
-  -H 'Content-Type: application/json' \
-  --data-binary @contracts/fixtures/plan_request.json
-```
-
-**Most prices are unresearched development fixtures.** Ray-Ban regular and Meta charging cases now have sourced estimates; see [Lane B pricing](docs/lane-b-pricing.md). Fixture prices are labeled in
-every price basis and disabled unless `RELOOP_ALLOW_DEMO_PRICES=1`. This is not a
-market-price dataset or a Voloridge result. No real images are included yet.
-
-## Live photo identification
-
-### Gemini
-
-Create an API key in [Google AI Studio](https://aistudio.google.com/apikey).
-If a key was shared in chat, revoke it and create a replacement. Enter the new
-key privately in your local terminal; it is not needed in any source file.
-Stop the running server with Ctrl+C, then in zsh:
-
-```sh
-read -s "GEMINI_API_KEY?New Gemini API key: "
-export GEMINI_API_KEY
-echo
-export RELOOP_VISION_PROVIDER=gemini
-export RELOOP_VISION_MODEL=gemini-3.6-flash
-RELOOP_ALLOW_DEMO_PRICES=1 .venv/bin/uvicorn reloop_brain.api:app --port 8001
-```
-
-Choose a model with image input and JSON output. This adapter uses
-Google's `generateContent` REST endpoint in JSON mode with the schema in the prompt,
-then validates the returned JSON with Pydantic. Schema adherence is enforced locally,
-not guaranteed by constrained generation. See [Google's structured output documentation](https://ai.google.dev/gemini-api/docs/generate-content/structured-output).
-Credentials go in an HTTP header, never in a URL. Automated tests mock the provider. A live smoke test with `gemini-3.6-flash`
-successfully identified a generated blank image as containing no items. Real-product
-accuracy still needs testing. `gemini-2.5-flash` rejected this account as a new user.
-
-### Anthropic (original default)
-
-Set `ANTHROPIC_API_KEY` and `RELOOP_VISION_MODEL` in your local shell before
-starting the API. Choose a vision/tool-use model available in your account.
-See `.env.example`; do not commit keys. There is no automatic `.env` loader.
-Set `RELOOP_VISION_PROVIDER=anthropic` if switching back from Gemini.
-
-### Send a photo (either provider)
-
-With the API running, send your own photo:
-
-```sh
-.venv/bin/python -m reloop_brain.scan /path/to/photo.jpg --out tmp/first-scan.json
-.venv/bin/python -m reloop_brain.scan /path/to/second-angle.jpg \
-  --existing tmp/first-scan.json --out tmp/second-scan.json
-```
-
-For a dog-angle photo add `--source DOG --spot desk`. Use a fresh scope for each
-different spot; never reuse one spot's `--existing` file in another spot.
-
-`POST /identify` takes JSON with:
-
-```json
-{
-  "capture": {
-    "id": "cap_001", "ts": "2026-09-19T12:00:00Z",
-    "source": "PHONE", "uri": "blob://cap_001.jpg",
-    "spot": null, "missionId": null
-  },
-  "imageBase64": "RAW_BASE64_JPEG_PNG_OR_WEBP",
-  "existingItems": []
-}
-```
-
-The capture URI is a reference owned by Lane C; Lane B never fetches it. Pass
-image bytes explicitly (max 5 MiB, 20 MP; convert HEIC). No arbitrary URL fetching.
-Response: `items`, `pricedItems` (`item` + nullable `band`), `dropped`, `warnings`.
-Missing credentials return 503; provider failures return 502; invalid inputs 422.
-Live failures never silently return fixtures.
-
-The provider uses the Anthropic Messages API with a forced structured tool and
-Pydantic validation. Category enum includes recognizable categories even without price coverage; invalid categories map
-to `other.unknown`, have no price, and require correction. The model never prices
-or routes. References: [vision](https://platform.claude.com/docs/en/build-with-claude/vision),
-[tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview).
-
-## Integration for your teammates
-
-Contracts: `contracts/schema.py` mirrors the Lane B subset of the PDF's camelCase
-JSON shapes, with `PHONE`, `GLASSES`, `DOG`, `FIXTURE` source strings. Lane C can add
-its own listing/negotiation/event types. Example payloads: `contracts/fixtures/`.
-All money is whole USD; dates include a timezone.
-
-Lane C can mount this router inside its existing FastAPI application:
-
-```python
-from reloop_brain.api import create_router
-
-app.include_router(create_router())
-```
-
-Or invoke the Python functions directly from `/captures` without another HTTP hop:
-`items_from_observations`, `merge_scan_items`, `price_items`, and `build_plan`.
-Inject a `PriceBook` and `VisionProvider` into `create_router(book, vision)` for tests
-or a different AI provider. Backend must resolve session-owned items from storage
-before using these functions in a public service. The standalone API trusts its
-development caller and is intended for local integration, not public deployment.
-
-| Route | Input | Result |
-| --- | --- | --- |
-| `POST /identify` | Capture, imageBase64, existingItems | Observations + provisional bands |
-| `POST /items/confirm` | item, corrected label/category/condition, confirmed=true | Confirmed item + band |
-| `POST /price` | Item | Sourced price band, evidence, status, suggested ask |
-| `POST /plan` | items, goal, optional keepItemIds | Unapproved Plan with reasons |
-| `POST /listing-draft` | Confirmed Item | title, description, priceBasis, itemId |
-
-**Flow:** capture -> identify -> owner correction/confirmation -> plan -> Lane C's
-approval -> Shopify publishing. `Not sure` leaves a question unresolved; do not
-translate it to `confirmed=true`. The owner must supply a known category to price
-an unknown item. Keep IDs let them explicitly exclude an item.
-
-Owner confirmation and plan approval are different actions. Every plan returns
-`approved=false`; Lane C must enforce approval and calculate/enforce its private
-seller floors. No seller rules or floors exist in this public module.
-Listing drafts never invent battery tests, specifications, accessories, or warranties.
-
-## Rules and intentional choices
-
-- Condition multipliers match the PDF. Dollar bands round half up to $5.
-- Keep overrides every routing rule. Broken electronics go to proposed recycling;
-  low-value usable items to proposed donation. Neither means a real drop-off happened.
-- Yard sale bypasses online listing minimums and sells rounded-value items >= $2.
-- Clear-out, yard sale, or deadlines <24 hours use quick prices. Otherwise a positive
-  target with >=30% normal-value headroom uses max prices; remaining goals use normal.
-- Listing ask is estimated tier +3%, rounded up to a dollar. `expectedUsd` excludes
-  headroom, is gross (no fees/shipping), and is an estimate, not guaranteed proceeds.
-- Upgrade target = book price of upgrade minus budget, floored at zero. The starter
-  PS5 price is only a fixture; replace it with a sourced replacement-cost estimate.
-- All eligible items are included; this version does not minimize the number sold.
-- Unknown/low-confidence/unresolved items block planning unless explicitly kept.
-- IDs are deterministic for capture/index and effective plan payloads.
-
-## Dedupe and dog frames
-
-Pass `existingItems` from **one scan and one physical spot**, not a global catalog.
-Same-category near-identical labels merge across captures, one-to-one, retaining
-photo references and owner corrections. Two identical objects in a single image
-stay separate. Matching remains a heuristic: use separate spot scopes for identical
-products in different locations and allow manual review. No physical object tracker
-is claimed.
-Persist the whole returned item list atomically. Capture IDs are immutable; replaying
-an already-processed capture is ignored. To re-run inference use a new capture ID.
-
-Dog frames flagged as containing people produce `dropped=true` and no new items.
-This check happens **within the vision call**, not before sending the image to the
-provider, and is not guaranteed person detection. Lane C must quarantine flagged
-captures and keep them out of Shopify/public image storage. If pre-provider filtering
-is required, add a local detector in the capture ingestion path before calling Lane B.
-
-## Remaining Lane B work
-
-1. Photograph the actual demo items, including floor-height dog angles; evaluate
-   identity and question quality using a live configured model. No live call has been
-   verified by the automated tests.
-2. Research model-specific sold comparables; replace fixture values and sources,
-   fill `researched`, set `is_demo=false`, then turn off the demo flag. Generic phone,
-   headset and monitor categories need narrowing to the actual models.
-3. Verify the JSON fixtures decode in iOS and the router integrates with Lane C.
-4. Add sourced local donation/recycling sites, clearly labeled time-saving estimates,
-   and UI integration with the relevant teammates.
-5. Only afterward add public-dataset analysis for Voloridge. Amazon historical retail
-   metadata is not evidence of current secondhand prices.
-
-Regenerate fixture JSON after a deliberate contract change:
-`.venv/bin/python -m reloop_brain.demo --write-fixtures`.
-=======
-# ReLoop
-
-> Look at your stuff. See what it's worth.
-
-ReLoop is a wearable visual-intelligence system for physical resale. A user wearing camera-enabled smart glasses looks around a room. The system identifies every object in view that could realistically be resold, estimates what each one would sell for secondhand, and draws that price on the live feed as you look at it.
-
-The hackathon version is focused on one experience:
-
-> Walk through a room wearing Meta glasses and watch a price appear on everything worth selling.
-
-No item list to fill in, no photographing things one at a time, no searching for comparable listings. You look, and the prices are there.
-
-Example live view:
-
-```text
-8 items in view
-$647
-ESTIMATED RESALE VALUE
-8 ITEMS                TOP $185
-
-Sony PS4 Slim            GOOD      $185
-27in 1440p monitor       GOOD      $150
-Mechanical keyboard      LIKE NEW  $95
-Wireless gaming headset  FAIR      $45
-...
-```
-
-This README is the source of truth for humans and AI coding tools working on the project. Read it before making architectural or product decisions.
-
----
-
-## Quickstart
+Use a recent Node.js version that supports `--env-file-if-exists` (the team currently runs Node 26). From this repository:
 
 ```bash
-npm start   # zero-dependency Node server on http://localhost:3000
-npm test    # full node:test suite, no install needed
+npm start
 ```
 
-Set `RIGHTCODES_KEY_GEMINI` in a `.env` at the repo root, or item identification will fail on every frame and the overlay will stay empty. right.codes issues **a separate key per model channel** — the Gemini channel does not accept `RIGHTCODES_API_KEY` (that is the Claude channel), and using the wrong one fails as a 401 that looks like a dead key.
+Open **http://127.0.0.1:3000/**. The server loads the repository's `.env` if present. Check `http://127.0.0.1:3000/api/health` if the page is unavailable. Stop the server with Ctrl+C; starting DimOS does not start the web app.
 
-Pages served by `npm start` (see `services/api/server.js`):
+For live item analysis, configure one provider in a gitignored `.env`:
 
-- `/` — judge-facing dashboard
-- `/capture` — the live view: camera feed with the price overlay
-- `/phone` — phone camera capture client
-- `/data` — data dashboard
-- `/landing` — marketing landing page
-- `/pitch` — pitch deck
+```dotenv
+ITEMS_PROVIDER=gemini
+GEMINI_API_KEY=your-private-key
+GEMINI_ITEMS_MODEL=gemini-3.6-flash
+```
 
-API routes: `POST /api/frames`, `GET /api/items/latest`, `GET /api/analysis/status`, `POST /api/analysis/start`, `POST /api/analysis/stop`, `GET /api/health`, `GET /api/live-frame`.
+Alternatively, set `RIGHTCODES_KEY_GEMINI` and select `ITEMS_PROVIDER=rightcodes`. With no explicit selection, right.codes takes precedence when its key is set; the direct Gemini adapter is selected when only `GEMINI_API_KEY` is set. If both keys exist, the other provider is used as a fallback when the selected one fails. An absent or exhausted key does not make the app generate real prices. Keep credentials out of source, screenshots, and commits; `.env` is ignored by Git.
 
-The iOS companion app lives at `apps/ios/` — see its README for build and glasses-streaming instructions.
+`npm start` does not require installing packages for the core server. `npm install` is needed for the optional MCP catalog. Run the Node tests with `npm test`.
 
-## How it works
+## Use the product
 
-Three stages, joined by plain JSON.
+1. Capture a view with the glasses/iPhone path, the browser/phone path, or a robot scan. The main page shows the latest photo and up to eight identified items with estimated prices.
+2. Choose a goal or cash target, then **Review** the proposed actions and reasons. Unselect anything you want to keep; correct item details where needed.
+3. Choose Shopify, Facebook Marketplace, or both. **Yes, list them** is the explicit approval step for eligible items.
+4. Shopify products are created and published when a working store connection is configured. Marketplace is a draft handoff through muse.ai; a human completes publication in Facebook. The status page shows what happened in each channel.
 
-**1. Frames in.** The glasses stream to the iOS app over the Meta Wearables Device Access Toolkit (DAT 0.9.0); the app relays to the browser over WebRTC. The capture page samples a JPEG every 3 seconds and posts it to `POST /api/frames`. The phone camera path (`/phone`) posts to the same route, so nothing downstream knows or cares which camera it came from.
+Prices are model estimates before fees and shipping, not confirmed sold-comparable values or guaranteed proceeds. A photo cannot establish hidden contents, a precise variant, or whether electronics work. Donation and recycling are suggestions, not completed drop-offs. The repo includes a mock checkout for demos; it is not a payment processor.
 
-**2. Identification and pricing.** `services/vision/backends/rightcodes-items.js` sends the frame to `gemini-3.8-flash` with a strict `json_schema` response format. It goes through right.codes' OpenAI-compatible route (`/v1/chat/completions`) rather than the native `/gemini/v1beta` one, because 3.8 is only reachable there — the native path 404s on it and still serves 3.6 and gets back, for each item: a label a buyer would search for, a condition grade, an estimated secondhand price in USD, a one-line basis for that number, a confidence, and a bounding box.
+The main browser routes are:
 
-Boxes are **0..1000 normalized** — the same convention the capture page's overlay already used for its on-device detections, which is why the model's output can be drawn directly with no coordinate translation. Boxes that are off-image, inverted, or zero-area are dropped in `sanitizedItem()` before they can reach the page or inflate the total.
+| Route | Purpose |
+| --- | --- |
+| `/` or `/live` | Live feed, item picker, plan, and listing approval; also contains robot controls |
+| `/dashboard` | Event-based goal and listing dashboard |
+| `/status` | Listing/channel status and buyer conversations |
+| `/confirm` | Voice confirmation flow |
+| `/api/health`, `/api/analysis/status`, `/api/items/latest` | Basic diagnostics |
 
-**3. The overlay.** `GET /api/items/latest` serves the newest result. The capture page draws one box per item labeled `PS4 SLIM  $185`, colour-keyed by worth (green ≥$100, amber ≥$25, grey below), and totals the room in the readout panel with a per-item list.
+Continuous frame analysis is off by default. Start it from the page or `POST /api/analysis/start`; `RELOOP_PRICING_ON=1` arms it at startup. Explicit glasses and robot still-photo submissions are analyzed as individual captures. Frames from all supported sources enter `POST /api/frames` and are processed by the same item analyzer. The backend checks item boxes and serializes analysis calls to limit duplicate work.
 
-### Cost control
+## Glasses and iPhone
 
-Frames arrive far faster than a vision model should be billed for, so two independent throttles sit in front of it:
+The SwiftUI iPhone companion lives in [`apps/ios/BloomKnights/`](apps/ios/BloomKnights/). It uses the Meta Wearables Device Access Toolkit for glasses capture and the team's phone/WebRTC path to get images into ReLoop. Follow the [iOS setup guide](apps/ios/README.md) for XcodeGen, signing, device trust, Developer Mode, and camera troubleshooting. The iOS project name and bundle ID remain BloomKnights for Meta registration compatibility.
 
-- `FrameSelector` (`services/capture/selector.js`) drops near-duplicate frames and enforces a 750ms floor. A viewer holding still does not pay for the same photo twice.
-- `ItemAnalyzer` (`services/api/item-analyzer.js`) keeps **one call in flight at a time** and enforces a 4s minimum interval. A skipped frame is the normal case, and the held result rides along in the response so the overlay never blanks between passes.
+The page displays item labels and estimated prices over the image. When presenting a frozen photo, users can tap or untick detected items to exclude them from the plan. The photo selected for a listing is stored separately from the live stream.
 
-Unlike a scoreboard, a room is a complete observation in a single frame, so the analyzer does not batch a frame window — it analyzes the newest frame and drops the rest.
+## Robot capture and saved destinations
 
-### Nothing is analyzed until you ask
+The Unitree Go2 runs Dimensional's DimOS. DimOS and the ReLoop backend run on the Mac; the robot supplies motion, lidar, odometry, and camera images. Robot missions use **named viewpoints saved in the current DimOS map**, such as `table` or `sponsor`. This is not autonomous discovery of an unfamiliar table or free exploration of a room.
 
-`POST /api/frames` returns `202 analysis_status: "disabled"` until `POST /api/analysis/start` is called. The capture page's **Analyze** button is the only thing that arms it. This matters for a camera worn on someone's face in a shared space: frames are not sent to a model because the app happens to be open.
+Start one working `unitree-go2` DimOS session using the robot's **current** IP and your locally held connection key. Do not put that key in the README or shell history shared with others. From the DimOS checkout, run the sensor check and save each destination while the robot is stationary and facing the objects:
 
-## Repository map
+```bash
+cd /Users/berketunc/dimos
+.venv/bin/python /Users/berketunc/hackmit/scripts/robot-map-scan.py check
+.venv/bin/python /Users/berketunc/hackmit/scripts/robot-map-scan.py save table
+.venv/bin/python /Users/berketunc/hackmit/scripts/robot-map-scan.py save sponsor
+```
 
-- `apps/demo-web/` — dashboard, capture, phone, and data pages served by the API server
-- `apps/landing/` — landing page
-- `apps/pitch/` — pitch deck
-- `apps/ios/` — SwiftUI iPhone companion app (iOS 17+, Meta glasses streaming via DAT 0.9.0)
-- `apps/demo-video/` — demo-video project; rendered output in `out/`
-- `services/api/` — the HTTP server and the item analyzer
-- `services/vision/backends/` — the item identification + pricing backend
-- `services/capture/` — frame gateway, frame selector, dataset writer
-- `services/demo/` — local stream playback for demos
-- `services/events/` — append-only event log and the dashboard fold ([docs/architecture/EVENTS.md](docs/architecture/EVENTS.md))
-- `services/market/` — planner, approval, store, seller agent with a code-enforced floor, Marketplace draft queue ([docs/architecture/MARKET.md](docs/architecture/MARKET.md))
-- `tests/` — node:test coverage for the server, gateway, selector, and page contracts
+Saving records the current position and viewing direction in `.reloop/robot-waypoints.json`; it does **not** move the robot. Drive to a different location before saving another name. Saved viewpoints are valid only for that DimOS run and map frame: after a restart or map reset, check sensors and re-save them. If DimOS reports that the robot's signaling ports are unavailable, verify the robot's current IP and Wi-Fi connection before relaunching it.
 
-## Rules for contributors and AI agents
+Set these in the web backend's `.env` and restart `npm start`:
 
-- **The phone and the glasses are interchangeable.** Anything that assumes glasses belongs in the iOS app, never on the server. The server must work with a frame from any source.
-- **Prices come from the model, and the model says why.** Every item carries a `price_basis`. If you cannot explain a number on stage, do not show it.
-- **Never let a bad box through.** A box that fails validation is dropped, not clamped into something plausible. A phantom item in the total is worse than a missing one.
-- **Keep the analysis gate.** Do not add a code path that sends frames to a model without an explicit start.
-- **One server: the Node one.** The app, dashboard and agents talk only to `services/api/server.js`, priced by the Node pricer. The Python `reloop_brain` API is not called at runtime; its routing rules are ported in `services/market/planner.js`. See [docs/architecture/MARKET.md](docs/architecture/MARKET.md).
-- **Report progress as events.** The dashboard (`/dashboard`) is a fold over `POST /api/events`. Before building anything that sets a goal, approves a plan, lists or sells, read [docs/architecture/EVENTS.md](docs/architecture/EVENTS.md) — it says which events each lane owes.
-- **Run `npm test` before you push.** `main` must stay green.
+```dotenv
+RELOOP_DIMOS_PYTHON=/Users/berketunc/dimos/.venv/bin/python
+RELOOP_DIMOS_DIR=/Users/berketunc/dimos
+```
 
-## Honest scope and limitations
+On **http://127.0.0.1:3000/**, open **Control the dog**, type an exact saved name, then select **Go and scan**. The app starts one mission at a time, waits for DimOS navigation, verifies a fresh pose within **0.5 m and 20°** of the saved viewpoint, stops, captures a still, and opens the usual item review. The panel also has **Stop**. Do not send simultaneous keyboard or map movement commands; keep the robot's own stop control available. Robot-control HTTP routes are restricted to local requests on the Mac.
 
-- **Prices are single-shot LLM estimates.** They are not drawn from a researched price book or live sold-listing data, and they will vary between runs on the same object. Say this plainly rather than implying market data.
-- **The overlay lags a moving camera.** Boxes refresh on a ~3–4s cadence, so they track a room you are scanning deliberately, not a head turning quickly.
-- **Identification is only as good as the view.** A partially occluded or badly lit object gets a low confidence and a vaguer label; the model is told not to invent a model number it cannot see.
-- **`RIGHTCODES_KEY_GEMINI` is required.** Without it every pass fails and `queue.last_error` on `/api/analysis/status` will say so.
+For a camera-only capture, use `scripts/robot-scan.py`. For the experimental straight-line 0.4 m walk then capture, use `scripts/robot-walk-scan.py`. The [robot demo guide](docs/robot-demo.md) gives the full commands and recovery notes. Navigation-to-scan has been tested on the team's physical robot; a destination can still fail if sensors, map, or connection are unavailable.
 
-## The pitch
+## Shopify and Facebook Marketplace
 
-People don't throw usable things away because they have no value. They throw them away because finding out what they're worth is work — photographing, searching comparable listings, guessing at condition. ReLoop removes the work. You look at the room, and the room is priced.
->>>>>>> a88508c6ecdc560901ddfd6d33d8b06b484e73a4
+Shopify supports either an installed app's client ID and secret or an Admin API access token. Put only the credential type you have in `.env`:
+
+```dotenv
+SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
+SHOPIFY_CLIENT_ID=your-client-id
+SHOPIFY_CLIENT_SECRET=your-client-secret
+DRY_RUN=0
+```
+
+For a token-based app, use `SHOPIFY_ADMIN_ACCESS_TOKEN` instead of the client ID/secret. `DRY_RUN=1` simulates publication. A created Shopify product may need publication to the Online Store sales channel before its URL works; the integration reports a channel-publication failure rather than treating a dead URL as success. The [Shopify guide](services/shopify/README.md) explains scopes and testing. Never confuse an app secret (`shpss_…`) with an access token (`shpat_…`).
+
+Facebook Marketplace is optional and disabled unless `RELOOP_MARKETPLACE_DRAFTS=1`. It uses a dedicated, logged-in Chrome session and muse.ai to prepare drafts. The owner must finish publication in Facebook and can then mark it published in the app. See the [Marketplace setup guide](facebook-marketplace/README.md). Shopify publication, Marketplace drafting, buyer messaging, and mock checkout are distinct states.
+
+## How the code is organized
+
+```text
+apps/ios/                 SwiftUI phone and Meta glasses companion
+apps/demo-web/            Main feed, dashboard, status, and robot controls
+services/api/             Node HTTP server and item-analysis queue
+services/capture/         Frame ingestion, selection, and optional dataset writer
+services/vision/backends/ Direct Gemini and right.codes item providers
+services/market/          Goal planner, approvals, catalog, seller agent, drafts
+services/shopify/         Shopify Admin API integration
+services/events/          Event log and dashboard fold
+services/robot/           Dashboard mission process controller
+scripts/robot-*.py        DimOS sensor, navigation, and still-photo workflows
+reloop_brain/             Earlier standalone Python Lane B prototype
+tests/                    Node tests plus robot Python tests
+```
+
+The running web product uses **one Node server**, `services/api/server.js`, on port 3000. `reloop_brain/` is an earlier standalone FastAPI/prototype implementation; it is not the runtime pricing service for the Node app. Its demo prices are development fixtures. Do not run its `uvicorn` server expecting the current dashboard or claim those prices are researched market data.
+
+The main API surfaces include `POST /api/frames`, `GET /api/items/latest`, `POST /api/plans`, `POST /api/plans/:id/approve`, listing/status routes, and `GET /api/robot/status` plus `POST /api/robot/go` and `/api/robot/stop`. The server source and [market-flow notes](docs/architecture/MARKET.md) have the detailed request shapes. Some older architecture and launch documents still describe an abandoned sports-prediction prototype; they are not documentation for the current runtime.
+
+Market state defaults to `data/market_state.json` and listing photos to `data/photos/`; both are ignored by Git. Event persistence requires `RELOOP_EVENTS_FILE` to be set. The optional training dataset writer is off unless `DATASET_DIR` is set. The robot's saved viewpoints are also local and ignored. Back up local state separately if it matters.
+
+## Verification and demo preparation
+
+```bash
+npm test
+.venv/bin/python -m pytest tests/test_robot_map.py tests/test_robot_walk.py -q
+```
+
+The Python tests exercise robot safety logic with fake modules; they do not replace a live sensor and navigation check. Before a demo, verify the web app responds, the selected pricing provider has quota, the glasses capture reaches the backend, DimOS has fresh position/lidar/camera data, and the Shopify/Marketplace account state matches what you intend to show. A recorded run should be labeled as recorded if used as a fallback.
+
+Loop OS currently has **no measured pricing accuracy, resale conversion rate, or environmental impact figure**. Better completed-sale evidence, multi-view item identification, and richer robot destination understanding are future work.
